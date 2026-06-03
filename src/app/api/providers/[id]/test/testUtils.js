@@ -232,6 +232,16 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     return { valid: true, error: null, refreshed: false, newTokens: null };
   }
 
+  // access_token connections use agent identity tokens with AgentAssertion auth
+  if (connection.authType === "access_token") {
+    try {
+      const { testAgentIdentityConnection } = await import("@/lib/codex-agent-auth");
+      return await testAgentIdentityConnection(connection);
+    } catch (err) {
+      return { valid: false, error: `Agent auth test failed: ${err.message}`, refreshed: false };
+    }
+  }
+
   let accessToken = connection.accessToken;
   let refreshed = false;
   let newTokens = null;

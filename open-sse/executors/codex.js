@@ -169,7 +169,7 @@ function resolveCacheSessionId(body, credentials, machineId) {
   }
 
   // 3. Account-wide fallback (workspaceId from connection)
-  const workspaceId = normalizeSessionId(credentials?.providerSpecificData?.workspaceId);
+  const workspaceId = normalizeSessionId(credentials?.providerSpecificData?.workspaceId || credentials?.providerSpecificData?.chatgptAccountId);
   if (workspaceId) return workspaceId;
 
   // 4. Last resort — stable per-machine id
@@ -204,7 +204,7 @@ export class CodexExecutor extends BaseExecutor {
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
     // Workspace binding header — improves account scope + cache affinity
-    const workspaceId = credentials?.providerSpecificData?.workspaceId;
+    const workspaceId = credentials?.providerSpecificData?.workspaceId || credentials?.providerSpecificData?.chatgptAccountId;
     if (typeof workspaceId === "string" && workspaceId && !headers["chatgpt-account-id"]) {
       headers["chatgpt-account-id"] = workspaceId;
     }

@@ -46,15 +46,13 @@ export function validateOAuthEndpoint(rawUrl, field) {
   return value;
 }
 
-/**
- * Discover authorization + token endpoints. Cached process-wide.
- */
-export async function discoverEndpoints() {
+export async function discoverEndpoints(proxyOptions = null) {
   if (cachedDiscovery) return cachedDiscovery;
 
   try {
     const res = await fetch(XAI_CONFIG.discoveryUrl, {
       headers: { Accept: "application/json" },
+      proxyOptions,
     });
     if (res.ok) {
       const data = await res.json();

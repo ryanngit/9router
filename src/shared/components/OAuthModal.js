@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig, proxyPools = [] }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -18,6 +18,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isDeviceCode, setIsDeviceCode] = useState(false);
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
+  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
@@ -27,6 +28,28 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isLocalhost, setIsLocalhost] = useState(false);
   const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
+
+  // Store volatile callback and meta props in refs to stabilize hooks and break infinite render loops
+  const onSuccessRef = useRef(onSuccess);
+  const oauthMetaRef = useRef(oauthMeta);
+  const idcConfigRef = useRef(idcConfig);
+  const proxyPoolsRef = useRef(proxyPools);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  useEffect(() => {
+    oauthMetaRef.current = oauthMeta;
+  }, [oauthMeta]);
+
+  useEffect(() => {
+    idcConfigRef.current = idcConfig;
+  }, [idcConfig]);
+
+  useEffect(() => {
+    proxyPoolsRef.current = proxyPools;
+  }, [proxyPools]);
 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
@@ -38,66 +61,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   }, []);
 
-  // Define all useCallback hooks BEFORE the useEffects that reference them
-
-  // Exchange tokens
-  const exchangeTokens = useCallback(async (code, state) => {
-    if (!authData) return;
-    try {
-      const res = await fetch(`/api/oauth/${provider}/exchange`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          redirectUri: authData.redirectUri,
-          codeVerifier: authData.codeVerifier,
-          state,
-          ...(oauthMeta ? { meta: oauthMeta } : {}),
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setStep("success");
-      onSuccess?.();
-    } catch (err) {
-      setError(err.message);
-      setStep("error");
-    }
-  }, [authData, provider, onSuccess]);
-
-  const completeXaiManualCode = useCallback(async (code) => {
-    if (!authData?.state) return;
-    try {
-      const res = await fetch("/api/oauth/xai/manual-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, state: authData.state }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setStep("success");
-      onSuccess?.();
-    } catch (err) {
-      setError(err.message);
-      setStep("error");
-    }
-  }, [authData, onSuccess]);
-
   // Poll for device code token
-  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs) => {
+  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs, proxyPoolId) => {
     pollingAbortRef.current = false;
     setPolling(true);
-    // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
-    // don't time out earlier than the device code itself. Default 120s
-    // matches the prior behavior for providers that don't surface a value.
     const startedAt = Date.now();
     const deadline = startedAt + (Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : 120_000);
 
     while (Date.now() < deadline) {
-      // Check if polling should be aborted
       if (pollingAbortRef.current) {
         console.log("[OAuthModal] Polling aborted");
         setPolling(false);
@@ -106,7 +77,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       await new Promise((r) => setTimeout(r, interval * 1000));
 
-      // Check again after sleep
       if (pollingAbortRef.current) {
         console.log("[OAuthModal] Polling aborted after sleep");
         setPolling(false);
@@ -117,7 +87,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+          body: JSON.stringify({ deviceCode, codeVerifier, extraData, proxyPoolId }),
         });
 
         const data = await res.json();
@@ -126,7 +96,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
           setPolling(false);
-          onSuccess?.();
+          onSuccessRef.current?.();
           return;
         }
 
@@ -148,10 +118,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     setError("Authorization timeout");
     setStep("error");
     setPolling(false);
-  }, [provider, onSuccess]);
+  }, [provider]);
 
   // Start OAuth flow
-  const startOAuthFlow = useCallback(async () => {
+  const startOAuthFlow = useCallback(async (proxyPoolId = selectedProxyPoolId) => {
     if (!provider) return;
     try {
       setError(null);
@@ -163,10 +133,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setStep("waiting");
 
         const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
-        if (provider === "kiro" && idcConfig?.startUrl) {
-          deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
-          if (idcConfig.region) {
-            deviceCodeUrl.searchParams.set("region", idcConfig.region);
+        if (proxyPoolId) {
+          deviceCodeUrl.searchParams.set("proxyPoolId", proxyPoolId);
+        }
+        if (provider === "kiro" && idcConfigRef.current?.startUrl) {
+          deviceCodeUrl.searchParams.set("start_url", idcConfigRef.current.startUrl);
+          if (idcConfigRef.current.region) {
+            deviceCodeUrl.searchParams.set("region", idcConfigRef.current.region);
           }
           deviceCodeUrl.searchParams.set("auth_method", "idc");
         }
@@ -180,9 +153,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank", "noopener,noreferrer");
 
-        // Pass extraData for Kiro (contains _clientId, _clientSecret) and
-        // Qoder (contains _qoderMachineId / _qoderNonce — needed so mapTokens
-        // can persist the machine id alongside the token).
         const extraData = provider === "kiro"
           ? {
               _clientId: data._clientId,
@@ -203,11 +173,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           data.codeVerifier,
           data.interval || 5,
           extraData,
-          // Use the upstream's expires_in if present so we don't time out
-          // before the device code itself (qoder gives 300s).
           Number.isFinite(data.expires_in) && data.expires_in > 0
             ? data.expires_in * 1000
             : undefined,
+          proxyPoolId
         );
         return;
       }
@@ -223,11 +192,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         redirectUri = `http://localhost:${appPort}/callback`;
       }
 
-      // Build authorize URL first to get codeVerifier/state for codex server-side mode
+      // Build authorize URL first to get codeVerifier/state for server-side modes
       const authorizeUrl = new URL(`/api/oauth/${provider}/authorize`, window.location.origin);
       authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-      if (oauthMeta) {
-        Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
+      if (proxyPoolId) {
+        authorizeUrl.searchParams.set("proxyPoolId", proxyPoolId);
+      }
+      if (oauthMetaRef.current) {
+        Object.entries(oauthMetaRef.current).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
       }
       const res = await fetch(authorizeUrl.toString());
       const data = await res.json();
@@ -243,6 +215,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           proxyUrl.searchParams.set("state", data.state);
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
           proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          if (proxyPoolId) {
+            proxyUrl.searchParams.set("proxyPoolId", proxyPoolId);
+          }
           const proxyRes = await fetch(proxyUrl.toString());
           const proxyData = await proxyRes.json();
           codexProxyActive = proxyData.success;
@@ -262,6 +237,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           proxyUrl.searchParams.set("state", data.state);
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
           proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          if (proxyPoolId) {
+            proxyUrl.searchParams.set("proxyPoolId", proxyPoolId);
+          }
           const proxyRes = await fetch(proxyUrl.toString());
           const proxyData = await proxyRes.json();
           xaiProxyActive = proxyData.success;
@@ -278,7 +256,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setAuthData({ ...data, redirectUri, codexServerSide, xaiServerSide });
 
       if (provider === "codex" && codexProxyActive) {
-        // Proxy active: callback will be handled server-side (auto-exchange) or via channels (fallback)
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
         if (!popupRef.current) {
@@ -291,11 +268,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           setStep("input");
         }
       } else if (!isLocalhost || provider === "codex" || provider === "xai") {
-        // Non-localhost or proxy failed: manual input mode
         setStep("input");
         window.open(data.authUrl, "_blank");
       } else {
-        // Localhost (non-Codex/xAI): Open popup and wait for message
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
         if (!popupRef.current) {
@@ -306,9 +281,55 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig]);
+  }, [provider, isLocalhost, startPolling, selectedProxyPoolId]);
 
-  // Reset state and start OAuth when modal opens
+  // Exchange tokens
+  const exchangeTokens = useCallback(async (code, state) => {
+    if (!authData) return;
+    try {
+      const res = await fetch(`/api/oauth/${provider}/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          redirectUri: authData.redirectUri,
+          codeVerifier: authData.codeVerifier,
+          state,
+          proxyPoolId: selectedProxyPoolId,
+          ...(oauthMetaRef.current ? { meta: oauthMetaRef.current } : {}),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setStep("success");
+      onSuccessRef.current?.();
+    } catch (err) {
+      setError(err.message);
+      setStep("error");
+    }
+  }, [authData, provider, selectedProxyPoolId]);
+
+  const completeXaiManualCode = useCallback(async (code) => {
+    if (!authData?.state) return;
+    try {
+      const res = await fetch("/api/oauth/xai/manual-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, state: authData.state, proxyPoolId: selectedProxyPoolId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setStep("success");
+      onSuccessRef.current?.();
+    } catch (err) {
+      setError(err.message);
+      setStep("error");
+    }
+  }, [authData, selectedProxyPoolId]);
+
   useEffect(() => {
     if (isOpen && provider) {
       // Guard against StrictMode/effect re-runs auto-opening multiple tabs.
@@ -320,8 +341,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
+      const activePool = (proxyPoolsRef.current || []).find(p => p.isActive === true);
+      const initialPoolId = activePool ? activePool.id : "";
+      setSelectedProxyPoolId(initialPoolId);
       pollingAbortRef.current = false;
-      startOAuthFlow();
+      startOAuthFlow(initialPoolId);
     } else if (!isOpen) {
       // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
@@ -332,7 +356,31 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         fetch("/api/oauth/xai/stop-proxy").catch(() => {});
       }
     }
-  }, [isOpen, provider, startOAuthFlow]);
+  }, [isOpen, provider]);
+
+  // Handle manual selection/switching of routing proxy pools dynamically during setup
+  const handleProxyPoolChange = async (e) => {
+    const val = e.target.value;
+    setSelectedProxyPoolId(val);
+
+    pollingAbortRef.current = true;
+    setPolling(false);
+
+    if (provider === "codex") {
+      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+    } else if (provider === "xai") {
+      fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+    }
+
+    setAuthData(null);
+    setCallbackUrl("");
+    setError(null);
+    setIsDeviceCode(false);
+    setDeviceData(null);
+    pollingAbortRef.current = false;
+
+    await startOAuthFlow(val);
+  };
 
   // Fixed-port server-side mode: poll status (proxy auto-exchanges + saves DB)
   useEffect(() => {
@@ -348,13 +396,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (cancelled || callbackProcessedRef.current) return;
       attempts += 1;
       try {
-          const res = await fetch(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`);
+        const res = await fetch(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`);
         const data = await res.json();
         if (cancelled || callbackProcessedRef.current) return;
         if (data.status === "done") {
           callbackProcessedRef.current = true;
           setStep("success");
-          onSuccess?.();
+          onSuccessRef.current?.();
           return;
         }
         if (data.status === "error") {
@@ -376,7 +424,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     };
     setTimeout(tick, POLL_INTERVAL_MS);
     return () => { cancelled = true; };
-  }, [authData, onSuccess]);
+  }, [authData]);
 
   // Listen for OAuth callback via multiple methods
   useEffect(() => {
@@ -404,7 +452,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
     // Method 1: postMessage from popup
     const handleMessage = (event) => {
-      // Allow messages from same origin or localhost (any port)
       const isLocalhost = event.origin.includes("localhost") || event.origin.includes("127.0.0.1");
       const isSameOrigin = event.origin === window.location.origin;
       if (!isLocalhost && !isSameOrigin) return;
@@ -463,7 +510,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const handleManualSubmit = async () => {
     try {
       setError(null);
-
       const input = callbackUrl.trim();
 
       // Detect raw JWT access token (starts with eyJ) — skip URL parsing
@@ -518,6 +564,35 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
+        {/* Routing Proxy Pool Dropdown Selector */}
+        {proxyPools.length > 0 && (step === "waiting" || step === "input") && (
+          <div className="flex flex-col gap-1.5 p-3.5 border border-border rounded-xl bg-sidebar/30">
+            <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+              Routing Proxy Pool
+            </label>
+            <div className="relative">
+              <select
+                value={selectedProxyPoolId}
+                onChange={handleProxyPoolChange}
+                className="w-full bg-input text-sm border border-border rounded-lg px-3 py-2 outline-none focus:border-primary transition-all appearance-none cursor-pointer"
+              >
+                <option value="">Direct Connection (No Proxy)</option>
+                {proxyPools.map((pool) => (
+                  <option key={pool.id} value={pool.id}>
+                    {pool.name} ({pool.type === "standard" ? "Standard" : pool.type})
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-text-muted">
+                <span className="material-symbols-outlined text-base">expand_more</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-text-muted leading-relaxed">
+              Route Cloudflare-protected OAuth flow endpoints and token exchanges through the selected proxy.
+            </p>
+          </div>
+        )}
+
         {/* Waiting + Manual Input combined (non-device-code) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && (
           <>
@@ -684,4 +759,5 @@ OAuthModal.propTypes = {
     startUrl: PropTypes.string,
     region: PropTypes.string,
   }),
+  proxyPools: PropTypes.array,
 };

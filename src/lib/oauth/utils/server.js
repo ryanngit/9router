@@ -128,11 +128,12 @@ const pendingExchanges = new Map();
  * Register a pending exchange session for server-side mode.
  * Modal client calls this before opening popup.
  */
-export function registerCodexSession({ state, codeVerifier, redirectUri }) {
+export function registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   pendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    proxyPoolId,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -202,18 +203,34 @@ export function startCodexProxy(appPort) {
           // Lazy import to avoid circular deps
           const { exchangeTokens } = await import("../providers.js");
           const { createProviderConnection } = await import("@/models");
+          const { resolveConnectionProxyConfig } = await import("@/lib/network/connectionProxy");
+
+          const proxyConfig = session.proxyPoolId ? await resolveConnectionProxyConfig({ proxyPoolId: session.proxyPoolId }) : null;
+          const proxyOptions = proxyConfig ? {
+            connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
+            connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
+            connectionNoProxy: proxyConfig.connectionNoProxy || "",
+            vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
+            strictProxy: proxyConfig.strictProxy === true,
+          } : null;
 
           const tokenData = await exchangeTokens(
             "codex",
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
+            undefined,
+            proxyOptions
           );
           const connection = await createProviderConnection({
             provider: "codex",
             authType: "oauth",
             ...tokenData,
+            providerSpecificData: {
+              ...(tokenData.providerSpecificData || {}),
+              ...(session.proxyPoolId && session.proxyPoolId !== "__none__" ? { proxyPoolId: session.proxyPoolId } : {}),
+            },
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
@@ -286,11 +303,12 @@ const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
 
-export function registerXaiSession({ state, codeVerifier, redirectUri }) {
+export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   xaiPendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    proxyPoolId,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -344,18 +362,34 @@ export function startXaiProxy(appPort) {
 
           const { exchangeTokens } = await import("../providers.js");
           const { createProviderConnection } = await import("@/models");
+          const { resolveConnectionProxyConfig } = await import("@/lib/network/connectionProxy");
+
+          const proxyConfig = session.proxyPoolId ? await resolveConnectionProxyConfig({ proxyPoolId: session.proxyPoolId }) : null;
+          const proxyOptions = proxyConfig ? {
+            connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
+            connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
+            connectionNoProxy: proxyConfig.connectionNoProxy || "",
+            vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
+            strictProxy: proxyConfig.strictProxy === true,
+          } : null;
 
           const tokenData = await exchangeTokens(
             "xai",
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
+            undefined,
+            proxyOptions
           );
           const connection = await createProviderConnection({
             provider: "xai",
             authType: "oauth",
             ...tokenData,
+            providerSpecificData: {
+              ...(tokenData.providerSpecificData || {}),
+              ...(session.proxyPoolId && session.proxyPoolId !== "__none__" ? { proxyPoolId: session.proxyPoolId } : {}),
+            },
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,

@@ -226,7 +226,14 @@ async function getDispatcher(proxyUrl) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
     const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+    const connectTimeout = parseInt(process.env.PROXY_CONNECT_TIMEOUT_MS, 10) || 90000;
+    const headersTimeout = parseInt(process.env.PROXY_HEADERS_TIMEOUT_MS, 10) || 300000;
+    proxyDispatchers.set(normalized, new ProxyAgent({
+      uri: normalized,
+      connectTimeout,
+      headersTimeout,
+      bodyTimeout: 0,
+    }));
   }
 
   return proxyDispatchers.get(normalized);
@@ -353,11 +360,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   return originalFetch(url, options);
 }
 
-/**
- * Patched global fetch with env-proxy support and MITM DNS bypass
- */
 async function patchedFetch(url, options = {}) {
-  return proxyAwareFetch(url, options, null);
+  const { proxyOptions, ...restOptions } = options;
+  return proxyAwareFetch(url, restOptions, proxyOptions || null);
 }
 
 // Idempotency guard — only patch once to avoid wrapping multiple times

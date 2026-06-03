@@ -98,13 +98,12 @@ export async function createProviderConnection(data) {
 
     let existing = null;
     if (data.authType === "oauth" && data.email) {
-      const incomingWs = data.providerSpecificData?.chatgptAccountId;
+      const incomingWs = data.providerSpecificData?.chatgptAccountId || "";
       existing = all.find(c => {
         if (c.authType !== "oauth" || c.email !== data.email) return false;
-        // If both sides have a workspace ID, they must match for dedup
-        const existingWs = c.providerSpecificData?.chatgptAccountId;
-        if (incomingWs && existingWs) return incomingWs === existingWs;
-        return true; // fallback: email-only match for non-workspace providers
+        // Separate profiles with different workspace IDs (including empty vs set)
+        const existingWs = c.providerSpecificData?.chatgptAccountId || "";
+        return incomingWs === existingWs;
       });
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(c => c.authType === "apikey" && c.name === data.name);

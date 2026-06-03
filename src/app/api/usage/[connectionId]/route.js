@@ -7,12 +7,33 @@ import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 
+// Simple in-memory cache for usage data to prevent aggressive polling
+const usageCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
 function isAuthExpiredMessage(usage) {
   if (!usage?.message) return false;
   const msg = usage.message.toLowerCase();
   return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
+}
+
+// Detect failed/cooldown/error messages to prevent caching them
+function isErrorResponse(usage) {
+  if (!usage) return true;
+  if (usage.error) return true;
+  if (usage.message) {
+    const msg = usage.message.toLowerCase();
+    return (
+      msg.includes("error") ||
+      msg.includes("failed") ||
+      msg.includes("cooldown") ||
+      msg.includes("unauthorized") ||
+      msg.includes("invalidated")
+    );
+  }
+  return false;
 }
 
 /**
@@ -103,6 +124,9 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
   // Update database
   await updateProviderConnection(connection.id, updateData);
 
+  // Evict cache on successful credentials update/refresh
+  usageCache.delete(connection.id);
+
   // Return updated connection
   const updatedConnection = {
     ...connection,
@@ -116,16 +140,16 @@ async function refreshAndUpdateCredentials(connection, force = false, proxyOptio
   };
 }
 
-/**
- * GET /api/usage/[connectionId] - Get usage data for a specific connection
- */
 export async function GET(request, { params }) {
   let connection;
   try {
     const { connectionId } = await params;
 
+    // Check query params for force refresh
+    const { searchParams } = new URL(request.url);
+    const force = searchParams.get("force") === "true";
 
-    // Get connection from database
+    // Get connection from database first
     connection = await getProviderConnectionById(connectionId);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
@@ -141,26 +165,37 @@ export async function GET(request, { params }) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 
-    // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
+    // Resolve connection proxy config
     const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
     const proxyOptions = {
       connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
       connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
       connectionNoProxy: proxyConfig.connectionNoProxy || "",
       vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-      strictProxy: false,
+      strictProxy: proxyConfig.strictProxy === true,
     };
 
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
+    let credentialsRefreshed = false;
     if (isOAuth) {
       try {
         const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
         connection = result.connection;
+        credentialsRefreshed = result.refreshed;
       } catch (refreshError) {
         console.error("[Usage API] Credential refresh failed:", refreshError);
         return Response.json({
           error: `Credential refresh failed: ${refreshError.message}`
         }, { status: 401 });
+      }
+    }
+
+    // Evaluate cache ONLY if force is false AND credentials were not refreshed.
+    // This allows active sessions/polling to keep OAuth tokens fresh.
+    if (!force && !credentialsRefreshed) {
+      const cached = usageCache.get(connectionId);
+      if (cached && Date.now() < cached.expiresAt) {
+        return Response.json(cached.data);
       }
     }
 
@@ -177,6 +212,14 @@ export async function GET(request, { params }) {
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }
+    }
+
+    // Cache the successful/valid usage result
+    if (usage && !isErrorResponse(usage)) {
+      usageCache.set(connectionId, {
+        data: usage,
+        expiresAt: Date.now() + CACHE_TTL_MS,
+      });
     }
 
     return Response.json(usage);

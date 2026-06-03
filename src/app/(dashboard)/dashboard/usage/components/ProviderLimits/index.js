@@ -305,15 +305,15 @@ export default function ProviderLimits() {
   );
 
   // Fetch quota for a specific connection
-  const fetchQuota = useCallback(async (connectionId, provider) => {
+  const fetchQuota = useCallback(async (connectionId, provider, force = false) => {
     setLoading((prev) => ({ ...prev, [connectionId]: true }));
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
     try {
       console.log(
-        `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
+        `[ProviderLimits] Fetching quota for ${provider} (${connectionId}), force=${force}`,
       );
-      const response = await fetch(`/api/usage/${connectionId}`);
+      const response = await fetch(`/api/usage/${connectionId}${force ? "?force=true" : ""}`);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -384,7 +384,7 @@ export default function ProviderLimits() {
   // Refresh quota for a specific provider
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
-      await fetchQuota(connectionId, provider);
+      await fetchQuota(connectionId, provider, true);
       setLastUpdated(new Date());
     },
     [fetchQuota],
@@ -480,7 +480,7 @@ export default function ProviderLimits() {
           setShowEditModal(false);
           setSelectedConnection(null);
           if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
-            await fetchQuota(connectionId, provider);
+            await fetchQuota(connectionId, provider, true);
           }
         }
       } catch (error) {
@@ -505,8 +505,9 @@ export default function ProviderLimits() {
     };
   }, []);
 
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (forceInput = false) => {
     if (refreshingAll) return;
+    const force = forceInput === true;
 
     setRefreshingAll(true);
     setCountdown(60);
@@ -522,9 +523,9 @@ export default function ProviderLimits() {
         filterQuotaStateByConnections(prev, visibleConnections),
       );
 
-      await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
+      for (const conn of visibleConnections) {
+        await fetchQuota(conn.id, conn.provider, force);
+      }
 
       setLastUpdated(new Date());
     } catch (error) {
@@ -549,9 +550,9 @@ export default function ProviderLimits() {
         filterQuotaStateByConnections(prev, visibleConnections),
       );
 
-      await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
+      for (const conn of visibleConnections) {
+        await fetchQuota(conn.id, conn.provider, false);
+      }
       setLastUpdated(new Date());
     };
 
@@ -944,7 +945,7 @@ export default function ProviderLimits() {
           {/* Refresh all button */}
           <button
             type="button"
-            onClick={refreshAll}
+            onClick={() => refreshAll(true)}
             disabled={refreshingAll}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
             title="Refresh all"

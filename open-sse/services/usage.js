@@ -80,7 +80,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "claude":
       return await getClaudeUsage(accessToken, proxyOptions);
     case "codex":
-      return await getCodexUsage(accessToken, proxyOptions);
+      const codexWorkspaceId = providerSpecificData?.chatgptAccountId || providerSpecificData?.workspaceId;
+      return await getCodexUsage(accessToken, proxyOptions, codexWorkspaceId);
     case "kiro":
       return await getKiroUsage(accessToken, providerSpecificData, proxyOptions);
     case "qoder":
@@ -685,14 +686,18 @@ function getCodexReviewRateLimit(data) {
   }) || null;
 }
 
-async function getCodexUsage(accessToken, proxyOptions = null) {
+async function getCodexUsage(accessToken, proxyOptions = null, workspaceId = null) {
   try {
+    const headers = {
+      "Authorization": `Bearer ${accessToken}`,
+      "Accept": "application/json",
+    };
+    if (workspaceId) {
+      headers["chatgpt-account-id"] = workspaceId;
+    }
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
       method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
-      },
+      headers,
     }, proxyOptions);
 
     if (!response.ok) {
