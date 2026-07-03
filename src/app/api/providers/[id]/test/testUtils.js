@@ -4,6 +4,8 @@ import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { checkCopilotProfileStatus } from "open-sse/services/copilotStatus.js";
+import { MODEL_LOCK_ALL, getModelLockKey } from "open-sse/services/accountFallback.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -16,6 +18,7 @@ import {
   CLAUDE_CONFIG,
   CLINE_CONFIG,
   KILOCODE_CONFIG,
+  GITHUB_CONFIG,
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
@@ -216,7 +219,7 @@ async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProx
   };
 }
 
-async function refreshOAuthToken(connection) {
+async function refreshOAuthToken(connection, effectiveProxy = null) {
   const provider = connection.provider;
   const refreshToken = connection.refreshToken;
   if (!refreshToken) return null;
@@ -241,6 +244,23 @@ async function refreshOAuthToken(connection) {
 
     if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
       return await refreshProviderCredentials(provider, connection, console);
+    }
+
+    if (provider === "github") {
+      const response = await fetchWithConnectionProxy("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: GITHUB_CONFIG.clientId,
+        }),
+      }, effectiveProxy);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.access_token) {
+        return { error: data.error_description || data.error || `GitHub refresh returned ${response.status}` };
+      }
+      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "claude") {
@@ -333,6 +353,53 @@ function isTokenExpired(connection) {
   return shouldRefreshCredentials(connection.provider, connection);
 }
 
+async function testGitHubCopilotConnection(connection, accessToken, effectiveProxy, refreshed = false, newTokens = null) {
+  let status = await checkCopilotProfileStatus(accessToken, {
+    proxyOptions: effectiveProxy,
+    probeCompletion: true,
+  });
+
+  if (!status.valid && connection.refreshToken) {
+    const tokens = await refreshOAuthToken(connection, effectiveProxy);
+    if (tokens?.accessToken) {
+      refreshed = true;
+      newTokens = tokens;
+      status = await checkCopilotProfileStatus(tokens.accessToken, {
+        proxyOptions: effectiveProxy,
+        probeCompletion: true,
+      });
+    } else if (status.status === "dead" || status.status === "forbidden") {
+      status.error = `GitHub OAuth refresh failed: ${tokens?.error || "re-authorize profile"}`;
+    }
+  }
+
+  if (status.runtimeToken) {
+    newTokens = {
+      ...(newTokens || {}),
+      providerSpecificData: {
+        ...(newTokens?.providerSpecificData || {}),
+        copilotToken: status.runtimeToken,
+        copilotTokenExpiresAt: status.tokenExpiresAt,
+      },
+    };
+  }
+
+  return {
+    valid: status.valid,
+    error: status.valid ? null : status.error,
+    refreshed,
+    newTokens,
+    status: status.status,
+    tier: status.tier,
+    sku: status.sku,
+    proxyEndpoint: status.proxyEndpoint,
+    lockUntil: status.lockUntil,
+    modelLock: status.modelLock,
+    probeModel: status.probeModel,
+    retryAfterSeconds: status.retryAfterSeconds,
+  };
+}
+
 async function testOAuthConnection(connection, effectiveProxy = null) {
   const config = OAUTH_TEST_CONFIG[connection.provider];
   if (!config) return { valid: false, error: "Provider test not supported", refreshed: false };
@@ -347,10 +414,14 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
   let refreshed = false;
   let newTokens = null;
 
+  if (connection.provider === "github") {
+    return testGitHubCopilotConnection(connection, accessToken, effectiveProxy, refreshed, newTokens);
+  }
+
   const tokenExpired = isTokenExpired(connection);
   if (config.refreshable && tokenExpired && connection.refreshToken) {
-    const tokens = await refreshOAuthToken(connection);
-    if (tokens) {
+    const tokens = await refreshOAuthToken(connection, effectiveProxy);
+    if (tokens?.accessToken) {
       accessToken = tokens.accessToken;
       refreshed = true;
       newTokens = tokens;
@@ -370,7 +441,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
 
     if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-      const tokens = await refreshOAuthToken(connection);
+      const tokens = await refreshOAuthToken(connection, effectiveProxy);
       if (tokens?.accessToken) {
         const retry = await probeCloudCodeAssistAccess(connection, tokens.accessToken, effectiveProxy);
         if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens: tokens };
@@ -396,7 +467,7 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       return initial;
     }
 
-    const tokens = await refreshOAuthToken(connection);
+    const tokens = await refreshOAuthToken(connection, effectiveProxy);
     if (!tokens?.accessToken) {
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
@@ -430,8 +501,8 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     }
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-      const tokens = await refreshOAuthToken(connection);
-      if (tokens) {
+      const tokens = await refreshOAuthToken(connection, effectiveProxy);
+      if (tokens?.accessToken) {
         const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
@@ -821,13 +892,14 @@ export async function testSingleConnection(id) {
   }
 
   const latencyMs = Date.now() - start;
+  const isGithubUnavailable = connection.provider === "github" && (result.lockUntil || result.modelLock?.until);
 
   // Soft success (e.g. Grok CLI 402 spending-limit): credentials are good, account is
   // out of credits. Keep testStatus active; surface the message as lastError so the
   // dashboard can show a warning without marking the connection broken.
   const softWarning = result.valid && (result.warning || result.error);
   const updateData = {
-    testStatus: result.valid ? "active" : "error",
+    testStatus: result.valid ? "active" : (isGithubUnavailable ? "unavailable" : "error"),
     lastError: result.valid ? (softWarning || null) : result.error,
     lastErrorAt: result.valid
       ? softWarning
@@ -835,6 +907,13 @@ export async function testSingleConnection(id) {
         : null
       : new Date().toISOString(),
   };
+
+  if (connection.provider === "github") {
+    updateData[MODEL_LOCK_ALL] = result.valid ? null : (result.lockUntil || null);
+    if (result.probeModel) {
+      updateData[getModelLockKey(result.probeModel)] = result.valid ? null : (result.modelLock?.until || null);
+    }
+  }
 
   if (result.refreshed && result.newTokens) {
     if (result.newTokens.accessToken) updateData.accessToken = result.newTokens.accessToken;
@@ -857,5 +936,16 @@ export async function testSingleConnection(id) {
 
   await updateProviderConnection(id, updateData);
 
-  return { valid: result.valid, error: result.error, refreshed: !!result.refreshed, latencyMs, testedAt: new Date().toISOString() };
+  return {
+    valid: result.valid,
+    error: result.error,
+    refreshed: !!result.refreshed,
+    latencyMs,
+    testedAt: new Date().toISOString(),
+    status: result.status,
+    tier: result.tier,
+    sku: result.sku,
+    proxyEndpoint: result.proxyEndpoint,
+    retryAfterSeconds: result.retryAfterSeconds,
+  };
 }
