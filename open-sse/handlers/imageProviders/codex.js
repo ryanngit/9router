@@ -152,7 +152,7 @@ export default {
     return {
       "accept": "text/event-stream, application/json",
       "authorization": `Bearer ${creds?.accessToken || ""}`,
-      "chatgpt-account-id": accountId || "",
+      "ChatGPT-Account-ID": accountId || "",
       "content-type": "application/json",
       "originator": CODEX_ORIGINATOR,
       "session_id": randomUUID(),

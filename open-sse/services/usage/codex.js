@@ -21,8 +21,38 @@ function toIsoDate(value) {
   return Number.isFinite(time) ? date.toISOString() : null;
 }
 
-function getCodexAccountId(providerSpecificData) {
-  return providerSpecificData?.workspaceId || providerSpecificData?.accountId || providerSpecificData?.chatgptAccountId || null;
+function getCodexAccountId(providerSpecificData = {}) {
+  const value = providerSpecificData?.workspaceId || providerSpecificData?.chatgptAccountId || providerSpecificData?.accountId;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function looksLikeProxyOptions(value) {
+  return value && typeof value === "object" && (
+    "connectionProxyEnabled" in value ||
+    "connectionProxyUrl" in value ||
+    "connectionNoProxy" in value ||
+    "vercelRelayUrl" in value ||
+    "strictProxy" in value
+  );
+}
+
+function normalizeCodexUsageArgs(providerSpecificData, proxyOptions) {
+  if (!proxyOptions && looksLikeProxyOptions(providerSpecificData)) {
+    return [{}, providerSpecificData];
+  }
+  return [providerSpecificData || {}, proxyOptions];
+}
+
+function buildCodexHeaders(accessToken, providerSpecificData = {}, extra = {}) {
+  const headers = {
+    "Authorization": `Bearer ${accessToken}`,
+    "Accept": "application/json",
+    "originator": "codex_cli_rs",
+    ...extra,
+  };
+  const accountId = getCodexAccountId(providerSpecificData);
+  if (accountId) headers["ChatGPT-Account-ID"] = accountId;
+  return headers;
 }
 
 function getCodexRateLimitBody(snapshot) {
@@ -80,14 +110,13 @@ function getCodexReviewRateLimit(data) {
   }) || null;
 }
 
-export async function getCodexUsage(accessToken, proxyOptions = null) {
+export async function getCodexUsage(accessToken, providerSpecificData = {}, proxyOptions = null) {
+  [providerSpecificData, proxyOptions] = normalizeCodexUsageArgs(providerSpecificData, proxyOptions);
+
   try {
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
       method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
-      },
+      headers: buildCodexHeaders(accessToken, providerSpecificData),
     }, proxyOptions);
 
     if (!response.ok) {
@@ -120,14 +149,9 @@ export async function getCodexRateLimitResetCredits(accessToken, proxyOptions = 
     throw new Error("No Codex access token available. Please re-authorize the connection.");
   }
 
-  const accountId = getCodexAccountId(providerSpecificData);
-  const headers = {
-    "Authorization": `Bearer ${accessToken}`,
-    "Accept": "application/json",
+  const headers = buildCodexHeaders(accessToken, providerSpecificData, {
     "OpenAI-Beta": "codex-1",
-    "originator": "codex_cli_rs",
-  };
-  if (accountId) headers["ChatGPT-Account-ID"] = accountId;
+  });
 
   const response = await proxyAwareFetch(CODEX_CONFIG.resetCreditsUrl, {
     method: "GET",
