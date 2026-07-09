@@ -26,7 +26,20 @@ export default {
     tokenUrl: "https://auth.x.ai/oauth2/token",
     refreshUrl: "https://auth.x.ai/oauth2/token",
   },
+  transports: [
+    {
+      format: "openai",
+      baseUrl: "https://api.x.ai/v1/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+    {
+      format: "openai-responses",
+      baseUrl: "https://api.x.ai/v1/responses",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+  ],
   models: [
+    { id: "grok-4.5", name: "Grok 4.5" },
     { id: "grok-build-0.1", name: "Grok Build 0.1" },
     { id: "grok-4.3", name: "Grok 4.3" },
     { id: "grok-4.20-0309-reasoning", name: "Grok 4.20 0309 Reasoning" },
@@ -48,5 +61,9 @@ export default {
     defaultModel: "grok-4.20-reasoning",
     endpoint: "https://api.x.ai/v1/responses",
     pricingUrl: "https://x.ai/api#pricing",
+  },
+  thinkingConfig: {
+    options: ["auto", "low", "medium", "high"],
+    defaultMode: "auto",
   },
 };

@@ -3,6 +3,7 @@ import { getModelInfoCore, parseModel, resolveProviderAlias } from "../../open-s
 import { resolveTransport } from "../../open-sse/services/provider.js";
 import { PROVIDER_MODELS } from "../../open-sse/config/providerModels.js";
 import { getPricingForModel } from "../../open-sse/providers/pricing.js";
+import xaiRegistry from "../../open-sse/providers/registry/xai.js";
 
 describe("Grok Build routing", () => {
   it("keeps Grok web cookie path separate from xAI OAuth", () => {
@@ -25,6 +26,7 @@ describe("Grok Build routing", () => {
 
   it("exposes Grok Build in the xAI model catalog", () => {
     expect(PROVIDER_MODELS.xai.map((model) => model.id)).toEqual(expect.arrayContaining([
+      "grok-4.5",
       "grok-build-0.1",
       "grok-4.3",
       "grok-4.20-0309-reasoning",
@@ -37,11 +39,23 @@ describe("Grok Build routing", () => {
     ]));
   });
 
+  it("routes bare current Grok model names to xAI", async () => {
+    await expect(getModelInfoCore("grok-4.5", {})).resolves.toEqual({
+      provider: "xai",
+      model: "grok-4.5",
+    });
+  });
+
   it("routes xAI Responses requests to the native Responses endpoint", () => {
     expect(resolveTransport("xai", "openai-responses")).toMatchObject({
       format: "openai-responses",
       baseUrl: "https://api.x.ai/v1/responses",
     });
+  });
+
+  it("exposes xAI reasoning levels without disabled reasoning", () => {
+    expect(PROVIDER_MODELS.xai.find((model) => model.id === "grok-4.5")).toBeTruthy();
+    expect(xaiRegistry.thinkingConfig.options).toEqual(["auto", "low", "medium", "high"]);
   });
 
   it("uses explicit Grok Build pricing", () => {
