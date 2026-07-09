@@ -76,13 +76,91 @@ const REFRESH_GRANTS = Object.fromEntries(
     })
 );
 
+const XAI_RESPONSES_TOOL_TYPES = new Set([
+  "function",
+  "web_search",
+  "x_search",
+  "collections_search",
+  "file_search",
+  "code_execution",
+  "code_interpreter",
+  "mcp",
+  "shell",
+]);
+
+const XAI_FREEFORM_TOOL_PARAMETERS = {
+  type: "object",
+  properties: {
+    input: { type: "string", description: "Freeform tool input." },
+  },
+  required: ["input"],
+};
+
+function getToolName(tool) {
+  const name = tool?.name || tool?.function?.name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
+function normalizeFunctionParameters(parameters) {
+  if (!parameters) return { type: "object", properties: {} };
+  if (parameters.type === "object" && !parameters.properties) return { ...parameters, properties: {} };
+  return parameters;
+}
+
+function toXaiFunctionTool(tool, parameters = null) {
+  const name = getToolName(tool);
+  if (!name) return null;
+  return {
+    type: "function",
+    name,
+    description: String(tool.description || tool.function?.description || ""),
+    parameters: normalizeFunctionParameters(parameters || tool.parameters || tool.function?.parameters),
+  };
+}
+
+function normalizeXaiResponsesTool(tool) {
+  if (!tool || typeof tool !== "object") return null;
+  if (tool.type === "local_shell") return null;
+  // ponytail: xAI rejects Responses custom tools; wrap as freeform function until xAI supports custom_tool_call.
+  if (tool.type === "custom") return toXaiFunctionTool(tool, XAI_FREEFORM_TOOL_PARAMETERS);
+  if (!XAI_RESPONSES_TOOL_TYPES.has(tool.type)) return toXaiFunctionTool(tool);
+  if (tool.type === "function") return toXaiFunctionTool(tool);
+  return tool;
+}
+
+export function normalizeXaiResponsesTools(body) {
+  if (!Array.isArray(body?.tools)) return body;
+
+  let changed = false;
+  const tools = [];
+  for (const tool of body.tools) {
+    const normalized = normalizeXaiResponsesTool(tool);
+    if (!normalized) {
+      changed = true;
+      continue;
+    }
+    if (normalized !== tool) changed = true;
+    tools.push(normalized);
+  }
+
+  if (!changed) return body;
+  const next = { ...body };
+  if (tools.length > 0) next.tools = tools;
+  else delete next.tools;
+  return next;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
-    const transformed = this.applyJsonSchemaFallback(body);
+  transformRequest(model, body, stream, credentials) {
+    let transformed = this.applyJsonSchemaFallback(body);
+
+    if (this.provider === "xai" && credentials?.runtimeTransport?.format === "openai-responses") {
+      transformed = normalizeXaiResponsesTools(transformed);
+    }
 
     if (transformed && typeof transformed === "object") {
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
