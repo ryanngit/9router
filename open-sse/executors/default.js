@@ -118,6 +118,12 @@ function toXaiFunctionTool(tool, parameters = null) {
   };
 }
 
+function normalizeXaiHostedTool(tool) {
+  if (tool.external_web_access === undefined) return tool;
+  const { external_web_access, ...next } = tool;
+  return next;
+}
+
 function normalizeXaiResponsesTool(tool) {
   if (!tool || typeof tool !== "object") return null;
   if (tool.type === "local_shell") return null;
@@ -125,7 +131,7 @@ function normalizeXaiResponsesTool(tool) {
   if (tool.type === "custom") return toXaiFunctionTool(tool, XAI_FREEFORM_TOOL_PARAMETERS);
   if (!XAI_RESPONSES_TOOL_TYPES.has(tool.type)) return toXaiFunctionTool(tool);
   if (tool.type === "function") return toXaiFunctionTool(tool);
-  return tool;
+  return normalizeXaiHostedTool(tool);
 }
 
 export function normalizeXaiResponsesTools(body) {

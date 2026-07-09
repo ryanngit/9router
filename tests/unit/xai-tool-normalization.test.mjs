@@ -9,6 +9,7 @@ test("xAI Responses tool normalization converts unsupported Codex tools", () => 
       { type: "function", name: "shell_command", parameters: { type: "object" } },
       { type: "custom", name: "apply_patch", description: "patch", format: { type: "grammar" } },
       { type: "local_shell" },
+      { type: "web_search", external_web_access: true },
       { type: "computer", display_width: 1024 },
     ],
   });
@@ -25,5 +26,6 @@ test("xAI Responses tool normalization converts unsupported Codex tools", () => 
         required: ["input"],
       },
     },
+    { type: "web_search" },
   ]);
 });
