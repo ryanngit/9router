@@ -30,7 +30,7 @@ test("xAI Responses tool normalization converts unsupported Codex tools", () => 
   ]);
 });
 
-test("xAI Responses payload normalization strips encrypted reasoning blobs", () => {
+test("xAI Responses payload normalization strips unsupported reasoning blobs", () => {
   const body = normalizeXaiResponsesPayload({
     include: ["reasoning.encrypted_content"],
     input: [
@@ -50,10 +50,6 @@ test("xAI Responses payload normalization strips encrypted reasoning blobs", () 
 
   assert.deepEqual(body, {
     input: [
-      {
-        type: "reasoning",
-        summary: [{ type: "summary_text", text: "kept" }],
-      },
       {
         type: "message",
         role: "user",
@@ -94,5 +90,23 @@ test("xAI executor strips encrypted content from final Responses payload", () =>
       },
     ],
     tools: [{ type: "web_search" }],
+  });
+});
+
+test("xAI Responses payload normalization converts Codex custom tool history", () => {
+  const body = normalizeXaiResponsesPayload({
+    input: [
+      { type: "custom_tool_call", call_id: "call_1", name: "apply_patch", input: "*** Begin Patch" },
+      { type: "custom_tool_call_output", call_id: "call_1", output: [{ type: "text", text: "ok" }] },
+      { type: "function_call_output", call_id: "call_2", output: [{ type: "text", text: "done" }] },
+    ],
+  });
+
+  assert.deepEqual(body, {
+    input: [
+      { type: "function_call", call_id: "call_1", name: "apply_patch", arguments: JSON.stringify({ input: "*** Begin Patch" }) },
+      { type: "function_call_output", call_id: "call_1", output: "ok" },
+      { type: "function_call_output", call_id: "call_2", output: "done" },
+    ],
   });
 });

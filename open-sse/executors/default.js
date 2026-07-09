@@ -182,11 +182,51 @@ function stripEncryptedContent(value) {
   return changed ? next : value;
 }
 
-function hasReasoningText(item) {
-  if (typeof item?.text === "string" && item.text.trim()) return true;
-  if (Array.isArray(item?.summary) && item.summary.some((s) => typeof s?.text === "string" && s.text.trim())) return true;
-  if (Array.isArray(item?.content) && item.content.some((c) => typeof c?.text === "string" && c.text.trim())) return true;
-  return false;
+function stringifyXaiToolOutput(output) {
+  if (typeof output === "string") return output;
+  if (output == null) return "";
+  if (Array.isArray(output)) {
+    return output.map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item?.text === "string") return item.text;
+      if (typeof item?.content === "string") return item.content;
+      return JSON.stringify(item);
+    }).join("");
+  }
+  return JSON.stringify(output);
+}
+
+function normalizeXaiResponsesInputItem(item) {
+  if (!item || typeof item !== "object") return item;
+  if (item.type === "reasoning") return null;
+
+  if (item.type === "function_call_output") {
+    return { ...item, output: stringifyXaiToolOutput(item.output) };
+  }
+
+  if (item.type === "custom_tool_call") {
+    const callId = item.call_id || item.id;
+    const name = getToolName(item);
+    if (!callId || !name) return null;
+    return {
+      type: "function_call",
+      call_id: callId,
+      name,
+      arguments: JSON.stringify({ input: stringifyXaiToolOutput(item.input ?? item.arguments) }),
+    };
+  }
+
+  if (item.type === "custom_tool_call_output") {
+    const callId = item.call_id || item.id;
+    if (!callId) return null;
+    return {
+      type: "function_call_output",
+      call_id: callId,
+      output: stringifyXaiToolOutput(item.output),
+    };
+  }
+
+  return item;
 }
 
 export function normalizeXaiResponsesPayload(body) {
@@ -201,8 +241,18 @@ export function normalizeXaiResponsesPayload(body) {
   }
 
   if (Array.isArray(transformed?.input)) {
-    const input = transformed.input.filter((item) => item?.type !== "reasoning" || hasReasoningText(item));
-    if (input.length !== transformed.input.length) transformed = { ...transformed, input };
+    const input = [];
+    let changed = false;
+    for (const item of transformed.input) {
+      const normalized = normalizeXaiResponsesInputItem(item);
+      if (!normalized) {
+        changed = true;
+        continue;
+      }
+      if (normalized !== item) changed = true;
+      input.push(normalized);
+    }
+    if (changed) transformed = { ...transformed, input };
   }
 
   return transformed;
