@@ -66,4 +66,8 @@ export default {
     options: ["auto", "low", "medium", "high"],
     defaultMode: "auto",
   },
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };

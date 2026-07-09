@@ -268,13 +268,6 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
   }
 }
 
-export async function getXaiUsage() {
-  return {
-    message: "xAI connected. Per-request usage/cost is tracked from API responses; account quota requires xAI Management API credentials.",
-    quotas: {},
-  };
-}
-
 export async function getGrokWebUsage() {
   return {
     message: "Grok Web connected. Subscription quota is not exposed by a stable usage API; local request usage is tracked by 9Router.",
