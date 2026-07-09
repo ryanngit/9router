@@ -156,6 +156,58 @@ export function normalizeXaiResponsesTools(body) {
   return next;
 }
 
+function stripEncryptedContent(value) {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const items = value.map((item) => {
+      const next = stripEncryptedContent(item);
+      if (next !== item) changed = true;
+      return next;
+    });
+    return changed ? items : value;
+  }
+  if (!value || typeof value !== "object") return value;
+
+  let changed = false;
+  const next = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "encrypted_content") {
+      changed = true;
+      continue;
+    }
+    const stripped = stripEncryptedContent(child);
+    if (stripped !== child) changed = true;
+    next[key] = stripped;
+  }
+  return changed ? next : value;
+}
+
+function hasReasoningText(item) {
+  if (typeof item?.text === "string" && item.text.trim()) return true;
+  if (Array.isArray(item?.summary) && item.summary.some((s) => typeof s?.text === "string" && s.text.trim())) return true;
+  if (Array.isArray(item?.content) && item.content.some((c) => typeof c?.text === "string" && c.text.trim())) return true;
+  return false;
+}
+
+export function normalizeXaiResponsesPayload(body) {
+  let transformed = stripEncryptedContent(body);
+
+  if (Array.isArray(transformed?.include) && transformed.include.includes("reasoning.encrypted_content")) {
+    transformed = {
+      ...transformed,
+      include: transformed.include.filter((item) => item !== "reasoning.encrypted_content"),
+    };
+    if (transformed.include.length === 0) delete transformed.include;
+  }
+
+  if (Array.isArray(transformed?.input)) {
+    const input = transformed.input.filter((item) => item?.type !== "reasoning" || hasReasoningText(item));
+    if (input.length !== transformed.input.length) transformed = { ...transformed, input };
+  }
+
+  return transformed;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
@@ -166,6 +218,7 @@ export class DefaultExecutor extends BaseExecutor {
 
     if (this.provider === "xai" && credentials?.runtimeTransport?.format === "openai-responses") {
       transformed = normalizeXaiResponsesTools(transformed);
+      transformed = normalizeXaiResponsesPayload(transformed);
     }
 
     if (transformed && typeof transformed === "object") {
@@ -176,7 +229,8 @@ export class DefaultExecutor extends BaseExecutor {
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
-    return injectReasoningContent({ provider: this.provider, model, body: transformed });
+    transformed = injectReasoningContent({ provider: this.provider, model, body: transformed });
+    return this.provider === "xai" ? normalizeXaiResponsesPayload(transformed) : transformed;
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.

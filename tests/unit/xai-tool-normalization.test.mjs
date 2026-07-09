@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { normalizeXaiResponsesTools } from "../../open-sse/executors/default.js";
+import { DefaultExecutor, normalizeXaiResponsesPayload, normalizeXaiResponsesTools } from "../../open-sse/executors/default.js";
 
 test("xAI Responses tool normalization converts unsupported Codex tools", () => {
   const body = normalizeXaiResponsesTools({
@@ -28,4 +28,71 @@ test("xAI Responses tool normalization converts unsupported Codex tools", () => 
     },
     { type: "web_search" },
   ]);
+});
+
+test("xAI Responses payload normalization strips encrypted reasoning blobs", () => {
+  const body = normalizeXaiResponsesPayload({
+    include: ["reasoning.encrypted_content"],
+    input: [
+      { type: "reasoning", encrypted_content: "blob" },
+      {
+        type: "reasoning",
+        encrypted_content: "blob",
+        summary: [{ type: "summary_text", text: "kept" }],
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "hi", encrypted_content: "nested" }],
+      },
+    ],
+  });
+
+  assert.deepEqual(body, {
+    input: [
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "kept" }],
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "hi" }],
+      },
+    ],
+  });
+});
+
+test("xAI executor strips encrypted content from final Responses payload", () => {
+  const executor = new DefaultExecutor("xai");
+  const body = executor.transformRequest(
+    "grok-4.5",
+    {
+      model: "grok-4.5",
+      input: [
+        { type: "reasoning", encrypted_content: "blob" },
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "hi", encrypted_content: "nested" }],
+        },
+      ],
+      include: ["reasoning.encrypted_content"],
+      tools: [{ type: "web_search", external_web_access: true }],
+    },
+    false,
+    { runtimeTransport: { format: "openai-responses" } },
+  );
+
+  assert.deepEqual(body, {
+    model: "grok-4.5",
+    input: [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "hi" }],
+      },
+    ],
+    tools: [{ type: "web_search" }],
+  });
 });
