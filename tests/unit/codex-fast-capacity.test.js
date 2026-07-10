@@ -12,28 +12,61 @@ function streamFromText(text) {
 }
 
 describe("Codex fast tier and capacity handling", () => {
-  it("maps Codex fast tier to priority and max reasoning to xhigh", () => {
+  it("maps Codex fast tier to priority and preserves max reasoning", () => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest("gpt-5.5", {
       model: "gpt-5.5",
       input: "hi",
-      reasoning_effort: "max",
+      reasoning: { effort: "max" },
       service_tier: "fast",
     }, true, {});
 
     expect(body.service_tier).toBe("priority");
-    expect(body.reasoning.effort).toBe("xhigh");
+    expect(body.reasoning.effort).toBe("max");
   });
 
-  it("uses ChatGPT workspace header fallback", () => {
+  it("removes fast tier from long GPT requests", () => {
     const executor = new CodexExecutor();
-    const headers = executor.buildHeaders({
-      accessToken: "token",
-      connectionId: "conn_1",
-      providerSpecificData: { chatgptAccountId: "acct_1" },
-    });
+    const body = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "word ".repeat(220_000),
+      service_tier: "fast",
+    }, true, {});
 
-    expect(headers["ChatGPT-Account-ID"]).toBe("acct_1");
+    expect(body.service_tier).toBeUndefined();
+  });
+
+  it("removes direct priority tier from long GPT requests", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "word ".repeat(220_000),
+      service_tier: "priority",
+    }, true, {});
+
+    expect(body.service_tier).toBeUndefined();
+  });
+
+  it("counts whitespace-heavy long input conservatively", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: `x${" ".repeat(1_024_000)}`,
+      service_tier: "fast",
+    }, true, {});
+
+    expect(body.service_tier).toBeUndefined();
+  });
+
+  it("leaves non-GPT priority requests unchanged", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("claude-opus-4.8", {
+      model: "claude-opus-4.8",
+      input: "word ".repeat(220_000),
+      service_tier: "priority",
+    }, true, {});
+
+    expect(body.service_tier).toBe("priority");
   });
 
   it("classifies 200-SSE model capacity as account fallback", async () => {

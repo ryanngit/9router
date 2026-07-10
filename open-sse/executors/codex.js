@@ -23,6 +23,9 @@ const CODEX_SSE_USER_OUTPUT_PATTERNS = [
 ];
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
+const CODEX_PRIORITY_SHORT_CONTEXT_LIMIT = 272_000;
+const CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT = 256_000;
+const CODEX_TOKEN_PART_PATTERN = /[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_]/g;
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -124,8 +127,22 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
-function normalizeReasoningEffort(value) {
-  return value === "max" ? "xhigh" : value;
+function estimateCodexInputTokens(body, stopAt = Number.POSITIVE_INFINITY) {
+  let json;
+  try {
+    json = JSON.stringify(body);
+  } catch {
+    return 0;
+  }
+
+  // ponytail: Codex sends no input-token count; replace this lexical estimate when one becomes available.
+  let tokens = 0;
+  for (const match of json.matchAll(CODEX_TOKEN_PART_PATTERN)) {
+    const part = match[0];
+    tokens += /^[A-Za-z0-9_\s]/.test(part) ? Math.ceil(part.length / 4) : 1;
+    if (tokens >= stopAt) return tokens;
+  }
+  return tokens;
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -427,7 +444,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -440,11 +457,10 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
+      const effort = body.reasoning_effort || modelEffort || 'low';
       body.reasoning = { effort, summary: "auto" };
-    } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
-      if (!body.reasoning.summary) body.reasoning.summary = "auto";
+    } else if (!body.reasoning.summary) {
+      body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;
 
@@ -473,6 +489,15 @@ export class CodexExecutor extends BaseExecutor {
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
 
     if (body.service_tier === "fast") body.service_tier = "priority";
+    if (body.service_tier === "priority" && /^gpt-/.test(body.model)) {
+      const estimatedInputTokens = estimateCodexInputTokens(body, CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT);
+      if (estimatedInputTokens >= CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT) {
+        delete body.service_tier;
+        console.log(
+          `[Codex] Priority disabled for long context | estimated_input>=${CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT} | short_limit=${CODEX_PRIORITY_SHORT_CONTEXT_LIMIT}`,
+        );
+      }
+    }
     if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
 
     // Final allowlist filter — strip any unknown field that could trigger upstream "routing_unsupported"
