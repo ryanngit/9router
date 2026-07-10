@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MODEL_PRICING,
+  calculateCostBreakdownFromTokens,
   calculateCostFromTokens,
   getPricingForModel,
   resolvePricingForTokens,
@@ -13,6 +14,9 @@ import {
 
 describe("current model pricing", () => {
   it("contains exact published target model rates", () => {
+    expect(MODEL_PRICING["gpt-5.5"]).toMatchObject({
+      input: 5, cached: 0.5, cache_creation: 5, output: 30,
+    });
     expect(MODEL_PRICING["gpt-5.6-sol"]).toMatchObject({
       input: 5, cached: 0.5, cache_creation: 6.25, output: 30,
     });
@@ -31,6 +35,26 @@ describe("current model pricing", () => {
     expect(MODEL_PRICING["claude-opus-4.8"]).toMatchObject({
       input: 5, cached: 0.5, cache_creation: 6.25, output: 25,
     });
+  });
+
+  it("selects exact GPT-5.5 tier and context rates", () => {
+    const pricing = getPricingForModel("codex", "gpt-5.5");
+    expect(resolvePricingForTokens(pricing, {
+      prompt_tokens: 1000,
+      service_tier: "default",
+    })).toMatchObject({ input: 5, cached: 0.5, cache_creation: 5, output: 30 });
+    expect(resolvePricingForTokens(pricing, {
+      prompt_tokens: 272001,
+      service_tier: "default",
+    })).toMatchObject({ input: 10, cached: 1, cache_creation: 10, output: 45 });
+    expect(resolvePricingForTokens(pricing, {
+      prompt_tokens: 1000,
+      service_tier: "flex",
+    })).toMatchObject({ input: 2.5, cached: 0.25, cache_creation: 2.5, output: 15 });
+    expect(resolvePricingForTokens(pricing, {
+      prompt_tokens: 272001,
+      service_tier: "fast",
+    })).toMatchObject({ input: 12.5, cached: 1.25, cache_creation: 12.5, output: 75 });
   });
 
   it("selects exact GPT-5.6 tier and context rates", () => {
@@ -85,6 +109,15 @@ describe("current model pricing", () => {
       input_tokens_details: { cached_tokens: 800, cache_write_tokens: 100 },
       output_tokens_details: { reasoning_tokens: 40 },
     }, pricing)).toBeCloseTo(expected, 12);
+
+    const breakdown = calculateCostBreakdownFromTokens(tokens, pricing);
+    expect(breakdown.uncachedInputCost).toBeCloseTo(100 * 5 / 1_000_000, 12);
+    expect(breakdown.cachedInputCost).toBeCloseTo(800 * 0.5 / 1_000_000, 12);
+    expect(breakdown.cacheCreationCost).toBeCloseTo(100 * 6.25 / 1_000_000, 12);
+    expect(breakdown.outputCost).toBeCloseTo(50 * 30 / 1_000_000, 12);
+    expect(breakdown.reasoningCost).toBeCloseTo(40 * 30 / 1_000_000, 12);
+    expect(breakdown.visibleOutputCost).toBeCloseTo(10 * 30 / 1_000_000, 12);
+    expect(breakdown.totalCost).toBeCloseTo(expected, 12);
   });
 
   it("uses xAI exact cost ticks and static long-context fallback", () => {
@@ -95,6 +128,18 @@ describe("current model pricing", () => {
       cached_tokens: 128,
       cost_in_usd_ticks: 22_940_000,
     }, pricing)).toBeCloseTo(0.002294, 12);
+    const exactBreakdown = calculateCostBreakdownFromTokens({
+      prompt_tokens: 904,
+      completion_tokens: 113,
+      cached_tokens: 128,
+      cost_in_usd_ticks: 22_940_000,
+    }, pricing);
+    expect(exactBreakdown.totalCost).toBeCloseTo(0.002294, 12);
+    expect(
+      exactBreakdown.inputCost +
+      exactBreakdown.outputCost +
+      exactBreakdown.unallocatedCost
+    ).toBeCloseTo(exactBreakdown.totalCost, 12);
 
     const staticExpected = ((776 * 2) + (128 * 0.5) + (113 * 6)) / 1_000_000;
     expect(calculateCostFromTokens({

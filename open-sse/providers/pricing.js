@@ -56,6 +56,24 @@ export const MODEL_PRICING = {
   "gpt-5.3-codex":                { input: 1.75,  output: 14.00, cached: 0.175, reasoning: 14.00,  cache_creation: 1.75  },
   "gpt-5.3-codex-spark":         { input: 3.00,  output: 12.00, cached: 0.30,  reasoning: 12.00,  cache_creation: 3.00  },
   "gpt-5.6":                      { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  },
+  "gpt-5.5":                     {
+    input: 5.00, output: 30.00, cached: 0.50, reasoning: 30.00, cache_creation: 5.00,
+    long_context: { threshold: 272000, input: 10.00, output: 45.00, cached: 1.00, reasoning: 45.00, cache_creation: 10.00 },
+    service_tiers: {
+      batch: {
+        input: 2.50, output: 15.00, cached: 0.25, reasoning: 15.00, cache_creation: 2.50,
+        long_context: { threshold: 272000, input: 5.00, output: 22.50, cached: 0.50, reasoning: 22.50, cache_creation: 5.00 },
+      },
+      flex: {
+        input: 2.50, output: 15.00, cached: 0.25, reasoning: 15.00, cache_creation: 2.50,
+        long_context: { threshold: 272000, input: 5.00, output: 22.50, cached: 0.50, reasoning: 22.50, cache_creation: 5.00 },
+      },
+      priority: {
+        input: 12.50, output: 75.00, cached: 1.25, reasoning: 75.00, cache_creation: 12.50,
+        long_context: null,
+      },
+    },
+  },
   "gpt-5.6-sol":                 {
     input: 5.00, output: 30.00, cached: 0.50, reasoning: 30.00, cache_creation: 6.25,
     long_context: { threshold: 272000, input: 10.00, output: 45.00, cached: 1.00, reasoning: 45.00, cache_creation: 12.50 },
@@ -226,11 +244,12 @@ export const PATTERN_PRICING = [
 
   // --- GPT (specific first, generic last) ---
   { pattern: "gpt-5.6-*",       pricing: { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  } },
-  { pattern: "gpt-5.3-*",       pricing: { input: 1.75,  output: 14.00, cached: 0.175, reasoning: 14.00,  cache_creation: 1.75  } },
-  { pattern: "gpt-5.2-*",       pricing: { input: 1.75,  output: 14.00, cached: 0.175, reasoning: 14.00,  cache_creation: 1.75  } },
-  { pattern: "gpt-5.1-*",       pricing: { input: 1.25,  output: 10.00, cached: 0.625, reasoning: 10.00,  cache_creation: 1.25  } },
-  { pattern: "gpt-5-*",         pricing: { input: 1.25,  output: 10.00, cached: 0.625, reasoning: 10.00,  cache_creation: 1.25  } },
-  { pattern: "gpt-5*",          pricing: { input: 1.25,  output: 10.00, cached: 0.625, reasoning: 10.00,  cache_creation: 1.25  } },
+  { pattern: "gpt-5.5*",        pricing: MODEL_PRICING["gpt-5.5"] },
+  { pattern: "gpt-5.3-*",       pricing: { input: 6.00,  output: 24.00, cached: 3.00,  reasoning: 36.00,  cache_creation: 6.00  } },
+  { pattern: "gpt-5.2-*",       pricing: { input: 5.00,  output: 20.00, cached: 2.50,  reasoning: 30.00,  cache_creation: 5.00  } },
+  { pattern: "gpt-5.1-*",       pricing: { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  } },
+  { pattern: "gpt-5-*",         pricing: { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  } },
+  { pattern: "gpt-5*",          pricing: { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  } },
   { pattern: "gpt-4o-*",        pricing: { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.90,   cache_creation: 0.15  } },
   { pattern: "gpt-4o",          pricing: { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  } },
   { pattern: "gpt-4*",          pricing: { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  } },
@@ -409,41 +428,96 @@ export function resolvePricingForTokens(pricing, tokens = {}) {
  * @returns {number} cost in dollars
  */
 export function calculateCostFromTokens(tokens, pricing) {
-  if (!tokens || !pricing) return 0;
-  const directCost = tokens.cost_usd ?? tokens.cost_in_usd;
-  if (Number.isFinite(Number(directCost))) return Number(directCost);
+  return calculateCostBreakdownFromTokens(tokens, pricing).totalCost;
+}
 
+/**
+ * Calculate rate-weighted cost components. Provider-reported exact totals scale
+ * estimated components so displayed columns still sum to the trusted total.
+ */
+export function calculateCostBreakdownFromTokens(tokens, pricing) {
+  if (!tokens || !pricing) {
+    return {
+      promptTokens: 0,
+      completionTokens: 0,
+      uncachedPromptTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      reasoningTokens: 0,
+      inputCost: 0,
+      uncachedInputCost: 0,
+      cachedInputCost: 0,
+      cacheCreationCost: 0,
+      outputCost: 0,
+      visibleOutputCost: 0,
+      reasoningCost: 0,
+      unallocatedCost: 0,
+      totalCost: 0,
+      cacheSavings: 0,
+    };
+  }
+  const directCost = tokens.cost_usd ?? tokens.cost_in_usd;
+  let exactCost = Number.isFinite(Number(directCost)) ? Number(directCost) : null;
   const costTicks = Number(tokens.cost_in_usd_ticks);
-  if (Number.isFinite(costTicks)) {
+  if (exactCost === null && Number.isFinite(costTicks)) {
     const tickScale = Number(pricing.cost_tick_scale) || 1e10;
-    return costTicks / tickScale;
+    exactCost = costTicks / tickScale;
   }
 
   const resolved = resolvePricingForTokens(pricing, tokens);
   const { uncachedInput, cacheRead, cacheWrite } = getInputTokenBuckets(tokens);
-  let cost = uncachedInput * ((resolved.input || 0) / 1000000);
-
-  if (cacheRead > 0) {
-    cost += cacheRead * ((resolved.cached ?? resolved.input ?? 0) / 1000000);
-  }
-
-  if (cacheWrite > 0) {
-    cost += cacheWrite * ((resolved.cache_creation ?? resolved.input ?? 0) / 1000000);
-  }
+  let uncachedInputCost = uncachedInput * ((resolved.input || 0) / 1000000);
+  let cachedInputCost = cacheRead * ((resolved.cached ?? resolved.input ?? 0) / 1000000);
+  let cacheCreationCost = cacheWrite * ((resolved.cache_creation ?? resolved.input ?? 0) / 1000000);
 
   const outputTokens = readPositiveNumber(tokens.completion_tokens, tokens.output_tokens);
-  cost += outputTokens * ((resolved.output || 0) / 1000000);
+  const reasoningTokens = readPositiveNumber(
+    tokens.reasoning_tokens,
+    tokens.output_tokens_details?.reasoning_tokens,
+    tokens.completion_tokens_details?.reasoning_tokens,
+  );
+  const visibleOutputTokens = resolved.reasoning_billed_separately === true
+    ? outputTokens
+    : Math.max(0, outputTokens - reasoningTokens);
+  let visibleOutputCost = visibleOutputTokens * ((resolved.output || 0) / 1000000);
+  let reasoningCost = reasoningTokens * (
+    resolved.reasoning_billed_separately === true
+      ? ((resolved.reasoning ?? resolved.output ?? 0) / 1000000)
+      : ((resolved.output || 0) / 1000000)
+  );
 
   // OpenAI-compatible output token totals include reasoning tokens. Providers
   // with exclusive reasoning counts must opt in explicitly.
-  if (resolved.reasoning_billed_separately === true) {
-    const reasoningTokens = readPositiveNumber(
-      tokens.reasoning_tokens,
-      tokens.output_tokens_details?.reasoning_tokens,
-      tokens.completion_tokens_details?.reasoning_tokens,
-    );
-    cost += reasoningTokens * ((resolved.reasoning ?? resolved.output ?? 0) / 1000000);
+  let cacheSavings = cacheRead * Math.max(0, (resolved.input || 0) - (resolved.cached ?? resolved.input ?? 0)) / 1000000;
+  const estimatedCost = uncachedInputCost + cachedInputCost + cacheCreationCost + visibleOutputCost + reasoningCost;
+  if (exactCost !== null && estimatedCost > 0) {
+    const scale = exactCost / estimatedCost;
+    uncachedInputCost *= scale;
+    cachedInputCost *= scale;
+    cacheCreationCost *= scale;
+    visibleOutputCost *= scale;
+    reasoningCost *= scale;
+    cacheSavings *= scale;
   }
 
-  return cost;
+  const inputCost = uncachedInputCost + cachedInputCost + cacheCreationCost;
+  const outputCost = visibleOutputCost + reasoningCost;
+  return {
+    promptTokens: uncachedInput + cacheRead + cacheWrite,
+    completionTokens: outputTokens,
+    uncachedPromptTokens: uncachedInput,
+    cacheReadTokens: cacheRead,
+    cacheCreationTokens: cacheWrite,
+    reasoningTokens,
+    inputCost,
+    uncachedInputCost,
+    cachedInputCost,
+    cacheCreationCost,
+    outputCost,
+    visibleOutputCost,
+    reasoningCost,
+    unallocatedCost: exactCost !== null && estimatedCost === 0 ? exactCost : 0,
+    totalCost: exactCost ?? estimatedCost,
+    cacheSavings,
+  };
 }

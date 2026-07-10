@@ -51,6 +51,11 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     expect(stats.totalPromptTokens).toBe(330);
     expect(stats.byProvider.anthropic.cachedTokens).toBe(200);
     expect(stats.byProvider.anthropic.cacheCreationTokens).toBe(30);
+    expect(stats.byProvider.anthropic.inputCost).toBeCloseTo(100 * 3 / 1_000_000, 12);
+    expect(stats.byProvider.anthropic.cachedCost).toBeCloseTo(200 * 0.3 / 1_000_000, 12);
+    expect(stats.byProvider.anthropic.cacheCreationCost).toBeCloseTo(30 * 3.75 / 1_000_000, 12);
+    expect(stats.byProvider.anthropic.outputCost).toBeCloseTo(50 * 15 / 1_000_000, 12);
+    expect(stats.byProvider.anthropic.costBreakdownRequests).toBe(1);
     expect(Object.values(stats.byModel)[0].cacheCreationTokens).toBe(30);
 
     // Cost: nonCached=330-200-30=100 @3 + cached 200 @0.30 + creation 30 @3.75 + output 50 @15
@@ -60,6 +65,7 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     expect(hist[0].cost).toBeCloseTo(expected, 12);
     expect(hist[0].tokens.cached_tokens).toBe(200);
     expect(hist[0].tokens.cache_creation_input_tokens).toBe(30);
+    expect(hist[0].tokens.cost_breakdown.totalCost).toBeCloseTo(expected, 12);
   });
 
   it("OpenAI cache usage: inclusive prompt passes through, cached counted once", async () => {
