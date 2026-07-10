@@ -121,7 +121,7 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
 
   it("trusts provider-reported dollar cost when available", () => {
     expect(calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50, cost_in_usd: 0.123 }, pricing)).toBe(0.123);
-    expect(calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50, cost_in_usd_ticks: 123000000000 }, pricing)).toBe(0.123);
+    expect(calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50, cost_in_usd_ticks: 1230000000 }, pricing)).toBe(0.123);
   });
 });
 

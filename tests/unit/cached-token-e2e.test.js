@@ -47,8 +47,11 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
 
     const stats = await db.getUsageStats("24h");
     expect(stats.totalCachedTokens).toBe(200);
+    expect(stats.totalCacheCreationTokens).toBe(30);
     expect(stats.totalPromptTokens).toBe(330);
     expect(stats.byProvider.anthropic.cachedTokens).toBe(200);
+    expect(stats.byProvider.anthropic.cacheCreationTokens).toBe(30);
+    expect(Object.values(stats.byModel)[0].cacheCreationTokens).toBe(30);
 
     // Cost: nonCached=330-200-30=100 @3 + cached 200 @0.30 + creation 30 @3.75 + output 50 @15
     const expected = (100 * 3 + 200 * 0.3 + 30 * 3.75 + 50 * 15) / 1_000_000;

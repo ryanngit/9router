@@ -29,6 +29,12 @@ export const MODEL_PRICING = {
   "claude-opus-4-5-thinking":     { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 37.50,  cache_creation: 5.00  },
   "claude-opus-4-6-thinking":     { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 37.50,  cache_creation: 5.00  },
   "claude-fable-5":               { input: 10.00, output: 50.00, cached: 1.00,  reasoning: 50.00,  cache_creation: 12.50 },
+  "claude-opus-4.8":              {
+    input: 5.00, output: 25.00, cached: 0.50, reasoning: 25.00, cache_creation: 6.25,
+    service_tiers: {
+      fast: { input: 10.00, output: 50.00, cached: 1.00, reasoning: 50.00, cache_creation: 12.50 },
+    },
+  },
 
   // === OpenAI / GPT ===
   "gpt-3.5-turbo":                { input: 0.50,  output: 1.50,  cached: 0.25,  reasoning: 2.25,   cache_creation: 0.50  },
@@ -50,9 +56,60 @@ export const MODEL_PRICING = {
   "gpt-5.3-codex":                { input: 1.75,  output: 14.00, cached: 0.175, reasoning: 14.00,  cache_creation: 1.75  },
   "gpt-5.3-codex-spark":         { input: 3.00,  output: 12.00, cached: 0.30,  reasoning: 12.00,  cache_creation: 3.00  },
   "gpt-5.6":                      { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  },
-  "gpt-5.6-luna":                 { input: 1.00,  output: 6.00,  cached: 0.10,  reasoning: 6.00,   cache_creation: 1.00  },
-  "gpt-5.6-terra":                { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  },
-  "gpt-5.6-sol":                  { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 30.00,  cache_creation: 5.00  },
+  "gpt-5.6-sol":                 {
+    input: 5.00, output: 30.00, cached: 0.50, reasoning: 30.00, cache_creation: 6.25,
+    long_context: { threshold: 272000, input: 10.00, output: 45.00, cached: 1.00, reasoning: 45.00, cache_creation: 12.50 },
+    service_tiers: {
+      batch: {
+        input: 2.50, output: 15.00, cached: 0.25, reasoning: 15.00, cache_creation: 3.125,
+        long_context: { threshold: 272000, input: 5.00, output: 22.50, cached: 0.50, reasoning: 22.50, cache_creation: 6.25 },
+      },
+      flex: {
+        input: 2.50, output: 15.00, cached: 0.25, reasoning: 15.00, cache_creation: 3.125,
+        long_context: { threshold: 272000, input: 5.00, output: 22.50, cached: 0.50, reasoning: 22.50, cache_creation: 6.25 },
+      },
+      priority: {
+        input: 10.00, output: 60.00, cached: 1.00, reasoning: 60.00, cache_creation: 12.50,
+        long_context: null,
+      },
+    },
+  },
+  "gpt-5.6-terra":               {
+    input: 2.50, output: 15.00, cached: 0.25, reasoning: 15.00, cache_creation: 3.125,
+    long_context: { threshold: 272000, input: 5.00, output: 22.50, cached: 0.50, reasoning: 22.50, cache_creation: 6.25 },
+    service_tiers: {
+      batch: {
+        input: 1.25, output: 7.50, cached: 0.125, reasoning: 7.50, cache_creation: 1.5625,
+        long_context: { threshold: 272000, input: 2.50, output: 11.25, cached: 0.25, reasoning: 11.25, cache_creation: 3.125 },
+      },
+      flex: {
+        input: 1.25, output: 7.50, cached: 0.125, reasoning: 7.50, cache_creation: 1.5625,
+        long_context: { threshold: 272000, input: 2.50, output: 11.25, cached: 0.25, reasoning: 11.25, cache_creation: 3.125 },
+      },
+      priority: {
+        input: 5.00, output: 30.00, cached: 0.50, reasoning: 30.00, cache_creation: 6.25,
+        long_context: null,
+      },
+    },
+  },
+  "gpt-5.6-luna":                {
+    input: 1.00, output: 6.00, cached: 0.10, reasoning: 6.00, cache_creation: 1.25,
+    long_context: { threshold: 272000, input: 2.00, output: 9.00, cached: 0.20, reasoning: 9.00, cache_creation: 2.50 },
+    service_tiers: {
+      batch: {
+        input: 0.50, output: 3.00, cached: 0.05, reasoning: 3.00, cache_creation: 0.625,
+        long_context: { threshold: 272000, input: 1.00, output: 4.50, cached: 0.10, reasoning: 4.50, cache_creation: 1.25 },
+      },
+      flex: {
+        input: 0.50, output: 3.00, cached: 0.05, reasoning: 3.00, cache_creation: 0.625,
+        long_context: { threshold: 272000, input: 1.00, output: 4.50, cached: 0.10, reasoning: 4.50, cache_creation: 1.25 },
+      },
+      priority: {
+        input: 2.00, output: 12.00, cached: 0.20, reasoning: 12.00, cache_creation: 2.50,
+        long_context: null,
+      },
+    },
+  },
   "o1":                           { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 },
   "o1-mini":                      { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
 
@@ -107,6 +164,11 @@ export const MODEL_PRICING = {
   // === Grok ===
   "grok-build-0.1":               { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
   "grok-code-fast-1":             { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
+  "grok-4.5":                     {
+    input: 2.00, output: 6.00, cached: 0.50, reasoning: 6.00, cache_creation: 2.00,
+    cost_tick_scale: 1e10,
+    long_context: { threshold: 200000, input: 4.00, output: 12.00, cached: 1.00, reasoning: 12.00, cache_creation: 4.00 },
+  },
 
   // === OpenRouter fallback ===
   "auto":                         { input: 2.00,  output: 8.00,  cached: 1.00,  reasoning: 12.00,  cache_creation: 2.00  },
@@ -266,7 +328,78 @@ export function getDefaultPricing() {
  */
 export function formatCost(cost) {
   if (cost === null || cost === undefined || isNaN(cost)) return "$0.00";
-  return `$${cost.toFixed(2)}`;
+  const value = Number(cost || 0);
+  if (!Number.isFinite(value) || value === 0) return "$0.00";
+  const abs = Math.abs(value);
+  if (abs < 0.0001) return `$${value.toFixed(6)}`;
+  if (abs < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}
+
+function readPositiveNumber(...values) {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  return 0;
+}
+
+function getInputTokenBuckets(tokens) {
+  const reportedInput = readPositiveNumber(tokens.prompt_tokens, tokens.input_tokens);
+  const cacheRead = readPositiveNumber(
+    tokens.cached_tokens,
+    tokens.cache_read_input_tokens,
+    tokens.input_tokens_details?.cached_tokens,
+    tokens.prompt_tokens_details?.cached_tokens,
+  );
+  const cacheWrite = readPositiveNumber(
+    tokens.cache_creation_input_tokens,
+    tokens.cache_write_input_tokens,
+    tokens.input_tokens_details?.cache_write_tokens,
+    tokens.input_tokens_details?.cache_creation_tokens,
+    tokens.prompt_tokens_details?.cache_write_tokens,
+    tokens.prompt_tokens_details?.cache_creation_tokens,
+  );
+  const inputIncludesCache = tokens.prompt_tokens !== undefined ||
+    tokens.cached_tokens !== undefined ||
+    tokens.input_tokens_details !== undefined ||
+    tokens.prompt_tokens_details !== undefined ||
+    tokens.input_tokens_include_cache === true;
+
+  return {
+    totalInput: inputIncludesCache ? reportedInput : reportedInput + cacheRead + cacheWrite,
+    uncachedInput: inputIncludesCache ? Math.max(0, reportedInput - cacheRead - cacheWrite) : reportedInput,
+    cacheRead,
+    cacheWrite,
+  };
+}
+
+/**
+ * Resolve service-tier and long-context rates for one request.
+ */
+export function resolvePricingForTokens(pricing, tokens = {}) {
+  if (!pricing) return null;
+
+  const requestedTier = String(tokens.service_tier || "").toLowerCase();
+  const tierPricing = pricing.service_tiers?.[requestedTier] ||
+    (requestedTier === "fast" ? pricing.service_tiers?.priority : null);
+  const tierHasLongContext = tierPricing &&
+    Object.prototype.hasOwnProperty.call(tierPricing, "long_context");
+  let resolved = tierPricing
+    ? {
+        ...pricing,
+        ...tierPricing,
+        long_context: tierHasLongContext ? tierPricing.long_context : pricing.long_context,
+      }
+    : pricing;
+
+  const { totalInput } = getInputTokenBuckets(tokens);
+  const longContext = resolved.long_context;
+  if (longContext && totalInput > Number(longContext.threshold || Infinity)) {
+    resolved = { ...resolved, ...longContext };
+  }
+
+  return resolved;
 }
 
 /**
@@ -279,33 +412,37 @@ export function calculateCostFromTokens(tokens, pricing) {
   if (!tokens || !pricing) return 0;
   const directCost = tokens.cost_usd ?? tokens.cost_in_usd;
   if (Number.isFinite(Number(directCost))) return Number(directCost);
-  if (Number.isFinite(Number(tokens.cost_in_usd_ticks))) return Number(tokens.cost_in_usd_ticks) / 1_000_000_000_000;
 
-  let cost = 0;
-
-  const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-  const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
-  const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
-  // prompt_tokens is cache-inclusive (see canonicalizeUsage): cached + cache_creation
-  // are subsets, so subtract both to avoid charging them at the full input rate.
-  const nonCachedInput = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
-
-  cost += nonCachedInput * (pricing.input / 1000000);
-
-  if (cachedTokens > 0) {
-    cost += cachedTokens * ((pricing.cached || pricing.input) / 1000000);
+  const costTicks = Number(tokens.cost_in_usd_ticks);
+  if (Number.isFinite(costTicks)) {
+    const tickScale = Number(pricing.cost_tick_scale) || 1e10;
+    return costTicks / tickScale;
   }
 
-  const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-  cost += outputTokens * (pricing.output / 1000000);
+  const resolved = resolvePricingForTokens(pricing, tokens);
+  const { uncachedInput, cacheRead, cacheWrite } = getInputTokenBuckets(tokens);
+  let cost = uncachedInput * ((resolved.input || 0) / 1000000);
 
-  const reasoningTokens = tokens.reasoning_tokens || 0;
-  if (reasoningTokens > 0) {
-    cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
+  if (cacheRead > 0) {
+    cost += cacheRead * ((resolved.cached ?? resolved.input ?? 0) / 1000000);
   }
 
-  if (cacheCreationTokens > 0) {
-    cost += cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000);
+  if (cacheWrite > 0) {
+    cost += cacheWrite * ((resolved.cache_creation ?? resolved.input ?? 0) / 1000000);
+  }
+
+  const outputTokens = readPositiveNumber(tokens.completion_tokens, tokens.output_tokens);
+  cost += outputTokens * ((resolved.output || 0) / 1000000);
+
+  // OpenAI-compatible output token totals include reasoning tokens. Providers
+  // with exclusive reasoning counts must opt in explicitly.
+  if (resolved.reasoning_billed_separately === true) {
+    const reasoningTokens = readPositiveNumber(
+      tokens.reasoning_tokens,
+      tokens.output_tokens_details?.reasoning_tokens,
+      tokens.completion_tokens_details?.reasoning_tokens,
+    );
+    cost += reasoningTokens * ((resolved.reasoning ?? resolved.output ?? 0) / 1000000);
   }
 
   return cost;

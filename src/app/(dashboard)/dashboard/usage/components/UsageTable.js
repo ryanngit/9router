@@ -6,7 +6,14 @@ import Card from "@/shared/components/Card";
 import Badge from "@/shared/components/Badge";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
-const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+const fmtCost = (n) => {
+  const value = Number(n || 0);
+  if (!Number.isFinite(value) || value === 0) return "$0.00";
+  const abs = Math.abs(value);
+  if (abs < 0.0001) return `$${value.toFixed(6)}`;
+  if (abs < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+};
 
 function fmtTime(iso) {
   if (!iso) return "Never";
