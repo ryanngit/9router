@@ -10,6 +10,7 @@ vi.mock("@/lib/db/driver.js", () => ({
 
 const { getXaiUsage } = await import("../../open-sse/services/usage/xai.js");
 const { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } = await import("../../src/shared/constants/providers.js");
+const { parseQuotaData } = await import("../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js");
 
 describe("xAI local usage", () => {
   beforeEach(() => {
@@ -54,5 +55,24 @@ describe("xAI local usage", () => {
   it("makes xAI eligible for the quota tracker", () => {
     expect(USAGE_SUPPORTED_PROVIDERS).toContain("xai");
     expect(USAGE_APIKEY_PROVIDERS).toContain("xai");
+  });
+
+  it("preserves xAI local usage percentages in quota rows", () => {
+    expect(parseQuotaData("xai", {
+      quotas: {
+        "Today tokens": {
+          used: 130,
+          total: 0,
+          remainingPercentage: 100,
+          resetAt: "2026-07-11T00:00:00.000Z",
+        },
+      },
+    })).toEqual([{
+      name: "Today tokens",
+      used: 130,
+      total: 0,
+      resetAt: "2026-07-11T00:00:00.000Z",
+      remainingPercentage: 100,
+    }]);
   });
 });

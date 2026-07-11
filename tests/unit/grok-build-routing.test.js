@@ -46,6 +46,23 @@ describe("Grok Build routing", () => {
     });
   });
 
+  it("applies local bare-model aliases without overriding configured aliases", async () => {
+    await expect(getModelInfoCore("gpt-5.6-sol", {})).resolves.toEqual({
+      provider: "codex",
+      model: "gpt-5.6-sol",
+    });
+    await expect(getModelInfoCore("claude-opus-4.8", {})).resolves.toEqual({
+      provider: "github",
+      model: "claude-opus-4.8",
+    });
+    await expect(getModelInfoCore("gpt-5.6-sol", {
+      "gpt-5.6-sol": "openai/gpt-5.6-sol",
+    })).resolves.toEqual({
+      provider: "openai",
+      model: "gpt-5.6-sol",
+    });
+  });
+
   it("routes xAI Responses requests to the native Responses endpoint", () => {
     expect(resolveTransport("xai", "openai-responses")).toMatchObject({
       format: "openai-responses",

@@ -147,6 +147,15 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
+function normalizeReasoningEffort(value, model) {
+  if (/^gpt-5\.6(?:-|$)/.test(model || "") && value === "xhigh") return "max";
+  return value;
+}
+
+function defaultReasoningEffortForModel(model) {
+  return /^gpt-5\.6(?:-|$)/.test(model || "") ? "max" : "low";
+}
+
 function estimateCodexInputTokens(body, stopAt = Number.POSITIVE_INFINITY) {
   let json;
   try {
@@ -499,7 +508,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -510,13 +519,21 @@ export class CodexExecutor extends BaseExecutor {
       }
     }
 
-    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
+    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > model default
+    const effort = normalizeReasoningEffort(
+      body.reasoning?.effort ||
+        body.reasoning_effort ||
+        modelEffort ||
+        defaultReasoningEffortForModel(body.model),
+      body.model,
+    );
     if (!body.reasoning) {
-      const effort = body.reasoning_effort || modelEffort || 'low';
       body.reasoning = { effort, summary: "auto" };
-    } else if (!body.reasoning.summary) {
-      body.reasoning.summary = "auto";
+    } else {
+      body.reasoning.effort = effort;
+      if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
+    if (responsesLite) body.reasoning.context = "all_turns";
     delete body.reasoning_effort;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)

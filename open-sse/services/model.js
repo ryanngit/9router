@@ -17,6 +17,14 @@ for (const entry of REGISTRY) {
   for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
 }
 
+const BUILTIN_MODEL_ALIASES = {
+  "gpt-5.6-sol": "cx/gpt-5.6-sol",
+  "gpt-5.6-terra": "cx/gpt-5.6-terra",
+  "gpt-5.6-luna": "cx/gpt-5.6-luna",
+  "claude-opus-4.8": "gh/claude-opus-4.8",
+  "claude-fable-5": "gh/claude-fable-5",
+};
+
 /**
  * Resolve provider alias to provider ID
  */
@@ -104,7 +112,9 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
       : aliasesOrGetter;
 
   // Resolve alias
-  const resolved = resolveModelAliasFromMap(parsed.model, aliases);
+  const resolved =
+    resolveModelAliasFromMap(parsed.model, aliases) ||
+    resolveModelAliasFromMap(parsed.model, BUILTIN_MODEL_ALIASES);
   if (resolved) {
     return resolved;
   }

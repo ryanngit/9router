@@ -41,7 +41,7 @@ describe("CodexExecutor tool normalization", () => {
         { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
       ],
       parallel_tool_calls: false,
-      reasoning: { effort: "max", summary: "auto", context: "all_turns" },
+      reasoning: { effort: "max", summary: "auto" },
       stream: true,
     };
 
@@ -70,7 +70,7 @@ describe("CodexExecutor tool normalization", () => {
       model: "gpt-5.6-sol",
       input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
       parallel_tool_calls: false,
-      reasoning: { effort: "max", summary: "auto", context: "all_turns" },
+      reasoning: { effort: "max", summary: "auto", context: "current_turn" },
       stream: true,
       store: false,
       include: ["reasoning.encrypted_content"],

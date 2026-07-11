@@ -69,6 +69,33 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.service_tier).toBe("priority");
   });
 
+  it("normalizes GPT-5.6 reasoning to max without changing GPT-5.5 xhigh", () => {
+    const executor = new CodexExecutor();
+    const defaulted = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+    }, true, {});
+    const legacy = executor.transformRequest("gpt-5.6-terra", {
+      model: "gpt-5.6-terra",
+      input: "hi",
+      reasoning: { effort: "xhigh" },
+    }, true, {});
+    const suffix = executor.transformRequest("gpt-5.6-luna-max", {
+      model: "gpt-5.6-luna-max",
+      input: "hi",
+    }, true, {});
+    const previousModel = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: "hi",
+      reasoning: { effort: "xhigh" },
+    }, true, {});
+
+    expect(defaulted.reasoning.effort).toBe("max");
+    expect(legacy.reasoning.effort).toBe("max");
+    expect(suffix).toMatchObject({ model: "gpt-5.6-luna", reasoning: { effort: "max" } });
+    expect(previousModel.reasoning.effort).toBe("xhigh");
+  });
+
   it("classifies 200-SSE model capacity as account fallback", async () => {
     const executor = new CodexExecutor();
     const response = new Response(streamFromText([

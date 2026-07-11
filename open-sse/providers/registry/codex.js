@@ -27,6 +27,8 @@ export default {
       "low",
       "medium",
       "high",
+      "xhigh",
+      "max",
     ],
     defaultMode: "auto",
   },

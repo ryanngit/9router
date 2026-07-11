@@ -248,8 +248,12 @@ describe("DB SQLite layer — public API parity", () => {
     });
 
     const stats = await sqliteDb.getUsageStats("24h");
-    expect(stats.byApiKey["sk-sameprefix-111|gpt-4o|openai"].requests).toBe(1);
-    expect(stats.byApiKey["sk-sameprefix-222|gpt-4o|openai"].requests).toBe(1);
+    const entries = Object.entries(stats.byApiKey)
+      .filter(([, value]) => value.rawModel === "gpt-4o" && value.apiKeyMasked === "sk-samep***");
+    expect(entries).toHaveLength(2);
+    expect(entries.every(([, value]) => value.requests === 1)).toBe(true);
+    expect(new Set(entries.map(([, value]) => value.apiKeyKey)).size).toBe(2);
+    expect(entries.every(([key]) => !key.includes("sk-sameprefix-"))).toBe(true);
   });
 
   it("usage: pending tracking in-memory", () => {
