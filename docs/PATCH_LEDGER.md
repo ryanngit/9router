@@ -15,6 +15,9 @@ Current live facts:
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://gui-markers-transparent-delivery.trycloudflare.com`
+- Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `fast`
+- Latest live backup from best-GPT route restoration: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-best-gpt-20260711T040715Z`
+- Latest DB backup from best-GPT route restoration: `/home/home/.9router/db/backups/pre-best-gpt-20260711T040715Z/data.sqlite`
 - Latest live backup from the `0.5.30` upgrade: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.20-20260711T012155Z`
 - Latest pre-upgrade DB backup: `/home/home/.9router/db/backups/pre-v0.5.30-manual-20260711T011614Z/data.sqlite`
 - Latest live backup from Codex Responses Lite deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-20260710T105048Z-pre-responses-lite`
@@ -53,6 +56,18 @@ Important repository state:
 - Public Responses Lite probe omitted `reasoning.context`, returned HTTP 200 with `OK`, and stored provider payload `reasoning.context="all_turns"` plus `reasoning.effort="max"`.
 - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.20-20260711T012155Z`.
 - Pre-upgrade DB backup: `/home/home/.9router/db/backups/pre-v0.5.30-manual-20260711T011614Z/data.sqlite`.
+
+### Best-GPT route restoration on 2026-07-10
+
+- The `0.5.30` repatch incorrectly preserved exact aliases only. The endpoint-wide `gpt-*` route layer and its verifier checks were omitted.
+- Live PM2 still held stale `NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.5` and `NINE_ROUTER_BEST_GPT_REASONING_EFFORT=xhigh`; both were corrected during deploy.
+- Restored the original dedicated route service with current defaults: `cx/gpt-5.6-sol`, `max`, `fast`.
+- Added `tests/unit/best-gpt-route.test.js` and source/bundle checks in `scripts/verify-local-patches.mjs`.
+- Isolated candidate on `127.0.0.1:20129` accepted `gpt-5.4-mini` and stored provider model `gpt-5.6-sol`, provider effort `max`, and provider tier `priority`.
+- Live canary returned HTTP 200 and stored request/usage model `gpt-5.6-sol`, routed effort `max`, and provider Priority.
+- Deployment used one PM2 restart. Local, short-tunnel, and raw-tunnel health passed; cloudflared stayed PID `206858`.
+- Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-best-gpt-20260711T040715Z`.
+- Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-best-gpt-20260711T040715Z/data.sqlite`.
 
 ## Upstream Branches Already Pushed
 
@@ -648,6 +663,7 @@ Upstream status:
 Purpose:
 
 - Keep existing Codex clients on one endpoint while moving the local default from GPT-5.5/xhigh to GPT-5.6 Sol/Ultra.
+- Route every chat/Responses model whose model portion starts with `gpt-`, including provider-prefixed names, through one configurable endpoint layer to `cx/gpt-5.6-sol`.
 - Use Codex Ultra for maximum model reasoning plus proactive multi-agent delegation.
 - Let Codex translate local `ultra` to upstream `reasoning.effort: max`; 9Router must never downgrade it.
 - Preserve explicit `max`; never downgrade it to `xhigh`.
@@ -659,11 +675,20 @@ Files:
 - `open-sse/executors/codex.js`
 - `open-sse/providers/registry/codex.js`
 - `open-sse/services/model.js`
+- `src/sse/services/bestGptRoute.js`
+- `src/sse/handlers/chat.js`
 - `scripts/verify-local-patches.mjs`
+- `tests/unit/best-gpt-route.test.js`
 - `tests/unit/codex-tool-normalization.test.js`
-- `tests/unit/custom-live-patches.test.js`
 - `/home/home/.codex/config.toml`
 - `/home/home/.openclaw/codex-9router-model-catalog.json`
+
+Runtime PM2 policy:
+
+- `NINE_ROUTER_BEST_GPT_ENABLED=true`
+- `NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol`
+- `NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max`
+- `NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast`
 
 Database aliases:
 
@@ -674,6 +699,15 @@ Database aliases:
 
 Required invariants:
 
+- Apply best-GPT routing after naming/warmup bypass handling and before combo/model resolution.
+- Bare `gpt-5.4-mini`, bare `gpt-5.5`, and prefixed names such as `cx/gpt-5.6-terra` all route to the configured target.
+- Non-GPT models remain unchanged. `NINE_ROUTER_BEST_GPT_ENABLED=false` remains an emergency kill switch.
+- Default target is `cx/gpt-5.6-sol`; default routed reasoning is `max`; default routed service tier is `fast`.
+- Codex translates routed `fast` to Priority for short context and removes Priority at the long-context guard.
+- Unified route log includes `GPT-ROUTE`, original model, target, effort, and tier.
+- Usage and request details store the actual provider model `gpt-5.6-sol`, not the incoming alias such as `gpt-5.4-mini`.
+- PM2 must not retain stale target `cx/gpt-5.5` or stale effort `xhigh` after deploy.
+- Candidate and live bundle verifier must contain both `NINE_ROUTER_BEST_GPT_TARGET` and `GPT-ROUTE`.
 - Catalog uses Codex CLI 0.144.1 bundled metadata as base, then appends `claude-opus-4.8`, `claude-fable-5`, `grok-build-0.1`, and `grok-4.5`.
 - Catalog contains 12 unique models.
 - Sol and Terra expose 372,000 context, `multi_agent_version: v2`, and `low,medium,high,xhigh,max,ultra`.
@@ -689,6 +723,12 @@ Required invariants:
 
 Verification:
 
+- `tests/unit/best-gpt-route.test.js` covers the exact `gpt-5.4-mini` regression, provider-prefixed GPT routing, summary preservation, non-GPT bypass, and kill switch.
+- Focused route/Codex test run passed 20/20; targeted ESLint and `git diff --check` passed.
+- Candidate verifier passed with zero failures and zero warnings before deploy.
+- Isolated candidate canary returned HTTP 200 with response model `gpt-5.6-sol`; request details stored routed/provider effort `max` and provider tier `priority`; usage stored `gpt-5.6-sol`.
+- Live canary on 2026-07-10 returned HTTP 200 with response model `gpt-5.6-sol`; request details stored routed effort `max` and provider Priority; usage stored `gpt-5.6-sol`.
+- Post-deploy source/live/DB/local/short-tunnel verifier passed with zero failures and zero warnings.
 - All configured Codex profiles accepted Sol, Terra, and Luna in direct probes on 2026-07-09.
 - Codex CLI 0.144.1 source maps `ReasoningEffort::Ultra` to request effort `Max` and selects proactive mode for Ultra on multi-agent V2.
 - `codex debug models` on 2026-07-10 loaded Sol/Terra as Ultra-capable V2 and Luna as max-only V1.
@@ -709,7 +749,9 @@ Verification:
 Upstream status:
 
 - Private local routing/catalog policy. Do not upstream the `gpt-5.5` alias, custom model catalog, or forced GPT-5.6 legacy-effort upgrade.
+- Do not upstream the endpoint-wide best-GPT target policy; it intentionally overrides explicit GPT model selections for this installation.
 - Generic `max` preservation and long-context Priority removal are included in PR #2452.
+- On future target changes, update `DEFAULT_TARGET`, PM2 `NINE_ROUTER_BEST_GPT_TARGET`, tests, verifier, and this ledger together.
 - On future Codex updates, rebuild from the new bundled catalog, append the four custom Claude/Grok entries, and verify P14 before preserving `use_responses_lite: true`.
 
 ### P13. Grok probe usage cleanup
@@ -815,6 +857,7 @@ Run before every 9Router update:
 - Record which patch IDs are expected to change.
 - Use a fresh clone for upstream PR prep if `git status` fails in this directory.
 - Compare upstream `cli/cli.js` with the local tunnel-preserving wrapper; do not replace it blindly.
+- Check `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'`; target must be `cx/gpt-5.6-sol` and effort must be `max`.
 
 Run after every update/deploy:
 
@@ -822,6 +865,7 @@ Run after every update/deploy:
 - Verify tunnel health only after reading current tunnel state: `cat /home/home/.9router/tunnel/state.json`.
 - Verify `/api/version`, PM2 version, live app package version, CLI package version, and `9router --version` agree.
 - Verify the original cloudflared PID still serves port `20128`.
+- Send `gpt-5.4-mini` to `/v1/responses`; confirm route log, request details, response model, and usage model all resolve to `gpt-5.6-sol`, with routed effort `max`.
 - Send one Responses Lite request with context omitted and confirm stored provider context is `all_turns`.
 - Re-run the verifier against source, bundle, and DB.
 - Save the backup path and tunnel URL in this ledger if they changed.

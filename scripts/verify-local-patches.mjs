@@ -156,6 +156,13 @@ function checkSource() {
   mustContain("open-sse/executors/codex.js", "replacementBody", "Codex SSE body reassembly after peek");
   mustContain("src/sse/handlers/chat.js", "excludeConnectionIds.add(credentials.connectionId)", "account fallback excludes failed connection");
 
+  mustContain("src/sse/services/bestGptRoute.js", "NINE_ROUTER_BEST_GPT_TARGET", "best-GPT runtime target knob");
+  mustContain("src/sse/services/bestGptRoute.js", "DEFAULT_TARGET = \"cx/gpt-5.6-sol\"", "best-GPT Sol default");
+  mustContain("src/sse/services/bestGptRoute.js", "DEFAULT_REASONING_EFFORT = \"max\"", "best-GPT max default");
+  mustContain("src/sse/services/bestGptRoute.js", "DEFAULT_SERVICE_TIER = \"fast\"", "best-GPT fast default");
+  mustContain("src/sse/handlers/chat.js", "applyBestGptRoute(body)", "chat handler best-GPT route layer");
+  mustContain("src/sse/handlers/chat.js", "\"GPT-ROUTE\"", "best-GPT route log");
+
   mustContain("open-sse/executors/codex.js", "x-openai-internal-codex-responses-lite", "Codex Responses Lite header forwarding");
   mustContain("open-sse/executors/codex.js", "CODEX_LITE_METADATA_HEADERS", "Codex Responses Lite metadata allowlist");
   mustContain("open-sse/executors/codex.js", "COMPACT_API_ALLOWLIST", "Codex compact request contract");
@@ -309,6 +316,8 @@ function checkBundle() {
   contains("service_tier", "Codex service tier handling");
   contains("priority", "priority service tier string");
   contains("Priority disabled for long context", "Codex long-context priority removal");
+  contains("NINE_ROUTER_BEST_GPT_TARGET", "best-GPT runtime target knob");
+  contains("GPT-ROUTE", "best-GPT route log");
   contains("x-openai-internal-codex-responses-lite", "Codex Responses Lite header");
   contains("codex_exec", "Codex Desktop executor detection");
   contains("responses/compact", "Codex compact endpoint");

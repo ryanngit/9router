@@ -22,6 +22,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { applyBestGptRoute } from "../services/bestGptRoute.js";
 
 /**
  * Handle chat completion request
@@ -48,7 +49,7 @@ export async function handleChat(request, clientRawRequest = null) {
   }
   cacheClaudeHeaders(clientRawRequest.headers);
 
-  const modelStr = body.model;
+  let modelStr = body.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -95,6 +96,16 @@ export async function handleChat(request, clientRawRequest = null) {
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
+
+  const bestGptRoute = applyBestGptRoute(body);
+  if (bestGptRoute.applied) {
+    body = bestGptRoute.body;
+    modelStr = bestGptRoute.model;
+    log.info(
+      "GPT-ROUTE",
+      `${bestGptRoute.from} → ${modelStr} | effort=${bestGptRoute.config.reasoningEffort} | tier=${bestGptRoute.config.serviceTier}`
+    );
+  }
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);

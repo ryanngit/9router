@@ -95,6 +95,8 @@ Review the diff against the patch ledger:
 - Did it accidentally merge distinct ChatGPT tags/workspaces?
 - Did it remove Stripe filtering or 18889 browsing behavior? If touching gateway/proxy code, stop and inspect those routes separately.
 - Did it route bare `gpt-5.5` to Codex, not OpenAI API?
+- Did it preserve P12 endpoint-wide routing for both bare and provider-prefixed `gpt-*` models?
+- Does `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'` show target `cx/gpt-5.6-sol` and effort `max`?
 - Did it preserve explicit proxy pools and `__none__` no-proxy behavior?
 - Did it preserve local route access on `127.0.0.1:20128`?
 
@@ -127,6 +129,7 @@ Targeted manual checks by patch:
 - P5 Copilot models: `claude-opus-4.8` and `claude-fable-5` route to `github`.
 - P6 usage: cached tokens lower cost; API-key grouping remains separated.
 - P7 reset bank: confirmation appears before reset consume; cancel does not POST.
+- P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol`, effort `max`, and short-context Priority.
 - P14 Responses Lite: omit `reasoning.context`; provider request must contain `reasoning.context="all_turns"`.
 
 Known clean-upstream `0.5.30` baseline failures:
@@ -159,6 +162,14 @@ For runtime source changes:
 9. Confirm cloudflared PID is unchanged.
 10. Update only `cli/package.json` version after successful app health if retaining the local wrapper.
 
+Before staged CLI build, verify nested CLI dev dependencies exist:
+
+```bash
+node -e "require.resolve('esbuild', { paths: ['./cli'] })"
+```
+
+If missing, install the already-declared CLI dev dependencies before building. Never deploy a candidate after `build-cli.js` stops at the MITM step. If MITM source is unchanged and an emergency build must proceed, reuse the exact verified live bundled `src/mitm/server.js` and compare SHA-256 hashes.
+
 Skeleton:
 
 ```bash
@@ -170,7 +181,12 @@ TUNNEL_PID_BEFORE=$(cat /home/home/.9router/tunnel/cloudflared.pid)
 
 # Verify candidate bundle before this point.
 mv --exchange -T "$LIVE" "$CANDIDATE"
-pm2 restart 9router --update-env
+env \
+  NINE_ROUTER_BEST_GPT_ENABLED=true \
+  NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol \
+  NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max \
+  NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast \
+  pm2 restart 9router --update-env
 
 if ! curl -fsS --max-time 20 http://127.0.0.1:20128/api/health; then
   mv --exchange -T "$LIVE" "$CANDIDATE"
@@ -179,6 +195,7 @@ if ! curl -fsS --max-time 20 http://127.0.0.1:20128/api/health; then
 fi
 
 mv -T "$CANDIDATE" "$BACKUP"
+pm2 save
 curl -fsS --max-time 20 https://rkeyra9.abc-tunnel.us/api/health
 test "$(cat /home/home/.9router/tunnel/cloudflared.pid)" = "$TUNNEL_PID_BEFORE"
 ```
@@ -205,6 +222,7 @@ Notes:
 - PM2 runs `app/server.js`; restarting PM2 does not require launching `cli.js`.
 - Starting an unreviewed upstream wrapper can kill the stable quick tunnel. Keep the local wrapper until its process-management diff is rebased and tested separately.
 - After health passes, verify `curl http://127.0.0.1:20128/api/version`, `pm2 describe 9router`, both package files, and `9router --version` report the same release.
+- After every deploy, send a bare `gpt-5.4-mini` canary and verify response, request-detail, provider, and usage model are `gpt-5.6-sol`; routed/provider effort must be `max`.
 
 ## 7. Retrospective
 
