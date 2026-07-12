@@ -16,7 +16,7 @@ Current live facts:
 - P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://fighting-documentation-wedding-continues.trycloudflare.com`
+- Current known raw tunnel base: `https://rochester-wanted-ware-movements.trycloudflare.com`
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `fast`
 - Latest live backup from best-GPT route restoration: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-best-gpt-20260711T040715Z`
 - Latest live backup from P15-P17 deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p15-p17-20260712T075616Z`
@@ -176,6 +176,18 @@ Verification:
 - 2026-07-10 live probe returned `LIVE_OK`; request details confirmed incoming `fast` became provider `priority`. Upstream OAuth response reported effective `default`, so effective-tier accounting correctly did not claim Priority service.
 - Focused test covers `fast`, direct `priority`, and whitespace-heavy long payloads.
 - Live deploy used one PM2 restart. Local, `rkeyra9`, and raw TryCloudflare health passed; cloudflared PID remained `206858`.
+- GPT-5.6 max-log correction deployed 2026-07-12:
+  - Root cause: unified OpenAI translation changed `max` to `xhigh` before request-summary logging. Codex executor changed it back to `max`, so actual provider wire was already correct but console `THINK:xhigh` was misleading and verifier missed the earlier stage.
+  - Translation now preserves `max` directly for Codex `gpt-5.6-*`; generic OpenAI models still clamp unsupported `max` to `xhigh`.
+  - Sol, Terra, and Luna exact pipeline checks each reported `intermediate=max outgoing=max`; focused reasoning/Codex suite passed 59/59, ESLint and diff checks passed.
+  - Isolated valid Responses Lite canary returned HTTP 200 with console `THINK:max`, stored request `max`, provider wire `max`, and provider Priority.
+  - First candidate probe omitted required `parallel_tool_calls:false`, producing candidate-only HTTP 400 rows across copied accounts. Corrected probe passed; live DB/accounts were unaffected.
+  - Live canary returned HTTP 200 with `LIVE_MAX_OK`; stored request and provider effort were both `max`, provider tier was `priority`, and console showed `THINK:max`.
+  - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-gpt56-max-20260712T213807Z`.
+  - Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-gpt56-max-20260712T213807Z/data.sqlite`; integrity check returned `ok`.
+  - PM2 restart interrupted the combined deployment shell after app promotion. App health and rollback artifacts were intact, but tunnel recovery commands were skipped. Future deploys must run post-restart tunnel recovery in a separate command.
+  - Concurrent tunnel auto-resume/API enable calls killed each other's cloudflared child. Detached fallback restored `keyra9` at `https://rochester-wanted-ware-movements.trycloudflare.com`; short health passed. VM DNS had not yet propagated for direct raw-host resolution, so final verifier used local plus short health.
+  - Final source/live bundle/DB/local/short verifier passed with zero failures and zero warnings; credential-bearing candidate data was removed.
 
 Upstream status:
 
@@ -1051,6 +1063,8 @@ Run after every update/deploy:
 - Verify local health: `curl -fsS http://127.0.0.1:20128/api/health`.
 - Verify tunnel health only after reading current tunnel state: `cat /home/home/.9router/tunnel/state.json`.
 - Do not trust tunnel-enable JSON alone after a PM2 restart. Poll raw and short health separately; if short returns 530, POST the current `shortId` and raw URL to `https://abc-tunnel.us/api/tunnel/register`, then poll again.
+- Run atomic swap/restart and tunnel recovery as separate shell commands. A control-channel SIGTERM during `pm2 restart` can skip every command that follows it in the same shell.
+- If startup auto-resume and `/api/tunnel/enable` overlap and both report `cloudflared killed`, disable tunnel first. If stale in-flight enables still race, launch one detached Quick Tunnel, persist its PID/state/settings, register `keyra9`, and verify short health.
 - Verify `/api/version`, PM2 version, live app package version, CLI package version, and `9router --version` agree.
 - Verify the original cloudflared PID still serves port `20128`.
 - Send `gpt-5.4-mini` to `/v1/responses`; confirm route log, request details, response model, and usage model all resolve to `gpt-5.6-sol`, with routed effort `max`.
