@@ -627,6 +627,8 @@ Upstream status:
 - Open PRs:
   - xAI/Grok catalog, bare `grok-*` routing, Responses transport, `grok-4.5`, and reasoning options: <https://github.com/decolua/9router/pull/2439>
   - xAI local quota rows from `usageHistory` and provider cost preservation: <https://github.com/decolua/9router/pull/2453>
+- PR #2439 now includes model-aware GitHub native-Responses routing at commit `d4d99c0`; GitHub merge state was `CLEAN` after push on 2026-07-12.
+- Clean PR branch passed 15 focused Vitest cases, four xAI node self-checks, focused ESLint, and `git diff --check` before push.
 - Bare `grok-*` routing is generic enough for upstream, but keep it in the catalog/Responses PR so it remains reviewable.
 
 ### P10. Staged CLI bundle builds for live-safe deploy
