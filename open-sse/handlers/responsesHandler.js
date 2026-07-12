@@ -8,7 +8,7 @@ import { convertResponsesApiFormat } from "../translator/formats/responsesApi.js
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
 import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
-import { PROVIDERS } from "../config/providers.js";
+import { supportsNativeResponses } from "../services/provider.js";
 
 /**
  * Handle /v1/responses request
@@ -24,7 +24,7 @@ import { PROVIDERS } from "../config/providers.js";
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
 export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
-  const nativeResponses = !!PROVIDERS[modelInfo?.provider]?.responsesUrl;
+  const nativeResponses = supportsNativeResponses(modelInfo?.provider, modelInfo?.model);
   // Providers with a native Responses endpoint should receive the original
   // Responses body; others keep the legacy chat-completions bridge.
   const convertedBody = nativeResponses ? { ...body } : convertResponsesApiFormat(body);

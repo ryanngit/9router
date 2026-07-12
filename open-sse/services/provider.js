@@ -136,17 +136,25 @@ export function getTargetFormat(provider) {
   return config.format || "openai";
 }
 
+export function supportsNativeResponses(provider, model) {
+  const config = PROVIDERS[provider];
+  if (!config?.responsesUrl) return false;
+  if (provider !== "github") return true;
+
+  return /^(?:gpt-|o[134](?:-|$))/i.test(model || "");
+}
+
 // Resolve which transport to use for a provider given the client sourceFormat.
 // Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
 // to avoid lossy translation; falls back to the default transport when no match.
-export function resolveTransport(provider, sourceFormat) {
+export function resolveTransport(provider, sourceFormat, model) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (Array.isArray(transports) && transports.length) {
     const match = transports.find(t => t.format === sourceFormat);
     if (match) return match;
   }
-  if (sourceFormat === "openai-responses" && config?.responsesUrl) {
+  if (sourceFormat === "openai-responses" && supportsNativeResponses(provider, model)) {
     return { format: "openai-responses", baseUrl: config.responsesUrl };
   }
   return null;
