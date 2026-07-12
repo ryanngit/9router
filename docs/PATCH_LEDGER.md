@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Clean current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, P15-P17 candidate-QA commit `d00df0d`
+- Clean current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed GitHub Responses fix `cda802f`
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -16,7 +16,7 @@ Current live facts:
 - P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://gui-markers-transparent-delivery.trycloudflare.com`
+- Current known raw tunnel base: `https://fighting-documentation-wedding-continues.trycloudflare.com`
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `fast`
 - Latest live backup from best-GPT route restoration: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-best-gpt-20260711T040715Z`
 - Latest live backup from P15-P17 deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p15-p17-20260712T075616Z`
@@ -605,6 +605,17 @@ Verification:
   - `grok-4.5` via xAI returned HTTP 403 `permission-denied` / region unavailable in this run; provider request still had no `encrypted_content`, so failure was not compaction-related.
 - Regression found 2026-07-12 after the generic xAI native-Responses patch: `claude-fable-5` requests arrived from Codex as native Responses `input`, but GitHub executor correctly selected `/chat/completions`, producing `messages must be non-empty` on both accounts.
 - Model-aware transport regression tests passed 16/16 on 2026-07-12. They prove Fable becomes one non-empty Chat message, GitHub GPT keeps `/responses`, unknown GitHub models default to Chat, and xAI remains native Responses.
+- Broader Responses regression run passed 33 tests with three expected failures; focused ESLint, `git diff --check`, source checks, and staged bundle checks passed.
+- Persistent staged bundle: `/home/home/.openclaw/workspace-keyra/9router-app-stage-github-responses-20260712-0931`; production build completed Next.js, TypeScript, 126 static pages, and MITM bundling at 57 MB.
+- Isolated candidate on `127.0.0.1:20129` returned HTTP 200 for Fable non-streaming through GitHub account `emileytoneyth` and Fable streaming through `browndav123731`. Logs showed `FMT: openai-responses→openai`, one input message, and `/chat/completions`; stored provider request had two final messages and no `input`.
+- Same candidate returned HTTP 200 for `grok-4.5`; log stayed `FMT: openai-responses→openai-responses`, proving xAI native Responses behavior remained intact.
+- Live deploy on 2026-07-12 used one atomic exchange plus one PM2 restart. Local health recovered within the four-second deploy command.
+- Live Fable streaming canary returned HTTP 200 with valid `response.created`, `response.output_text.delta`, and `response.completed` events. Stored row was `success`, had two provider messages, no provider `input`, and no provider error.
+- Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-github-responses-20260712T163759Z`.
+- Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-github-responses-20260712T163759Z/data.sqlite`; integrity check returned `ok`.
+- Windows restart interrupted the first staged build before any live exchange. Second build used a persistent workspace path so restart could not erase completed output.
+- PM2 restart killed post-reboot cloudflared PID `122779` because it was a child of the old Next PID. Tunnel was restored without another 9Router restart at raw URL `https://fighting-documentation-wedding-continues.trycloudflare.com`; `keyra9` was registered again and local/raw/short health passed.
+- Final source/live/DB/local/raw/short verifier passed with zero failures and zero warnings. Credential-bearing isolated candidate data was removed.
 - After PM2 restart, `rkeyra9` short worker still pointed at an older raw tunnel. Manual worker registration fixed it: `POST https://abc-tunnel.us/api/tunnel/register` with `shortId=keyra9` and the current raw tunnel URL.
 - `getModelInfoCore("grok-4.5", {})` returns `{ provider: "xai", model: "grok-4.5" }`.
 - `/v1/responses` request with model `grok-4.5` succeeds and latest request details row shows provider `xai`.
@@ -1033,6 +1044,7 @@ Run after every update/deploy:
 
 - Verify local health: `curl -fsS http://127.0.0.1:20128/api/health`.
 - Verify tunnel health only after reading current tunnel state: `cat /home/home/.9router/tunnel/state.json`.
+- Do not trust tunnel-enable JSON alone after a PM2 restart. Poll raw and short health separately; if short returns 530, POST the current `shortId` and raw URL to `https://abc-tunnel.us/api/tunnel/register`, then poll again.
 - Verify `/api/version`, PM2 version, live app package version, CLI package version, and `9router --version` agree.
 - Verify the original cloudflared PID still serves port `20128`.
 - Send `gpt-5.4-mini` to `/v1/responses`; confirm route log, request details, response model, and usage model all resolve to `gpt-5.6-sol`, with routed effort `max`.
