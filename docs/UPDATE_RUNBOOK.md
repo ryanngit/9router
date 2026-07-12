@@ -1,6 +1,6 @@
 # 9Router Update Runbook
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 Use this before updating, patching, deploying, or preparing upstream PRs. The goal is minimal downtime and no rediscovery of fragile behavior.
 
@@ -14,6 +14,7 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - Do not rely on `git status` in `9router-patch` until broken worktree metadata is fixed.
 - Do not push upstream branches from a dirty/broken worktree.
 - Never restart or replace cloudflared during an app upgrade.
+- P17 deployments must run `app/custom-server.js`; `app/server.js` loses trusted tunnel client identity.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
 ## 1. Brainstorm / Analyze
@@ -99,6 +100,9 @@ Review the diff against the patch ledger:
 - Does `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'` show target `cx/gpt-5.6-sol` and effort `max`?
 - Did it preserve explicit proxy pools and `__none__` no-proxy behavior?
 - Did it preserve local route access on `127.0.0.1:20128`?
+- Does Console Log still work through both raw and short tunnel URLs when SSE is buffered?
+- Does quota refresh have one scheduler and one real-time countdown?
+- Does API-key client tracking avoid raw IP/full user-agent storage and remain observe-only?
 
 Do not mark upstream-ready until:
 
@@ -131,6 +135,9 @@ Targeted manual checks by patch:
 - P7 reset bank: confirmation appears before reset consume; cancel does not POST.
 - P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol`, effort `max`, and short-context Priority.
 - P14 Responses Lite: omit `reasoning.context`; provider request must contain `reasoning.context="all_turns"`.
+- P15 console: local SSE emits `init`; raw and short tunnels fall back to ETag polling after silent SSE.
+- P16 quota: countdown advances once per real second and one refresh occurs at the deadline.
+- P17 API clients: trusted-IP tests pass; one keyed canary appears under Usage > API Key Clients.
 
 Known clean-upstream `0.5.30` baseline failures:
 
@@ -156,7 +163,7 @@ For runtime source changes:
 3. Verify candidate version and all patch invariants.
 4. Record cloudflared PID and create a verified DB backup.
 5. Exchange candidate and live app directories.
-6. Restart PM2 once.
+6. Start/reload PM2 once with `app/custom-server.js` as `pm_exec_path`.
 7. Poll local health for up to 90 seconds before deciding rollback.
 8. Verify short and raw tunnel health without restarting cloudflared.
 9. Confirm cloudflared PID is unchanged.
@@ -178,19 +185,33 @@ LIVE=/home/home/.openclaw/workspace-keyra/9router-patch/cli/app
 CANDIDATE=/path/to/verified/candidate/app
 BACKUP=/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-$STAMP
 TUNNEL_PID_BEFORE=$(cat /home/home/.9router/tunnel/cloudflared.pid)
+ENTRYPOINT="$LIVE/custom-server.js"
 
 # Verify candidate bundle before this point.
 mv --exchange -T "$LIVE" "$CANDIDATE"
+pm2 delete 9router
 env \
+  PORT=20128 \
+  HOSTNAME=0.0.0.0 \
+  NODE_EXTRA_CA_CERTS=/home/home/.openclaw/gateway/certs/ca.crt \
   NINE_ROUTER_BEST_GPT_ENABLED=true \
   NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol \
   NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max \
   NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast \
-  pm2 restart 9router --update-env
+  pm2 start "$ENTRYPOINT" --name 9router --cwd "$LIVE" --merge-logs --update-env
 
 if ! curl -fsS --max-time 20 http://127.0.0.1:20128/api/health; then
   mv --exchange -T "$LIVE" "$CANDIDATE"
-  pm2 restart 9router --update-env
+  pm2 delete 9router
+  env \
+    PORT=20128 \
+    HOSTNAME=0.0.0.0 \
+    NODE_EXTRA_CA_CERTS=/home/home/.openclaw/gateway/certs/ca.crt \
+    NINE_ROUTER_BEST_GPT_ENABLED=true \
+    NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol \
+    NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max \
+    NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast \
+    pm2 start "$LIVE/custom-server.js" --name 9router --cwd "$LIVE" --merge-logs --update-env
   exit 1
 fi
 
@@ -210,7 +231,16 @@ FAILED=/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.failed-$STAMP
 
 mv --exchange -T "$LIVE" "$BACKUP"
 mv -T "$BACKUP" "$FAILED"
-pm2 restart 9router --update-env
+pm2 delete 9router
+env \
+  PORT=20128 \
+  HOSTNAME=0.0.0.0 \
+  NODE_EXTRA_CA_CERTS=/home/home/.openclaw/gateway/certs/ca.crt \
+  NINE_ROUTER_BEST_GPT_ENABLED=true \
+  NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol \
+  NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max \
+  NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast \
+  pm2 start "$LIVE/custom-server.js" --name 9router --cwd "$LIVE" --merge-logs --update-env
 curl -fsS http://127.0.0.1:20128/api/health
 ```
 
@@ -219,7 +249,7 @@ Notes:
 - `mv --exchange` requires `-T`; without it, an existing directory is treated as a destination parent.
 - Candidate and live directories must share a filesystem.
 - Check PM2 `Active requests` is zero immediately before exchange when possible.
-- PM2 runs `app/server.js`; restarting PM2 does not require launching `cli.js`.
+- P17 requires PM2 to run `app/custom-server.js`; verify `pm2 jlist` after deploy. Starting `cli.js` is not required.
 - Starting an unreviewed upstream wrapper can kill the stable quick tunnel. Keep the local wrapper until its process-management diff is rebased and tested separately.
 - After health passes, verify `curl http://127.0.0.1:20128/api/version`, `pm2 describe 9router`, both package files, and `9router --version` report the same release.
 - After every deploy, send a bare `gpt-5.4-mini` canary and verify response, request-detail, provider, and usage model are `gpt-5.6-sol`; routed/provider effort must be `max`.

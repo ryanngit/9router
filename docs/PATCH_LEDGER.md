@@ -1,6 +1,6 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
@@ -11,6 +11,7 @@ Current live facts:
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
+- Current PM2 entrypoint before P17 deploy: `app/server.js`; P17 requires `app/custom-server.js`.
 - Current package version: `0.5.30`
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
@@ -841,6 +842,133 @@ Upstream status:
 - Two `codex-image-fetch.test.js` failures reproduce unchanged on clean upstream `v0.5.30`; not introduced by P14.
 - Private GPT aliases, catalog contents, effort upgrades, and routing policy are excluded.
 
+### P15. Tunnel-safe console transport
+
+Purpose:
+
+- Keep Console Log usable when Cloudflare buffers SSE through the raw Quick Tunnel or short Worker URL.
+- Preserve SSE locally while falling back to low-cost conditional REST polling only when the stream stays silent.
+
+Files:
+
+- `src/app/(dashboard)/dashboard/console-log/ConsoleLogClient.js`
+- `src/app/(dashboard)/dashboard/console-log/transport.js`
+- `src/app/api/translator/console-logs/route.js`
+- `src/app/api/translator/console-logs/stream/route.js`
+- `src/lib/consoleLogBuffer.js`
+- `src/shared/constants/config.js`
+- `tests/unit/console-log-api.test.js`
+- `tests/unit/console-log-transport.test.js`
+- `tests/unit/usage-stream-cleanup.test.js`
+
+Required invariants:
+
+- Load one REST snapshot before opening SSE so tunnel users see existing logs immediately.
+- Keep local SSE when an `init` event arrives; switch to polling after five seconds of silent SSE or an SSE error.
+- Poll with `If-None-Match`; unchanged buffers return HTTP 304 without retransmitting logs.
+- Every SSE connection sends an `init` event, including an empty log buffer.
+- Clearing logs clears pending batches and invalidates the polling ETag.
+- Request abort removes console and usage SSE listeners; reconnects must not accumulate emitter listeners.
+
+Verification:
+
+- Before patch, eight-second console SSE probes returned about 23 KB locally and zero bytes through both tunnel URLs; console REST returned about 22 KB on all paths.
+- Public worktree tests passed 12/12; integrated P15-P17 regression run passed 73/73 with clean ESLint and diff checks.
+- Candidate and live tunnel checks remain required before marking deployed.
+
+Upstream status:
+
+- Public branch: `tunnel-dashboard-refresh` at `df7436c`.
+- Commits: `c7995b8`, `df7436c`.
+- PR pending push from `/home/home/.openclaw/workspace-keyra/9router-tunnel-dashboard`.
+
+### P16. Stable quota refresh scheduler
+
+Purpose:
+
+- Stop quota countdown acceleration caused by duplicate interval owners and callback recreation.
+- Keep one refresh deadline across visibility changes and slow quota requests.
+
+Files:
+
+- `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js`
+- `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js`
+- `src/app/api/usage/stream/route.js`
+- `tests/unit/quota-refresh-scheduler.test.js`
+- `tests/unit/usage-stream-cleanup.test.js`
+
+Required invariants:
+
+- One scheduler owns one refresh timeout and one countdown interval.
+- Countdown derives from an absolute deadline; rerenders cannot speed it up.
+- Hidden tabs pause timers; visible tabs resume the same deadline or refresh once when overdue.
+- Slow refreshes never overlap. A queued refresh runs once after the active refresh completes.
+- Manual refresh resets the next deadline after completion.
+- Changing `expiringFirst` does not recreate the connection-fetch callback.
+
+Verification:
+
+- Scheduler tests cover timer count, visibility resume, slow refresh overlap, and manual deadline reset.
+- Integrated P15-P17 regression run passed 73/73 with clean ESLint and diff checks.
+
+Upstream status:
+
+- Included in public branch `tunnel-dashboard-refresh` at `df7436c`; PR pending.
+
+### P17. API-key client activity
+
+Purpose:
+
+- Give API-key owners a lightweight signal when one key appears active from multiple clients.
+- Show client activity under Usage instead of adding more controls to Endpoint/key management.
+
+Files:
+
+- `client-ip.js`
+- `custom-server.js`
+- `cli/scripts/build-cli.js`
+- `open-sse/handlers/chatCore/nonStreamingHandler.js`
+- `open-sse/handlers/chatCore/requestDetail.js`
+- `open-sse/handlers/chatCore/sseToJsonHandler.js`
+- `open-sse/handlers/chatCore/streamingHandler.js`
+- `open-sse/utils/clientDetector.js`
+- `src/app/(dashboard)/dashboard/usage/components/ApiKeyClientsTable.js`
+- `src/app/api/usage/clients/route.js`
+- `src/lib/apiKeyClientIdentity.js`
+- `src/lib/db/migrations/002-api-key-clients.js`
+- `src/lib/db/repos/apiKeyClientsRepo.js`
+- `src/lib/db/schema.js`
+- `src/sse/handlers/chat.js`
+- `tests/unit/api-key-client-activity.test.js`
+- `tests/unit/api-key-client-identity.test.js`
+- `tests/unit/api-key-client-usage-meta.test.js`
+- `tests/unit/client-ip.test.js`
+
+Required invariants:
+
+- Run the production app through `custom-server.js`; bare `server.js` cannot stamp trusted client identity.
+- Trust forwarding headers only from a loopback proxy. Raw Quick Tunnel uses `CF-Connecting-IP`; short Worker traffic accepts the first XFF address only with the validated Cloudflare cross-zone chain.
+- Strip client-supplied forwarding/internal identity headers before stamping trusted replacements.
+- Store no full IP and no full user agent. Store a machine-secret HMAC fingerprint, client family or validated `X-9Router-Client-ID`, masked network, source, and timestamps.
+- Generic client version changes such as `curl/8.10` to `curl/8.11` keep one client family.
+- More than one client active for the same key within one hour shows `Review`; this is observation only, not device authentication or automatic blocking.
+- Usage rows keep existing cost/cache metadata and add only API-key ID plus client fingerprint metadata.
+- P11 daily token limits remain enforced before provider/account selection.
+- `/api/usage/clients` remains under existing dashboard authentication.
+
+Verification:
+
+- Header-chain probes confirmed raw Quick Tunnel preserves spoofable first XFF while short Worker traffic emits `original IP, 2a06:98c0:3600::103`; resolver tests cover both paths and malformed chains.
+- Public focused run passed 54/54; integrated P15-P17 regression run passed 73/73. ESLint and diff checks passed.
+- Upstream `db-concurrent.test.js` independently reproduces its existing count-loss failures; P17 did not introduce them.
+- Candidate DB migration, UI, local/raw/short identity canaries, and live entrypoint verification remain required before marking deployed.
+
+Upstream status:
+
+- Public branch: `api-key-client-activity` at `dd9b15b`.
+- Commits: `cd204dd`, `dd9b15b`.
+- PR pending push from `/home/home/.openclaw/workspace-keyra/9router-api-client-activity`.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
@@ -867,5 +995,9 @@ Run after every update/deploy:
 - Verify the original cloudflared PID still serves port `20128`.
 - Send `gpt-5.4-mini` to `/v1/responses`; confirm route log, request details, response model, and usage model all resolve to `gpt-5.6-sol`, with routed effort `max`.
 - Send one Responses Lite request with context omitted and confirm stored provider context is `all_turns`.
+- Open Console Log through local, raw, and short URLs; local must remain on SSE and tunnel paths must populate through fallback polling.
+- Observe quota countdown for at least 70 seconds through the short URL; it must decrement once per real second and refresh once.
+- Confirm PM2 `pm_exec_path` ends in `app/custom-server.js` and live DB contains `apiKeyClients`.
+- Send one API-key request with `X-9Router-Client-ID`; verify one Usage > API Key Clients row and matching usage tokens without storing the full IP.
 - Re-run the verifier against source, bundle, and DB.
 - Save the backup path and tunnel URL in this ledger if they changed.

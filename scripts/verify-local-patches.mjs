@@ -239,12 +239,30 @@ function checkSource() {
   mustContain("open-sse/services/usage.js", "xai: (c) => getXaiUsage(c.connectionId)", "xAI usage handler");
   mustContain("open-sse/services/usage/xai.js", "usageHistory", "xAI local usage aggregation");
   mustContain("src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js", "case \"xai\"", "xAI usage UI parser");
+
+  mustContain("src/app/(dashboard)/dashboard/console-log/ConsoleLogClient.js", "startConsoleLogTransport", "console tunnel fallback transport");
+  mustContain("src/app/(dashboard)/dashboard/console-log/transport.js", "If-None-Match", "console conditional polling");
+  mustContain("src/app/api/translator/console-logs/route.js", "getConsoleLogSnapshot", "console revision snapshots");
+  mustContain("src/app/api/translator/console-logs/stream/route.js", 'type: "init", logs: buffered', "console empty SSE init");
+  mustContain("src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js", "createAutoRefreshScheduler", "single quota refresh scheduler");
+  mustContain("src/app/api/usage/stream/route.js", "request.signal.addEventListener", "usage SSE abort cleanup");
+
+  mustContain("cli/scripts/build-cli.js", "client-ip.js", "trusted client-IP helper bundle copy");
+  mustContain("custom-server.js", "resolveTrustedClientIp", "trusted client-IP server wrapper");
+  mustContain("client-ip.js", "CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
+  mustContain("src/lib/db/schema.js", "apiKeyClients", "API-key client activity schema");
+  mustContain("src/sse/handlers/chat.js", "getApiKeyClientIdentity", "API-key client observation");
+  mustContain("open-sse/handlers/chatCore/requestDetail.js", "apiKeyClientFingerprint", "API-key client usage attribution");
+  mustContain("src/shared/components/UsageStats.js", "API Key Clients", "API-key clients usage view");
+  mustContain("src/app/api/usage/clients/route.js", "getApiKeyClientActivity", "API-key client activity endpoint");
 }
 
 function collectBundleText(bundleRoot) {
   const roots = [
     path.join(bundleRoot, ".next", "server"),
     path.join(bundleRoot, ".next-cli-build", "server"),
+    path.join(bundleRoot, "custom-server.js"),
+    path.join(bundleRoot, "client-ip.js"),
     path.join(bundleRoot, "server.js"),
     path.join(bundleRoot, "package.json"),
   ].filter((p) => fs.existsSync(p));
@@ -322,6 +340,11 @@ function checkBundle() {
   contains("codex_exec", "Codex Desktop executor detection");
   contains("responses/compact", "Codex compact endpoint");
   contains("additional_tools", "Responses Lite additional_tools handling");
+  contains("If-None-Match", "console conditional polling");
+  contains("createAutoRefreshScheduler", "single quota refresh scheduler");
+  contains("CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
+  contains("apiKeyClients", "API-key client activity storage");
+  contains("API Key Clients", "API-key clients usage view");
 }
 
 function runSqlite(query) {
@@ -381,6 +404,13 @@ function checkDb() {
     if (aliases[key] === value) pass(`db alias: ${key} -> ${value}`);
     else fail(`db alias mismatch: ${key} expected ${value}, got ${aliases[key] ?? "<missing>"}`);
   }
+
+  const clientTable = runSqlite(`
+    select name from sqlite_master
+    where type='table' and name='apiKeyClients';
+  `);
+  if (clientTable?.length === 1) pass("db table: apiKeyClients");
+  else fail("db table missing: apiKeyClients");
 }
 
 async function checkHealth() {
