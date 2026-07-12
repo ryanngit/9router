@@ -150,7 +150,10 @@ Purpose:
 Files:
 
 - `open-sse/executors/codex.js`
+- `open-sse/providers/thinkingLevels.js`
 - `open-sse/translator/concerns/thinkingUnified.js`
+- `tests/unit/thinking-effort-openai-max-clamp.test.js`
+- `tests/unit/thinking-levels-gpt56-sol.test.js`
 
 Required invariants:
 
@@ -160,6 +163,7 @@ Required invariants:
 - The lexical estimate counts words, punctuation, Unicode characters, and whitespace runs so whitespace-heavy input cannot bypass the guard.
 - Other unsupported Codex service tiers are removed.
 - GPT-5.6 `xhigh` becomes `max`; `max` is never downgraded.
+- Unified translation preserves `max` for Codex Sol, Terra, and Luna before request-summary logging; generic OpenAI models still clamp unsupported `max` to `xhigh`.
 - GitHub Claude max reasoning stays provider-native `max`.
 
 Verification:

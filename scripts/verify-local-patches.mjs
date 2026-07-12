@@ -151,6 +151,10 @@ function checkSource() {
   mustContain("open-sse/executors/codex.js", "'xhigh', 'max'", "Codex max reasoning suffix");
   mustContain("open-sse/executors/codex.js", "? \"max\" : \"low\"", "GPT-5.6 defaults to max reasoning");
   mustContain("open-sse/providers/registry/codex.js", "\"max\",", "Codex reasoning metadata exposes max");
+  mustContain("open-sse/translator/concerns/thinkingUnified.js", "provider === \"codex\" && /^gpt-5\\.6", "GPT-5.6 translator max capability");
+  mustContain("open-sse/translator/concerns/thinkingUnified.js", "level === \"max\" && !supportsMax ? \"xhigh\" : level", "model-aware OpenAI max clamp");
+  mustNotContain("open-sse/translator/concerns/thinkingUnified.js", "body.reasoning_effort = level === \"max\" ? \"xhigh\" : level", "stale unconditional translator max downgrade");
+  mustContain("open-sse/providers/thinkingLevels.js", "{ pattern: \"*gpt-5.6-*\", levels:", "all GPT-5.6 models expose max");
   mustContain("open-sse/executors/codex.js", "CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS", "Codex SSE account fallback patterns");
   mustContain("open-sse/executors/codex.js", "Selected model is at capacity. Please try a different model.", "Codex capacity message detection");
   mustContain("open-sse/executors/codex.js", "replacementBody", "Codex SSE body reassembly after peek");
