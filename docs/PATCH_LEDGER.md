@@ -7,18 +7,20 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Clean current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, best-GPT restoration commit `7b391cd`
+- Clean current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, P15-P17 candidate-QA commit `d00df0d`
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
-- Current PM2 entrypoint before P17 deploy: `app/server.js`; P17 requires `app/custom-server.js`.
+- Current PM2 entrypoint: `/home/home/.npm-global/lib/node_modules/9router/app/custom-server.js`.
 - Current package version: `0.5.30`
-- Verified P15-P17 candidate: `/home/home/.openclaw/workspace-keyra/9router-candidate-p15-p17/app`
+- P15-P17 candidate was promoted to live on 2026-07-12; its isolated QA data remains under `/home/home/.openclaw/workspace-keyra/9router-candidate-p15-p17/data`.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://gui-markers-transparent-delivery.trycloudflare.com`
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `fast`
 - Latest live backup from best-GPT route restoration: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-best-gpt-20260711T040715Z`
+- Latest live backup from P15-P17 deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p15-p17-20260712T075616Z`
+- Latest DB backup from P15-P17 deploy: `/home/home/.9router/db/backups/pre-p15-p17-20260712T075616Z/data.sqlite`
 - Latest DB backup from best-GPT route restoration: `/home/home/.9router/db/backups/pre-best-gpt-20260711T040715Z/data.sqlite`
 - Latest live backup from the `0.5.30` upgrade: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.20-20260711T012155Z`
 - Latest pre-upgrade DB backup: `/home/home/.9router/db/backups/pre-v0.5.30-manual-20260711T011614Z/data.sqlite`
@@ -70,6 +72,21 @@ Important repository state:
 - Deployment used one PM2 restart. Local, short-tunnel, and raw-tunnel health passed; cloudflared stayed PID `206858`.
 - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-best-gpt-20260711T040715Z`.
 - Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-best-gpt-20260711T040715Z/data.sqlite`.
+
+### P15-P17 dashboard/client-activity deploy on 2026-07-12
+
+- Promoted the verified staged bundle with one atomic directory exchange.
+- Drained active model requests before exchange and made an integrity-checked SQLite backup.
+- Replaced PM2 `app/server.js` entrypoint with `app/custom-server.js`; new PM2 PID is `2345576`.
+- Live DB migrated schema version 1 to 2 and created `apiKeyClients`; automatic migration backup is `/home/home/.9router/db/backups/schema-1-to-2-0.5.30-20260712-005714`.
+- Local, raw Quick Tunnel, and short URL health all returned HTTP 200 after startup.
+- Cloudflared stayed PID `206858`; no tunnel process restart or URL change occurred.
+- Full source/bundle/DB/local/raw/short verifier passed with zero failures and zero warnings.
+- Live Console Log returned REST HTTP 200 and conditional HTTP 304 on all paths; local SSE returned `init`, while raw and short SSE remained buffered and therefore use polling fallback.
+- Live Codex traffic created one API-key client row and usage rows with matching API-key ID/client fingerprint metadata; `/api/usage/clients` through the short URL returned HTTP 200.
+- Existing endpoint-wide routing stayed active: post-deploy logs show `gpt-5.5` and `gpt-5.6-sol` routing to `codex/gpt-5.6-sol` with `max`; long requests still remove Priority.
+- Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p15-p17-20260712T075616Z`.
+- Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-p15-p17-20260712T075616Z/data.sqlite`.
 
 ## Upstream Branches Already Pushed
 
@@ -875,7 +892,7 @@ Verification:
 
 - Before patch, eight-second console SSE probes returned about 23 KB locally and zero bytes through both tunnel URLs; console REST returned about 22 KB on all paths.
 - Public worktree tests passed 12/12; integrated P15-P17 regression run passed 73/73 with clean ESLint and diff checks.
-- Live short-tunnel checks remain required before marking deployed.
+- Live local/raw/short Console Log transport checks passed after deploy.
 - Staged bundle built successfully with Next.js production compile, TypeScript, 126 static pages, and MITM bundle; output size is 57 MB.
 - Isolated candidate on `127.0.0.1:20129` returned console REST HTTP 200, ETag conditional HTTP 304, and immediate local SSE `init`.
 - Temporary Quick Tunnel `https://lace-hart-litigation-portrait.trycloudflare.com` returned console REST HTTP 200 and conditional HTTP 304 while SSE stayed buffered for eight seconds, exercising the intended fallback condition.
@@ -886,6 +903,7 @@ Upstream status:
 - Public branch: `tunnel-dashboard-refresh` at `df7436c`.
 - Commits: `c7995b8`, `df7436c`.
 - Clean worktree: `/home/home/.openclaw/workspace-keyra/9router-tunnel-dashboard`.
+- GitHub merge state after push: `CLEAN`.
 
 ### P16. Stable quota refresh scheduler
 
@@ -967,7 +985,7 @@ Verification:
 - Header-chain probes confirmed raw Quick Tunnel preserves spoofable first XFF while short Worker traffic emits `original IP, 2a06:98c0:3600::103`; resolver tests cover both paths and malformed chains.
 - Public focused run passed 54/54; integrated P15-P17 regression run passed 73/73. ESLint and diff checks passed.
 - Upstream `db-concurrent.test.js` independently reproduces its existing count-loss failures; P17 did not introduce them.
-- Live DB migration, short-URL identity, and PM2 entrypoint verification remain required before marking deployed.
+- Live DB migration, short-URL API response, usage attribution, and PM2 entrypoint checks passed after deploy.
 - Candidate migration advanced schema version 1 to 2, created `apiKeyClients`, and preserved existing aliases/settings.
 - Candidate PM2 process ran `app/custom-server.js` on `127.0.0.1:20129` and stayed healthy.
 - Successful keyed canary routed bare `gpt-5.4-mini` to `codex/gpt-5.6-sol`, stored Priority, 2,490 input tokens, 5 output tokens, API-key ID, and client fingerprint.
@@ -981,6 +999,7 @@ Upstream status:
 - Public branch: `api-key-client-activity` at `dd9b15b`.
 - Commits: `cd204dd`, `dd9b15b`.
 - Clean worktree: `/home/home/.openclaw/workspace-keyra/9router-api-client-activity`.
+- GitHub merge state after push: `CLEAN`.
 
 ## Not Yet Verified As Local Patch
 
