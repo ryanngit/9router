@@ -142,6 +142,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       tokens: usage,
       connectionId,
       apiKey,
+      apiKeyClient: clientRawRequest?.apiKeyClient,
       endpoint: clientRawRequest?.endpoint,
       serviceTier: finalBody?.service_tier ?? translatedBody?.service_tier ?? body?.service_tier,
       label: "STREAM USAGE",

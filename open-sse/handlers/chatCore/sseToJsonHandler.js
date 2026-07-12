@@ -130,6 +130,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         tokens: usage,
         connectionId,
         apiKey,
+        apiKeyClient: clientRawRequest?.apiKeyClient,
         endpoint: clientRawRequest?.endpoint,
         serviceTier: finalBody?.service_tier ?? translatedBody?.service_tier ?? body?.service_tier,
         silent: true
@@ -216,6 +217,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       tokens: usage,
       connectionId,
       apiKey,
+      apiKeyClient: clientRawRequest?.apiKeyClient,
       endpoint: clientRawRequest?.endpoint,
       serviceTier: finalBody?.service_tier ?? translatedBody?.service_tier ?? body?.service_tier,
       silent: true

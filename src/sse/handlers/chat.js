@@ -8,7 +8,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getApiKeyUsageLimitStatus, getSettings } from "@/lib/localDb";
+import { getApiKeyUsageLimitStatus, getSettings, recordApiKeyClientRequest } from "@/lib/localDb";
+import { getApiKeyClientIdentity } from "@/lib/apiKeyClientIdentity";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -84,6 +85,18 @@ export async function handleChat(request, clientRawRequest = null) {
       const limit = Math.round(limitStatus.limitTokens);
       log.warn("AUTH", `API key daily token limit exceeded (${used}/${limit})`);
       return errorResponse(HTTP_STATUS.RATE_LIMITED, `API key daily token limit exceeded (${used}/${limit} tokens)`);
+    }
+
+    try {
+      const identity = await getApiKeyClientIdentity(request, body);
+      const trackedClient = await recordApiKeyClientRequest(
+        apiKey,
+        identity,
+        clientRawRequest?.endpoint,
+      );
+      if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
+    } catch (error) {
+      log.warn("AUTH", `Failed to record API key client: ${error.message}`);
     }
   }
 
