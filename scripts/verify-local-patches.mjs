@@ -188,6 +188,11 @@ function checkSource() {
   mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-fable-5\"", "GitHub registry Claude Fable 5");
   mustContain("open-sse/services/copilotModels.js", "api.githubcopilot.com/models", "Copilot live model catalog");
   mustContain("open-sse/services/copilotStatus.js", "free_limited_copilot", "Copilot free profile classification");
+  mustContain("open-sse/services/provider.js", "supportsNativeResponses(provider, model)", "model-aware native Responses capability");
+  mustContain("open-sse/services/provider.js", "if (provider !== \"github\") return true", "GitHub-specific native Responses guard");
+  mustContain("open-sse/handlers/responsesHandler.js", "supportsNativeResponses(modelInfo?.provider, modelInfo?.model)", "Responses bridge uses model-aware capability");
+  mustContain("open-sse/handlers/chatCore.js", "resolveTransport(provider, sourceFormat, model)", "transport resolution includes model");
+  mustContain("open-sse/executors/github.js", "supportsNativeResponses(\"github\", model)", "GitHub executor shares Responses policy");
 
   mustContain("src/lib/db/repos/usageRepo.js", "const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0", "cached token stats");
   mustContain("src/lib/db/repos/usageRepo.js", "cacheCreationTokens", "cache-write stats");

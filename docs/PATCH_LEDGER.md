@@ -551,6 +551,7 @@ Purpose:
 
 - Add `grok-4.5` from xAI/Grok Build to model picker and routing.
 - Support xAI Responses endpoint for Codex-style `/v1/responses` clients.
+- Keep GitHub Claude, Gemini, Grok, and unknown models on Chat Completions even when clients use `/v1/responses`.
 - Route bare `grok-*` model names to xAI, so clients can use `grok-4.5` without `xai/` prefix.
 - Show xAI rows in quota tracker from local `usageHistory`, since no account-quota endpoint is known.
 - Normalize unsupported Codex Responses tools before xAI `/v1/responses`, because xAI rejects `custom` and `local_shell` tool variants.
@@ -562,6 +563,10 @@ Files:
 - `open-sse/services/usage.js`
 - `open-sse/services/usage/xai.js`
 - `open-sse/executors/default.js`
+- `open-sse/executors/github.js`
+- `open-sse/handlers/chatCore.js`
+- `open-sse/handlers/responsesHandler.js`
+- `open-sse/services/provider.js`
 - `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js`
 - `open-sse/handlers/chatCore/requestDetail.js`
 - `src/lib/db/repos/usageRepo.js`
@@ -572,6 +577,9 @@ Required invariants:
 
 - Registry includes `grok-4.5`.
 - xAI has both OpenAI chat and OpenAI Responses transports.
+- Native Responses selection is provider- and model-aware. GitHub uses `/responses` only for `gpt-*`, `o1-*`, `o3-*`, and `o4-*`; unknown models fail closed to Chat Completions.
+- GitHub Claude Responses clients are bridged to non-empty Chat `messages`; they never send native `input` to `/chat/completions`.
+- GitHub executor fallback and initial transport selection share one native Responses capability helper.
 - xAI reasoning options exposed by 9Router are `auto`, `low`, `medium`, `high`.
 - Bare `grok-*` routes to provider `xai`.
 - xAI quota tracker uses local request totals: today tokens, 7d tokens, 30d tokens, today requests.
@@ -595,6 +603,8 @@ Verification:
   - `claude-fable-5` via GitHub returned HTTP 200; provider request used `messages`, not `input`, and had no `encrypted_content`.
   - `grok-4` via xAI returned HTTP 200; provider request used `input` and had no `encrypted_content`; xAI response reported model `grok-4.3`.
   - `grok-4.5` via xAI returned HTTP 403 `permission-denied` / region unavailable in this run; provider request still had no `encrypted_content`, so failure was not compaction-related.
+- Regression found 2026-07-12 after the generic xAI native-Responses patch: `claude-fable-5` requests arrived from Codex as native Responses `input`, but GitHub executor correctly selected `/chat/completions`, producing `messages must be non-empty` on both accounts.
+- Model-aware transport regression tests passed 16/16 on 2026-07-12. They prove Fable becomes one non-empty Chat message, GitHub GPT keeps `/responses`, unknown GitHub models default to Chat, and xAI remains native Responses.
 - After PM2 restart, `rkeyra9` short worker still pointed at an older raw tunnel. Manual worker registration fixed it: `POST https://abc-tunnel.us/api/tunnel/register` with `shortId=keyra9` and the current raw tunnel URL.
 - `getModelInfoCore("grok-4.5", {})` returns `{ provider: "xai", model: "grok-4.5" }`.
 - `/v1/responses` request with model `grok-4.5` succeeds and latest request details row shows provider `xai`.
