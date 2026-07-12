@@ -193,11 +193,11 @@ Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2452>
 - Supersedes closed split PRs #1817, #1820, and #2344.
-- Updated 2026-07-10 with commit `dc8b46d fix(codex): disable priority for long contexts`.
-- PR now preserves `max`, removes Priority at the 256,000-token estimate, and keeps workspace binding in separate PR #1819.
+- Rebased onto upstream `v0.5.30` and updated 2026-07-12 at head `b175293`; GitHub merge state was `CLEAN` after force-with-lease push.
+- PR now preserves GPT-5.6 `max` through unified translation and console logging, exposes `max` for Sol/Terra/Luna, removes Priority at the 256,000-token estimate, and preserves upstream workspace/account fallback.
 - PR excludes private bare-model routing and the local GPT-5.6 `xhigh` -> `max` compatibility policy.
-- Focused verification: `./node_modules/.bin/vitest run --config tests/vitest.config.js --testTimeout 20000 tests/unit/codex-fast-capacity.test.js` passed 7/7.
-- Related Codex suites passed 23/23; ESLint passed for both changed files.
+- Seven focused Codex/reasoning suites passed 72/72; focused ESLint and `git diff --check` passed.
+- Pre-rebase branch retained locally as `backup/codex-fast-capacity-fallback-pre-rebase-20260712`.
 - Local invariant script: `node tests/unit/custom-live-patches.test.js`
 
 ### P3. Codex ChatGPT workspace binding and cache affinity
