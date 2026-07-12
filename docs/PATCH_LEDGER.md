@@ -13,7 +13,7 @@ Current live facts:
 - PM2 app: `9router`
 - Current PM2 entrypoint: `/home/home/.npm-global/lib/node_modules/9router/app/custom-server.js`.
 - Current package version: `0.5.30`
-- P15-P17 candidate was promoted to live on 2026-07-12; its isolated QA data remains under `/home/home/.openclaw/workspace-keyra/9router-candidate-p15-p17/data`.
+- P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://gui-markers-transparent-delivery.trycloudflare.com`
