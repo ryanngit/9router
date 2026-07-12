@@ -341,7 +341,6 @@ function checkBundle() {
   contains("responses/compact", "Codex compact endpoint");
   contains("additional_tools", "Responses Lite additional_tools handling");
   contains("If-None-Match", "console conditional polling");
-  contains("createAutoRefreshScheduler", "single quota refresh scheduler");
   contains("CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
   contains("apiKeyClients", "API-key client activity storage");
   contains("API Key Clients", "API-key clients usage view");

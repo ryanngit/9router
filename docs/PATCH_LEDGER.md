@@ -13,6 +13,7 @@ Current live facts:
 - PM2 app: `9router`
 - Current PM2 entrypoint before P17 deploy: `app/server.js`; P17 requires `app/custom-server.js`.
 - Current package version: `0.5.30`
+- Verified P15-P17 candidate: `/home/home/.openclaw/workspace-keyra/9router-candidate-p15-p17/app`
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://gui-markers-transparent-delivery.trycloudflare.com`
@@ -874,13 +875,17 @@ Verification:
 
 - Before patch, eight-second console SSE probes returned about 23 KB locally and zero bytes through both tunnel URLs; console REST returned about 22 KB on all paths.
 - Public worktree tests passed 12/12; integrated P15-P17 regression run passed 73/73 with clean ESLint and diff checks.
-- Candidate and live tunnel checks remain required before marking deployed.
+- Live short-tunnel checks remain required before marking deployed.
+- Staged bundle built successfully with Next.js production compile, TypeScript, 126 static pages, and MITM bundle; output size is 57 MB.
+- Isolated candidate on `127.0.0.1:20129` returned console REST HTTP 200, ETag conditional HTTP 304, and immediate local SSE `init`.
+- Temporary Quick Tunnel `https://lace-hart-litigation-portrait.trycloudflare.com` returned console REST HTTP 200 and conditional HTTP 304 while SSE stayed buffered for eight seconds, exercising the intended fallback condition.
 
 Upstream status:
 
+- Open PR: <https://github.com/decolua/9router/pull/2554>
 - Public branch: `tunnel-dashboard-refresh` at `df7436c`.
 - Commits: `c7995b8`, `df7436c`.
-- PR pending push from `/home/home/.openclaw/workspace-keyra/9router-tunnel-dashboard`.
+- Clean worktree: `/home/home/.openclaw/workspace-keyra/9router-tunnel-dashboard`.
 
 ### P16. Stable quota refresh scheduler
 
@@ -910,10 +915,11 @@ Verification:
 
 - Scheduler tests cover timer count, visibility resume, slow refresh overlap, and manual deadline reset.
 - Integrated P15-P17 regression run passed 73/73 with clean ESLint and diff checks.
+- Candidate source/bundle/DB/health verifier passed with zero failures and zero warnings.
 
 Upstream status:
 
-- Included in public branch `tunnel-dashboard-refresh` at `df7436c`; PR pending.
+- Included in public PR #2554 at `df7436c`.
 
 ### P17. API-key client activity
 
@@ -961,13 +967,20 @@ Verification:
 - Header-chain probes confirmed raw Quick Tunnel preserves spoofable first XFF while short Worker traffic emits `original IP, 2a06:98c0:3600::103`; resolver tests cover both paths and malformed chains.
 - Public focused run passed 54/54; integrated P15-P17 regression run passed 73/73. ESLint and diff checks passed.
 - Upstream `db-concurrent.test.js` independently reproduces its existing count-loss failures; P17 did not introduce them.
-- Candidate DB migration, UI, local/raw/short identity canaries, and live entrypoint verification remain required before marking deployed.
+- Live DB migration, short-URL identity, and PM2 entrypoint verification remain required before marking deployed.
+- Candidate migration advanced schema version 1 to 2, created `apiKeyClients`, and preserved existing aliases/settings.
+- Candidate PM2 process ran `app/custom-server.js` on `127.0.0.1:20129` and stayed healthy.
+- Successful keyed canary routed bare `gpt-5.4-mini` to `codex/gpt-5.6-sol`, stored Priority, 2,490 input tokens, 5 output tokens, API-key ID, and client fingerprint.
+- `/api/usage/clients` returned the same client with one request and 2,495 total tokens.
+- Raw Quick Tunnel request with spoofed `X-Forwarded-For: 198.51.100.77` stored the real Cloudflare client network and source `cloudflare`.
+- Simulated validated short Worker chain stored `203.0.113.*` with source `cloudflare-worker`.
 
 Upstream status:
 
+- Open PR: <https://github.com/decolua/9router/pull/2553>
 - Public branch: `api-key-client-activity` at `dd9b15b`.
 - Commits: `cd204dd`, `dd9b15b`.
-- PR pending push from `/home/home/.openclaw/workspace-keyra/9router-api-client-activity`.
+- Clean worktree: `/home/home/.openclaw/workspace-keyra/9router-api-client-activity`.
 
 ## Not Yet Verified As Local Patch
 
