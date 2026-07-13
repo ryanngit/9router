@@ -168,7 +168,9 @@ function estimateCodexInputTokens(body, stopAt = Number.POSITIVE_INFINITY) {
   let tokens = 0;
   for (const match of json.matchAll(CODEX_TOKEN_PART_PATTERN)) {
     const part = match[0];
-    tokens += /^[A-Za-z0-9_\s]/.test(part) ? Math.ceil(part.length / 4) : 1;
+    if (/^[A-Za-z0-9_]/.test(part)) tokens += Math.ceil(part.length / 4);
+    else if (/^\s/.test(part)) tokens += Math.floor(part.length / 4);
+    else tokens += 1;
     if (tokens >= stopAt) return tokens;
   }
   return tokens;

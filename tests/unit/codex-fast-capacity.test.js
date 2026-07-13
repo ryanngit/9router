@@ -25,7 +25,7 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe("max");
   });
 
-  it("removes fast tier from long GPT requests", () => {
+  it("keeps fast tier below the short-context limit", () => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest("gpt-5.6-sol", {
       model: "gpt-5.6-sol",
@@ -33,14 +33,14 @@ describe("Codex fast tier and capacity handling", () => {
       service_tier: "fast",
     }, true, {});
 
-    expect(body.service_tier).toBeUndefined();
+    expect(body.service_tier).toBe("priority");
   });
 
   it("removes direct priority tier from long GPT requests", () => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest("gpt-5.6-sol", {
       model: "gpt-5.6-sol",
-      input: "word ".repeat(220_000),
+      input: "word ".repeat(260_000),
       service_tier: "priority",
     }, true, {});
 
