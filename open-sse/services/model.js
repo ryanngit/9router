@@ -23,6 +23,7 @@ const BUILTIN_MODEL_ALIASES = {
   "gpt-5.6-luna": "cx/gpt-5.6-luna",
   "claude-opus-4.8": "gh/claude-opus-4.8",
   "claude-fable-5": "gh/claude-fable-5",
+  "grok-build": "gcli/grok-build",
 };
 
 /**

@@ -24,6 +24,13 @@ describe("Grok Build routing", () => {
     });
   });
 
+  it("routes official bare Grok Build subscription model to Grok CLI", async () => {
+    await expect(getModelInfoCore("grok-build", {})).resolves.toEqual({
+      provider: "grok-cli",
+      model: "grok-build",
+    });
+  });
+
   it("exposes Grok Build in the xAI model catalog", () => {
     expect(PROVIDER_MODELS.xai.map((model) => model.id)).toEqual(expect.arrayContaining([
       "grok-4.5",
