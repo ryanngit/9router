@@ -261,6 +261,8 @@ function checkSource() {
   mustContain("open-sse/services/grokCliModels.js", "refreshProviderCredentials", "Grok CLI model refresh retry");
   mustContain("open-sse/executors/grok-cli.js", "delete body.tool_choice", "Grok CLI stale tool choice removal");
   mustContain("open-sse/executors/grok-cli.js", "if (effort === \"max\") return \"xhigh\"", "Grok CLI max effort translation");
+  mustContain("open-sse/executors/grok-cli.js", "supportsGrokCliReasoningEffort", "model-aware Grok CLI reasoning effort");
+  mustContain("open-sse/executors/grok-cli.js", "delete body.reasoning.effort", "unsupported Grok CLI effort removal");
   mustContain("open-sse/executors/grok-cli.js", "GROK_CLI_TURN_STORE_MAX", "bounded Grok CLI turn state");
   mustNotContain("open-sse/executors/grok-cli.js", "x-compaction-at", "invented Grok CLI compaction header");
   mustContain("src/lib/oauth/providers.js", "requestDeviceCode: async (config, _codeChallenge, _options, proxyOptions)", "Grok CLI device request proxy propagation");

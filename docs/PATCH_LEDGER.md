@@ -1176,7 +1176,7 @@ Required invariants:
 - Subscription inference uses `https://cli-chat-proxy.grok.com/v1/responses`, model `grok-build`, `stream:true`, `store:false`, and encrypted reasoning continuity.
 - Current official fingerprint is `grok-shell/0.2.99`; model metadata is 500,000 context and 64,000 max output.
 - Do not restore invented `x-compaction-at`; official CLI compaction is client-side near 85% context.
-- Reasoning maps `max` to `xhigh`, keeps `low|medium|high|xhigh`, and normalizes unsupported values to `high`.
+- `grok-4.5` reasoning maps `max` to `xhigh`, keeps `low|medium|high|xhigh`, and normalizes unsupported values to `high`. Unknown/non-reasoning models omit effort while retaining summary and encrypted continuity.
 - Empty, absent, or fully filtered tools remove `tool_choice`; custom tool choices become matching flat function choices.
 - Session fallback stays stable when assistant history first appears. Per-session turn state is LRU-bounded at 5,000 entries; retries of the same body do not advance the turn.
 - Device request, token poll, user lookup, token refresh, model lookup, usage, and inference use the selected pool. Strict pools never fall back direct.
@@ -1199,6 +1199,9 @@ Verification:
 - Live local, raw `https://rochester-wanted-ware-movements.trycloudflare.com`, and short `https://rkeyra9.abc-tunnel.us` health returned HTTP 200. Cloudflared stayed PID `237493`; PM2 resumed online as PID `804122` through `app/custom-server.js`.
 - Short-URL post-deploy canary returned `LIVE_GROK_DEPLOY_OK` as Sol. Stored request and provider payload both had `max`, `all_turns`, and Priority.
 - Full source/live bundle/DB/local/raw/short verifier passed with zero failures and warnings.
+- Real `/v1/models` returned entitled `grok-4.5` (500K context, low/medium/high advertised) and `grok-composer-2.5-fast` (200K context). Backend also accepts hidden fallback `grok-build`.
+- Real `grok-4.5` requests with `high` and translated `max -> xhigh` returned HTTP 200 as response model `grok-4.5-build`.
+- Real `grok-build` rejected any `reasoningEffort` with HTTP 400, then exact direct wire without effort returned HTTP 200. Composer likewise returned HTTP 200 without effort. Follow-up executor commit omits effort unless model is proven `grok-4.5`.
 - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-cli-20260713T203029Z`.
 - Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-grok-cli-20260713T203029Z/data.sqlite`; integrity check returned `ok`.
 
