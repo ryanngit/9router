@@ -30,6 +30,24 @@ test("xAI Responses tool normalization converts unsupported Codex tools", () => 
   ]);
 });
 
+test("xAI Responses tool normalization removes tool choice without usable tools", () => {
+  assert.deepEqual(
+    normalizeXaiResponsesTools({ input: "hi", tool_choice: "auto" }),
+    { input: "hi" },
+  );
+  assert.deepEqual(
+    normalizeXaiResponsesTools({ tools: [{ type: "local_shell" }], tool_choice: "required" }),
+    {},
+  );
+  assert.equal(
+    normalizeXaiResponsesTools({
+      tools: [{ type: "function", name: "shell_command", parameters: { type: "object", properties: {} } }],
+      tool_choice: "auto",
+    }).tool_choice,
+    "auto",
+  );
+});
+
 test("xAI Responses payload normalization strips unsupported reasoning blobs", () => {
   const body = normalizeXaiResponsesPayload({
     include: ["reasoning.encrypted_content"],

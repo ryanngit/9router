@@ -135,7 +135,12 @@ function normalizeXaiResponsesTool(tool) {
 }
 
 export function normalizeXaiResponsesTools(body) {
-  if (!Array.isArray(body?.tools)) return body;
+  if (!Array.isArray(body?.tools)) {
+    if (body?.tools !== undefined || body?.tool_choice === undefined) return body;
+    const next = { ...body };
+    delete next.tool_choice;
+    return next;
+  }
 
   let changed = false;
   const tools = [];
@@ -149,10 +154,13 @@ export function normalizeXaiResponsesTools(body) {
     tools.push(normalized);
   }
 
-  if (!changed) return body;
+  if (!changed && tools.length > 0) return body;
   const next = { ...body };
   if (tools.length > 0) next.tools = tools;
-  else delete next.tools;
+  else {
+    delete next.tools;
+    delete next.tool_choice;
+  }
   return next;
 }
 
