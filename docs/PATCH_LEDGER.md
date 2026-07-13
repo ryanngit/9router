@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed runtime commits `ce3f0af`, `7979369`, `a961a4f`, and `6927f65`
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed runtime commits through `a2686c7` (latest Grok commits: `66cc05c`, `05f61b5`, `a2686c7`)
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -16,6 +16,7 @@ Current live facts:
 - P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
 - P2/P18 latency candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed after deploy.
 - P9 xAI stale-tool-choice candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
+- P19 official Grok Build subscription candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://rochester-wanted-ware-movements.trycloudflare.com`
@@ -24,6 +25,9 @@ Current live facts:
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
 - xAI OAuth profile `songoku200794@gmail.com` uses proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` (`http://127.0.0.1:18888`). Gateway routes `x.ai`/`grok.com` domains through US exits on both listeners.
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
+- No `grok-cli` device-code profile existed at P19 deploy time; real subscription entitlement probes require one authorization after deployment.
+- Latest live backup from official Grok Build deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-cli-20260713T203029Z`
+- Latest DB backup from official Grok Build deploy: `/home/home/.9router/db/backups/pre-grok-cli-20260713T203029Z/data.sqlite`
 - Latest live backup from xAI stale-tool-choice deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-xai-tool-choice-20260713T094526Z`
 - Latest DB backup from xAI stale-tool-choice deploy: `/home/home/.9router/db/backups/pre-xai-tool-choice-20260713T094526Z/data.sqlite`
 - Latest live backup from corrected Priority deployment: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-priority2-20260713T083828Z`
@@ -1188,6 +1192,15 @@ Verification:
 - Candidate focused suite passed 40/40; broader Grok/xAI/Responses suite passed 65/65. Focused ESLint had zero errors and one existing anonymous-default-export warning.
 - Source verifier passed with zero failures and warnings.
 - Real entitlement, effort, tool, encrypted-history, refresh, billing, and model-list probes remain gated on one successful Grok CLI device authorization.
+- Production build completed Next.js compilation, TypeScript, 126 pages, standalone copy, and MITM bundling at 57 MB. Source/candidate verifier passed with zero failures and warnings.
+- Isolated `127.0.0.1:20129` used a copied DB with every refresh token removed and tunnel disabled. Bare `grok-build` selected provider `grok-cli`; stored wire body used model `grok-build`, effort `xhigh`, no stale `tool_choice`, `stream:true`, and `store:false`. Fake auth stopped at expected HTTP 401.
+- Isolated existing-route canary returned `CANDIDATE_OK` as `gpt-5.6-sol`; stored provider request kept `max`, `all_turns`, and Priority.
+- Detached deployment guard waited for two zero-active snapshots, atomically exchanged directories, restarted PM2 once, and retained automatic rollback until local health passed.
+- Live local, raw `https://rochester-wanted-ware-movements.trycloudflare.com`, and short `https://rkeyra9.abc-tunnel.us` health returned HTTP 200. Cloudflared stayed PID `237493`; PM2 resumed online as PID `804122` through `app/custom-server.js`.
+- Short-URL post-deploy canary returned `LIVE_GROK_DEPLOY_OK` as Sol. Stored request and provider payload both had `max`, `all_turns`, and Priority.
+- Full source/live bundle/DB/local/raw/short verifier passed with zero failures and warnings.
+- Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-cli-20260713T203029Z`.
+- Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-grok-cli-20260713T203029Z/data.sqlite`; integrity check returned `ok`.
 
 Upstream status:
 
