@@ -78,4 +78,3 @@ describe("Grok CLI live models", () => {
     expect(fetchFn.mock.calls[1][1].headers["x-grok-client-version"]).toBe("0.2.99");
   });
 });
-
