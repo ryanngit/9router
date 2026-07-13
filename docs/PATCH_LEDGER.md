@@ -1202,6 +1202,8 @@ Verification:
 - Real `/v1/models` returned entitled `grok-4.5` (500K context, low/medium/high advertised) and `grok-composer-2.5-fast` (200K context). Backend also accepts hidden fallback `grok-build`.
 - Real `grok-4.5` requests with `high` and translated `max -> xhigh` returned HTTP 200 as response model `grok-4.5-build`.
 - Real `grok-build` rejected any `reasoningEffort` with HTTP 400, then exact direct wire without effort returned HTTP 200. Composer likewise returned HTTP 200 without effort. Follow-up executor commit omits effort unless model is proven `grok-4.5`.
+- Real billing for X Premium+ returned `onDemandCap=0`, `onDemandUsed=0`, `hasGrokCodeAccess=true`, and `subscriptionTier=XPremiumPlus` while inference remained active. Zero means no separate on-demand allowance, not exhausted subscription quota.
+- Paid tiers with no numeric allotment now report active subscription and explicitly state that Grok exposes no numeric included quota. Tierless zero-cap promo/free profiles retain the depleted state.
 - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-cli-20260713T203029Z`.
 - Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-grok-cli-20260713T203029Z/data.sqlite`; integrity check returned `ok`.
 

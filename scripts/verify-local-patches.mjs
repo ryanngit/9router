@@ -270,6 +270,7 @@ function checkSource() {
   mustContain("src/app/api/oauth/[provider]/[action]/route.js", "\"codebuddy-cn\", \"grok-cli\"", "Grok CLI no-PKCE polling");
   mustContain("open-sse/services/oauthCredentialManager.js", "effectiveProxyOptions", "OAuth refresh proxy propagation");
   mustContain("open-sse/services/usage/grok-cli.js", "monthlyLimit", "current Grok Build quota fields");
+  mustContain("open-sse/services/usage/grok-cli.js", "subscriptionAccess", "paid Grok subscription zero-cap handling");
 
   mustContain("src/app/(dashboard)/dashboard/console-log/ConsoleLogClient.js", "startConsoleLogTransport", "console tunnel fallback transport");
   mustContain("src/app/(dashboard)/dashboard/console-log/transport.js", "If-None-Match", "console conditional polling");
