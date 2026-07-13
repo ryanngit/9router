@@ -1,23 +1,31 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-11
+Last updated: 2026-07-13
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Clean current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed GitHub Responses fix `cda802f`
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed latency fixes `ce3f0af`, `7979369`, and `a961a4f`
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
 - Current PM2 entrypoint: `/home/home/.npm-global/lib/node_modules/9router/app/custom-server.js`.
 - Current package version: `0.5.30`
 - P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
+- P2/P18 latency candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed after deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://rochester-wanted-ware-movements.trycloudflare.com`
+- Current detached cloudflared PID: `237493`
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `fast`
+- Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
+- xAI OAuth profile `songoku200794@gmail.com` uses proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` (`http://127.0.0.1:18888`). Gateway routes `x.ai`/`grok.com` domains through US exits on both listeners.
+- Latest live backup from corrected Priority deployment: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-priority2-20260713T083828Z`
+- Latest DB backup from corrected Priority deployment: `/home/home/.9router/db/backups/pre-priority2-20260713T083828Z/data.sqlite`
+- Previous live backup from initial latency deployment: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-latency-20260713T074916Z`
+- Previous DB backup from initial latency deployment: `/home/home/.9router/db/backups/pre-latency-20260713T074916Z/data.sqlite`
 - Latest live backup from best-GPT route restoration: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-best-gpt-20260711T040715Z`
 - Latest live backup from P15-P17 deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p15-p17-20260712T075616Z`
 - Latest DB backup from P15-P17 deploy: `/home/home/.9router/db/backups/pre-p15-p17-20260712T075616Z/data.sqlite`
@@ -87,6 +95,44 @@ Important repository state:
 - Existing endpoint-wide routing stayed active: post-deploy logs show `gpt-5.5` and `gpt-5.6-sol` routing to `codex/gpt-5.6-sol` with `max`; long requests still remove Priority.
 - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p15-p17-20260712T075616Z`.
 - Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-p15-p17-20260712T075616Z/data.sqlite`.
+
+### xAI OAuth recovery and regional bypass on 2026-07-12
+
+- `songoku200794@gmail.com` failed with `unauthenticated:bad-credentials`: access token expired on 2026-07-09 and xAI returned `invalid_grant` because its refresh token was revoked.
+- Reauthorized through the existing proxy pool. OAuth dedup updated connection `afe8eb39-0b45-46ce-9ca0-b7fc4762c582`; no duplicate profile was created.
+- Fresh token and exact 9Router provider payload returned HTTP 200 when sent directly to `https://api.x.ai/v1/responses`.
+- 9Router still returned `The model grok-4.5 is not available in your region` because removing the per-profile pool fell back to global outbound proxy `http://127.0.0.1:18888`.
+- A temporary direct bypass proved the regional cause: removing the xAI profile pool and setting `outboundNoProxy=api.x.ai` made local and short-URL canaries pass.
+- Gateway config then added separate US routes for `x.ai`/`grok.com`: port `18888` requires `dc+us`; port `18889` requires `true_residential+us`. ChatGPT tags, Stripe routes, MITM domains, and listener defaults were unchanged.
+- Restored the xAI profile pool and cleared `outboundNoProxy`. Direct gateway canaries passed on both ports; 9Router local and `https://rkeyra9.abc-tunnel.us/v1/responses` canaries returned `LOCAL_OK` and `TUNNEL_OK` through the US DC exit.
+- Short tunnel health remained HTTP 200 and cloudflared stayed PID `237493`.
+- Diagnostic rule: `bad-credentials` requires token/refresh inspection and usually reauthorization; `model ... not available in your region` requires direct-versus-proxy replay before changing credentials again.
+
+### Codex latency correction on 2026-07-13
+
+- End-to-end analysis found normal Codex time was dominated by time to first token, not tunnel transport: about 93% of total time occurred before first token, while strict gateway matching showed about 0.57 seconds median outside-gateway overhead.
+- Priority usage fell from 52% to 11.5% between sampled 30-minute windows while average TTFT rose from 19.8 to 29.6 seconds.
+- Root cause 1: `estimateCodexInputTokens()` charged every ordinary space as one token. Typical English requests were estimated at about twice their provider-reported token count, so Priority was removed around 121K-127K actual tokens instead of near the 256K safety cutoff.
+- First fix discounted ordinary spaces but still rounded every short word and punctuation run upward. Post-deploy evidence showed it remained wrong: 72 large requests still lost Priority while provider usage averaged about 186K input tokens.
+- Final fix estimates whole serialized ASCII payload at five characters per token, adds a long-whitespace surcharge to reach one token per four consecutive spaces, and counts non-ASCII UTF-16 units conservatively. This avoids per-run JSON rounding while retaining bounded early exit.
+- Replay over 131 completed structured payloads measured 4.88-5.88 serialized characters per provider token. Final estimator predicts 87.9% Priority, zero unsafe Priority requests at or above 272K actual tokens, three safety-margin removals from 256K-272K, and 13 required removals above 272K.
+- Tests prove 220K repeated words and punctuation-heavy 1.1M-character input retain Priority, while 260K repeated words and 1,024,000 consecutive spaces remove it.
+- Root cause 2: every completed request made every Usage SSE client run default all-history `getUsageStats()`. The live DB had 161,728 usage rows; measured aggregation was about 34.5 seconds for `all`, 7.3 seconds for `7d`, and 1.8 seconds for `today`.
+- Fix: Usage SSE sends only `activeRequests`, `recentRequests`, `errorProvider`, and `pending`; full period aggregates remain on `/api/usage/stats`. One in-flight snapshot plus one queued rerun coalesces update bursts.
+- Source QA passed 16 files and 83 tests; focused regression passed 13/13; ESLint, `git diff --check`, and source verifier passed.
+- Production build completed Next.js compile, TypeScript, 126 pages, standalone copy, and MITM bundle. Output was 57 MB; full build took about 23 minutes, so deployment build commands need a timeout above 20 minutes on this host.
+- Isolated `127.0.0.1:20129` SSE delivered a 3.8 KB realtime-only event in 638 ms against the copied 161K-row DB. With 12 concurrent SSE clients and a routed Sol request, health p95 was 150 ms and max was 160 ms; process event-loop p95 settled near 50 ms.
+- Under many simultaneous 400-1,100-message production requests, local health p95 still reached about 626 ms. This is residual request parsing and serialization load, not the removed 34.5-second Usage aggregation; provider TTFT remains the dominant end-to-end delay.
+- Candidate bare `gpt-5.4-mini` canaries returned HTTP 200 as `gpt-5.6-sol`; stored request/provider effort was `max` and tier was `priority`.
+- Isolated gateway `18890` tested `chatgpt_api+dc+us` with warm probing disabled. Across eight healthy same-account pairs, `18890` averaged 4.68 seconds and `18888` averaged 4.72 seconds, but `18890` also had one 60-second zero-byte stall. No production gateway route changed; temporary listener/config were removed.
+- Wrapper diagnostic `scripts/probe-codex-model-access.mjs` now accepts `PROBE_PROXY_URL` and `PROBE_PROFILE_LIMIT` and prints elapsed milliseconds, allowing repeatable same-account proxy A/B without DB edits.
+- Deployment used an atomic bundle exchange and one `pm2 restart 9router --update-env` with zero active requests. Local health recovered immediately; local, raw, and short health returned HTTP 200; cloudflared stayed PID `237493`.
+- Post-deploy traffic proved the first whitespace-only estimator remained too conservative, so `a961a4f` replaced it and was deployed with a second atomic exchange and one restart. Completed requests around 123K and 219K provider-reported input tokens retained Priority; requests around 253K removed it conservatively before the 272K long-context boundary.
+- Final short-URL canary returned HTTP 200 as Sol and stored request/provider `max` plus `priority`. Full source/live bundle/DB/local verifier passed with zero failures and warnings.
+- Current rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-priority2-20260713T083828Z`.
+- Current pre-deploy DB backup: `/home/home/.9router/db/backups/pre-priority2-20260713T083828Z/data.sqlite`; integrity check returned `ok`.
+- Earlier rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-latency-20260713T074916Z`.
+- Earlier pre-deploy DB backup: `/home/home/.9router/db/backups/pre-latency-20260713T074916Z/data.sqlite`.
 
 ## Upstream Branches Already Pushed
 
@@ -160,7 +206,7 @@ Required invariants:
 - Codex `service_tier: fast` becomes `priority`.
 - Final GPT provider payloads estimated at 256,000 input tokens or more have `service_tier` removed before sending.
 - The operational cutoff leaves a 16,000-token safety margin below the 272,000-token short-context boundary because Codex sends no exact pre-request token count.
-- The lexical estimate counts words, punctuation, Unicode characters, and whitespace runs so whitespace-heavy input cannot bypass the guard.
+- The lexical estimate counts whole serialized ASCII payload at about five characters per token, surcharges long ASCII whitespace to one token per four characters, and counts non-ASCII UTF-16 units conservatively.
 - Other unsupported Codex service tiers are removed.
 - GPT-5.6 `xhigh` becomes `max`; `max` is never downgraded.
 - Unified translation preserves `max` for Codex Sol, Terra, and Luna before request-summary logging; generic OpenAI models still clamp unsupported `max` to `xhigh`.
@@ -175,6 +221,7 @@ Verification:
 - 2026-07-10 isolated bundle on `127.0.0.1:20129` passed source and bundle verification, then completed a short Sol request whose provider payload contained `service_tier:"priority"`.
 - 2026-07-10 live probe returned `LIVE_OK`; request details confirmed incoming `fast` became provider `priority`. Upstream OAuth response reported effective `default`, so effective-tier accounting correctly did not claim Priority service.
 - Focused test covers `fast`, direct `priority`, and whitespace-heavy long payloads.
+- 2026-07-13 calibration tests prove 220K repeated words and punctuation-heavy 1.1M-character input retain Priority; 260K repeated words and 1,024,000 consecutive spaces remove it.
 - Live deploy used one PM2 restart. Local, `rkeyra9`, and raw TryCloudflare health passed; cloudflared PID remained `206858`.
 - GPT-5.6 max-log correction deployed 2026-07-12:
   - Root cause: unified OpenAI translation changed `max` to `xhigh` before request-summary logging. Codex executor changed it back to `max`, so actual provider wire was already correct but console `THINK:xhigh` was misleading and verifier missed the earlier stage.
@@ -193,12 +240,12 @@ Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2452>
 - Supersedes closed split PRs #1817, #1820, and #2344.
-- Rebased onto upstream `v0.5.30` and updated 2026-07-12 at head `b175293`; GitHub merge state was `CLEAN` after force-with-lease push.
+- Rebased onto upstream `v0.5.30` and updated 2026-07-13 at head `2631f94`; GitHub merge state is `CLEAN`.
 - PR now preserves GPT-5.6 `max` through unified translation and console logging, exposes `max` for Sol/Terra/Luna, removes Priority at the 256,000-token estimate, and preserves upstream workspace/account fallback.
 - PR excludes private bare-model routing and the local GPT-5.6 `xhigh` -> `max` compatibility policy.
-- Seven focused Codex/reasoning suites passed 72/72; focused ESLint and `git diff --check` passed.
+- Seven focused Codex/reasoning suites passed 39/39; focused ESLint and `git diff --check` passed.
 - Pre-rebase branch retained locally as `backup/codex-fast-capacity-fallback-pre-rebase-20260712`.
-- Local invariant script: `node tests/unit/custom-live-patches.test.js`
+- Local invariant command: `node scripts/verify-local-patches.mjs --root . --bundle /home/home/.npm-global/lib/node_modules/9router/app --db /home/home/.9router/db/data.sqlite`
 
 ### P3. Codex ChatGPT workspace binding and cache affinity
 
@@ -939,8 +986,8 @@ Verification:
 Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2554>
-- Public branch: `tunnel-dashboard-refresh` at `df7436c`.
-- Commits: `c7995b8`, `df7436c`.
+- Public branch: `tunnel-dashboard-refresh` at `f7bac99`.
+- Commits: `c7995b8`, `df7436c`, `f7bac99`.
 - Clean worktree: `/home/home/.openclaw/workspace-keyra/9router-tunnel-dashboard`.
 - GitHub merge state after push: `CLEAN`.
 
@@ -976,7 +1023,7 @@ Verification:
 
 Upstream status:
 
-- Included in public PR #2554 at `df7436c`.
+- Included in public PR #2554 at `f7bac99`.
 
 ### P17. API-key client activity
 
@@ -1040,6 +1087,42 @@ Upstream status:
 - Clean worktree: `/home/home/.openclaw/workspace-keyra/9router-api-client-activity`.
 - GitHub merge state after push: `CLEAN`.
 
+### P18. Lightweight Usage SSE
+
+Purpose:
+
+- Prevent Usage dashboard realtime updates from running all-history aggregation on the main Node event loop.
+- Preserve active, recent, error, and pending UI updates without retransmitting aggregate tables the client ignores.
+
+Files:
+
+- `src/app/api/usage/stream/route.js`
+- `src/lib/db/repos/usageRepo.js`
+- `tests/unit/usage-stream-cleanup.test.js`
+- `scripts/verify-local-patches.mjs`
+
+Required invariants:
+
+- Usage SSE must not import or call `getUsageStats()`.
+- Initial, `pending`, and `update` events call only `getActiveRequests()`.
+- Realtime payload contains `activeRequests`, `recentRequests`, `errorProvider`, and `pending`.
+- At most one activity snapshot runs per SSE client; overlapping events queue one coalesced rerun.
+- Abort, cancel, enqueue failure, and already-aborted requests remove both emitter listeners and keepalive timers.
+- Full period statistics remain on `/api/usage/stats?period=...`; `UsageStats` merges only realtime SSE fields into its REST snapshot.
+
+Verification:
+
+- Focused SSE/Codex regression passed 13/13; broader local regression passed 83/83.
+- Public PR worktree console/scheduler/SSE/DB run passed 35/35; ESLint and `git diff --check` passed.
+- Copied 161,728-row DB produced first SSE event in 638 ms with only four realtime fields.
+- Twelve concurrent candidate SSE clients plus one routed request kept health p95 at 150 ms and max at 160 ms.
+- Source verifier rejects `getUsageStats` in Usage SSE and requires update coalescing plus pending snapshot.
+
+Upstream status:
+
+- Included in open PR <https://github.com/decolua/9router/pull/2554> at head `f7bac99`.
+- GitHub merge state after push is `CLEAN`.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
@@ -1057,6 +1140,7 @@ Run before every 9Router update:
 - Use a fresh clone for upstream PR prep if `git status` fails in this directory.
 - Compare upstream `cli/cli.js` with the local tunnel-preserving wrapper; do not replace it blindly.
 - Check `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'`; target must be `cx/gpt-5.6-sol` and effort must be `max`.
+- Confirm `src/app/api/usage/stream/route.js` does not import or call `getUsageStats`.
 
 Run after every update/deploy:
 
@@ -1074,4 +1158,5 @@ Run after every update/deploy:
 - Confirm PM2 `pm_exec_path` ends in `app/custom-server.js` and live DB contains `apiKeyClients`.
 - Send one API-key request with `X-9Router-Client-ID`; verify one Usage > API Key Clients row and matching usage tokens without storing the full IP.
 - Re-run the verifier against source, bundle, and DB.
+- Open Usage once and confirm `/api/usage/stream` emits only realtime fields without blocking `/api/health`.
 - Save the backup path and tunnel URL in this ledger if they changed.

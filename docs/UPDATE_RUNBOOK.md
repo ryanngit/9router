@@ -1,6 +1,6 @@
 # 9Router Update Runbook
 
-Last updated: 2026-07-11
+Last updated: 2026-07-13
 
 Use this before updating, patching, deploying, or preparing upstream PRs. The goal is minimal downtime and no rediscovery of fragile behavior.
 
@@ -138,6 +138,7 @@ Targeted manual checks by patch:
 - P15 console: local SSE emits `init`; raw and short tunnels fall back to ETag polling after silent SSE.
 - P16 quota: countdown advances once per real second and one refresh occurs at the deadline.
 - P17 API clients: trusted-IP tests pass; one keyed canary appears under Usage > API Key Clients.
+- P18 usage SSE: route never calls `getUsageStats`; payload contains only active/recent/error/pending fields and overlapping events coalesce.
 
 Known clean-upstream `0.5.30` baseline failures:
 
@@ -176,6 +177,8 @@ node -e "require.resolve('esbuild', { paths: ['./cli'] })"
 ```
 
 If missing, install the already-declared CLI dev dependencies before building. Never deploy a candidate after `build-cli.js` stops at the MITM step. If MITM source is unchanged and an emergency build must proceed, reuse the exact verified live bundled `src/mitm/server.js` and compare SHA-256 hashes.
+
+Allow at least 45 minutes for `build-cli.js` on this host. A verified 2026-07-13 build took about 23 minutes; 10-minute and 20-minute command ceilings killed valid builds before standalone packaging completed.
 
 Skeleton:
 
@@ -253,6 +256,8 @@ Notes:
 - Starting an unreviewed upstream wrapper can kill the stable quick tunnel. Keep the local wrapper until its process-management diff is rebased and tested separately.
 - After health passes, verify `curl http://127.0.0.1:20128/api/version`, `pm2 describe 9router`, both package files, and `9router --version` report the same release.
 - After every deploy, send a bare `gpt-5.4-mini` canary and verify response, request-detail, provider, and usage model are `gpt-5.6-sol`; routed/provider effort must be `max`.
+- After Usage SSE changes, open several candidate SSE clients, complete one model request, and verify `/api/health` stays responsive; never stress the pre-patch live SSE path against a large DB.
+- Treat sub-second health degradation during many concurrent 400-1,100-message requests as request parsing/serialization load. Investigate only if it persists without large concurrent requests or rises into multi-second stalls; provider TTFT is tracked separately.
 
 ## 7. Retrospective
 
