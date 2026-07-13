@@ -252,6 +252,23 @@ function checkSource() {
   mustContain("open-sse/services/usage/xai.js", "usageHistory", "xAI local usage aggregation");
   mustContain("src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js", "case \"xai\"", "xAI usage UI parser");
 
+  mustContain("open-sse/config/grokCli.js", "GROK_CLI_VERSION = \"0.2.99\"", "official Grok CLI fingerprint");
+  mustContain("open-sse/providers/registry/grok-cli.js", "id: GROK_CLI_MODEL", "official Grok Build subscription model");
+  mustContain("open-sse/providers/registry/grok-cli.js", "contextLength: 500000", "Grok Build context metadata");
+  mustContain("open-sse/services/model.js", "\"grok-build\": \"gcli/grok-build\"", "bare Grok Build subscription route");
+  mustContain("open-sse/config/grokCli.js", "https://cli-chat-proxy.grok.com/v1", "Grok CLI subscription endpoint");
+  mustContain("open-sse/services/grokCliModels.js", "resolveGrokCliModels", "Grok CLI live model resolver");
+  mustContain("open-sse/services/grokCliModels.js", "refreshProviderCredentials", "Grok CLI model refresh retry");
+  mustContain("open-sse/executors/grok-cli.js", "delete body.tool_choice", "Grok CLI stale tool choice removal");
+  mustContain("open-sse/executors/grok-cli.js", "if (effort === \"max\") return \"xhigh\"", "Grok CLI max effort translation");
+  mustContain("open-sse/executors/grok-cli.js", "GROK_CLI_TURN_STORE_MAX", "bounded Grok CLI turn state");
+  mustNotContain("open-sse/executors/grok-cli.js", "x-compaction-at", "invented Grok CLI compaction header");
+  mustContain("src/lib/oauth/providers.js", "requestDeviceCode: async (config, _codeChallenge, _options, proxyOptions)", "Grok CLI device request proxy propagation");
+  mustContain("src/lib/oauth/providers.js", "pollToken: async (config, deviceCode, _codeVerifier, _extraData, proxyOptions)", "Grok CLI poll proxy propagation");
+  mustContain("src/app/api/oauth/[provider]/[action]/route.js", "\"codebuddy-cn\", \"grok-cli\"", "Grok CLI no-PKCE polling");
+  mustContain("open-sse/services/oauthCredentialManager.js", "effectiveProxyOptions", "OAuth refresh proxy propagation");
+  mustContain("open-sse/services/usage/grok-cli.js", "monthlyLimit", "current Grok Build quota fields");
+
   mustContain("src/app/(dashboard)/dashboard/console-log/ConsoleLogClient.js", "startConsoleLogTransport", "console tunnel fallback transport");
   mustContain("src/app/(dashboard)/dashboard/console-log/transport.js", "If-None-Match", "console conditional polling");
   mustContain("src/app/api/translator/console-logs/route.js", "getConsoleLogSnapshot", "console revision snapshots");
@@ -347,6 +364,10 @@ function checkBundle() {
   contains("custom_tool_call", "xAI custom tool history conversion");
   contains("function_call_output", "xAI function output normalization");
   contains("Local usage", "xAI local usage handler");
+  contains("0.2.99", "official Grok CLI fingerprint");
+  contains("cli-chat-proxy.grok.com/v1/models", "Grok CLI live model discovery");
+  contains("grok-build", "official Grok Build subscription model");
+  contains("Monthly included", "current Grok Build quota fields");
   contains("service_tier", "Codex service tier handling");
   contains("priority", "priority service tier string");
   contains("Priority disabled for long context", "Codex long-context priority removal");

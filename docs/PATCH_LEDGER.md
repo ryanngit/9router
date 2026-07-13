@@ -1140,6 +1140,62 @@ Upstream status:
 - Included in open PR <https://github.com/decolua/9router/pull/2554> at head `f7bac99`.
 - GitHub merge state after push is `CLEAN`.
 
+### P19. Official Grok Build subscription path
+
+Purpose:
+
+- Support official `@xai-official/grok` subscription traffic through `cli-chat-proxy.grok.com` without conflating it with `xai/grok-4.5` API OAuth or `grok-web/*` cookie traffic.
+- Preserve selected proxy pool through device authorization, polling, profile lookup, refresh, model discovery, usage, and inference.
+- Match current Grok CLI protocol metadata and expose only account-entitled live models when available.
+
+Files:
+
+- `open-sse/config/grokCli.js`
+- `open-sse/executors/grok-cli.js`
+- `open-sse/providers/registry/grok-cli.js`
+- `open-sse/services/grokCliModels.js`
+- `open-sse/services/oauthCredentialManager.js`
+- `open-sse/services/tokenRefresh.js`
+- `open-sse/services/tokenRefresh/providers.js`
+- `open-sse/services/usage/grok-cli.js`
+- `src/app/api/oauth/[provider]/[action]/route.js`
+- `src/app/api/providers/[id]/models/route.js`
+- `src/app/api/v1/models/route.js`
+- `src/lib/oauth/providers.js`
+- `src/lib/oauth/services/xai.js`
+- `src/sse/services/auth.js`
+- `tests/unit/grok-cli-*.test.js`
+
+Required invariants:
+
+- `grok-build` routes to provider `grok-cli`; `grok-build-0.1` remains the legacy xAI API model, bare `grok-4.5` remains `xai`, and `grok-web/*` remains separate.
+- Subscription inference uses `https://cli-chat-proxy.grok.com/v1/responses`, model `grok-build`, `stream:true`, `store:false`, and encrypted reasoning continuity.
+- Current official fingerprint is `grok-shell/0.2.99`; model metadata is 500,000 context and 64,000 max output.
+- Do not restore invented `x-compaction-at`; official CLI compaction is client-side near 85% context.
+- Reasoning maps `max` to `xhigh`, keeps `low|medium|high|xhigh`, and normalizes unsupported values to `high`.
+- Empty, absent, or fully filtered tools remove `tool_choice`; custom tool choices become matching flat function choices.
+- Session fallback stays stable when assistant history first appears. Per-session turn state is LRU-bounded at 5,000 entries; retries of the same body do not advance the turn.
+- Device request, token poll, user lookup, token refresh, model lookup, usage, and inference use the selected pool. Strict pools never fall back direct.
+- `/v1/models` and per-connection model lookup query `/v1/models`, refresh once on auth failure, then fall back to static `grok-build` metadata.
+- Quota parsing accepts old cap/used fields plus current `monthlyLimit`, `includedUsed`, `totalUsed`, and `subscription_tier` shapes.
+- Grok Build subscription usage has no invented API token price; local cost stays unknown/zero unless provider returns exact cost data.
+
+Verification:
+
+- Official binaries `0.2.93` and `0.2.99` were wire-captured against a local fake session; `0.2.99` used `/v1/models`, `/v1/user`, `/v1/settings`, `/v1/billing?format=credits`, and `/v1/responses` with model `grok-build`.
+- Official embedded metadata reported 500,000 context, 64,000 max output, Responses backend, and `supported_in_api:false`.
+- Gateway `18888` reached `auth.x.ai` and `cli-chat-proxy.grok.com` through a US exit; `18889` timed out and is not used for this migration.
+- Candidate focused suite passed 40/40; broader Grok/xAI/Responses suite passed 65/65. Focused ESLint had zero errors and one existing anonymous-default-export warning.
+- Source verifier passed with zero failures and warnings.
+- Real entitlement, effort, tool, encrypted-history, refresh, billing, and model-list probes remain gated on one successful Grok CLI device authorization.
+
+Upstream status:
+
+- Local commits: `66cc05c` protocol/model/session, `05f61b5` proxy-safe OAuth/refresh, `a2686c7` current quota fields.
+- Push generic protocol/model/session and quota fixes in a focused follow-up PR.
+- Add proxy-safe Grok device flow and refresh to existing OAuth proxy PR #2343 when cleanly rebased.
+- Keep personal routing aliases beyond bare official `grok-build` out of upstream.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
