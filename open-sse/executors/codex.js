@@ -40,7 +40,7 @@ const CODEX_LITE_METADATA_HEADERS = [
 ];
 const CODEX_PRIORITY_SHORT_CONTEXT_LIMIT = 272_000;
 const CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT = 256_000;
-const CODEX_TOKEN_PART_PATTERN = /[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_]/g;
+const CODEX_TOKEN_PART_PATTERN = /[^\s\u0080-\uFFFF]+|\s+|[\u0080-\uFFFF]/g;
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -165,15 +165,33 @@ function estimateCodexInputTokens(body, stopAt = Number.POSITIVE_INFINITY) {
   }
 
   // ponytail: Codex sends no input-token count; replace this lexical estimate when one becomes available.
-  let tokens = 0;
+  let asciiChars = 0;
+  let whitespaceExtraTokens = 0;
+  let unicodeTokens = 0;
   for (const match of json.matchAll(CODEX_TOKEN_PART_PATTERN)) {
     const part = match[0];
-    if (/^[A-Za-z0-9_]/.test(part)) tokens += Math.ceil(part.length / 4);
-    else if (/^\s/.test(part)) tokens += Math.floor(part.length / 4);
-    else tokens += 1;
+    if (/^\s/.test(part)) {
+      let unicodeWhitespace = 0;
+      if (!/^[\x00-\x7F]+$/.test(part)) {
+        for (let i = 0; i < part.length; i++) {
+          if (part.charCodeAt(i) > 0x7f) unicodeWhitespace += 1;
+        }
+      }
+      const asciiWhitespace = part.length - unicodeWhitespace;
+      asciiChars += asciiWhitespace;
+      unicodeTokens += unicodeWhitespace;
+      // Raises long ASCII whitespace from 1 token per 5 chars to 1 per 4.
+      whitespaceExtraTokens += Math.floor(asciiWhitespace / 20);
+    } else if (part.charCodeAt(0) <= 0x7f) {
+      asciiChars += part.length;
+    } else {
+      unicodeTokens += part.length;
+    }
+
+    const tokens = Math.ceil(asciiChars / 5) + whitespaceExtraTokens + unicodeTokens;
     if (tokens >= stopAt) return tokens;
   }
-  return tokens;
+  return Math.ceil(asciiChars / 5) + whitespaceExtraTokens + unicodeTokens;
 }
 
 function findNestedMessage(value, depth = 0) {

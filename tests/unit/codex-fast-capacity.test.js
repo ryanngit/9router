@@ -36,6 +36,17 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.service_tier).toBe("priority");
   });
 
+  it("does not round every JSON punctuation mark up to one token", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "key:value,".repeat(110_000),
+      service_tier: "fast",
+    }, true, {});
+
+    expect(body.service_tier).toBe("priority");
+  });
+
   it("removes direct priority tier from long GPT requests", () => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest("gpt-5.6-sol", {
