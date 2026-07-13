@@ -365,7 +365,7 @@ function checkBundle() {
   contains("function_call_output", "xAI function output normalization");
   contains("Local usage", "xAI local usage handler");
   contains("0.2.99", "official Grok CLI fingerprint");
-  contains("cli-chat-proxy.grok.com/v1/models", "Grok CLI live model discovery");
+  contains("cli-chat-proxy.grok.com/v1", "Grok CLI subscription endpoint");
   contains("grok-build", "official Grok Build subscription model");
   contains("Monthly included", "current Grok Build quota fields");
   contains("service_tier", "Codex service tier handling");
