@@ -370,7 +370,9 @@ function checkBundle() {
   contains("0.2.99", "official Grok CLI fingerprint");
   contains("cli-chat-proxy.grok.com/v1", "Grok CLI subscription endpoint");
   contains("grok-build", "official Grok Build subscription model");
+  contains("/^grok-4\\.5(?:$|-)/", "model-aware Grok CLI reasoning effort");
   contains("Monthly included", "current Grok Build quota fields");
+  contains("Subscription access is active; Grok does not expose a numeric included quota.", "paid Grok subscription zero-cap handling");
   contains("service_tier", "Codex service tier handling");
   contains("priority", "priority service tier string");
   contains("Priority disabled for long context", "Codex long-context priority removal");
