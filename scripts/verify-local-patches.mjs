@@ -238,6 +238,7 @@ function checkSource() {
   mustContain("open-sse/providers/registry/xai.js", "usage: true", "xAI quota tracker enabled");
   mustContain("open-sse/services/model.js", "[/^grok-/, \"xai\"]", "bare Grok routes to xAI");
   mustContain("open-sse/executors/default.js", "normalizeXaiResponsesTools", "xAI Responses tool normalizer");
+  mustContain("open-sse/executors/default.js", "delete next.tool_choice", "xAI stale tool choice removal");
   mustContain("open-sse/executors/default.js", "XAI_FREEFORM_TOOL_PARAMETERS", "xAI custom tool freeform wrapper");
   mustContain("open-sse/executors/default.js", "tool.type === \"local_shell\") return null", "xAI local_shell drop");
   mustContain("open-sse/executors/default.js", "external_web_access", "xAI hosted tool field strip");
@@ -338,6 +339,7 @@ function checkBundle() {
   contains("cost_breakdown", "stored usage cost breakdown");
   contains("cost_in_usd_ticks", "provider-reported cost");
   contains("https://api.x.ai/v1/responses", "xAI Responses endpoint");
+  contains("tool_choice===void 0", "xAI stale tool choice guard");
   contains("Freeform tool input.", "xAI custom tool freeform wrapper");
   contains("local_shell", "xAI local_shell drop");
   contains("external_web_access", "xAI hosted tool field strip");

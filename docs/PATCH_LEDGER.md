@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed latency fixes `ce3f0af`, `7979369`, and `a961a4f`
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed runtime commits `ce3f0af`, `7979369`, `a961a4f`, and `6927f65`
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -15,6 +15,7 @@ Current live facts:
 - Current package version: `0.5.30`
 - P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
 - P2/P18 latency candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed after deploy.
+- P9 xAI stale-tool-choice candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://rochester-wanted-ware-movements.trycloudflare.com`
@@ -22,6 +23,9 @@ Current live facts:
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `fast`
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
 - xAI OAuth profile `songoku200794@gmail.com` uses proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` (`http://127.0.0.1:18888`). Gateway routes `x.ai`/`grok.com` domains through US exits on both listeners.
+- xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
+- Latest live backup from xAI stale-tool-choice deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-xai-tool-choice-20260713T094526Z`
+- Latest DB backup from xAI stale-tool-choice deploy: `/home/home/.9router/db/backups/pre-xai-tool-choice-20260713T094526Z/data.sqlite`
 - Latest live backup from corrected Priority deployment: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-priority2-20260713T083828Z`
 - Latest DB backup from corrected Priority deployment: `/home/home/.9router/db/backups/pre-priority2-20260713T083828Z/data.sqlite`
 - Previous live backup from initial latency deployment: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-latency-20260713T074916Z`
@@ -648,6 +652,7 @@ Required invariants:
 - xAI quota tracker uses local request totals: today tokens, 7d tokens, 30d tokens, today requests.
 - Responses usage preserves cached tokens, reasoning tokens, and `cost_in_usd_ticks` for local usage/cost display.
 - xAI Responses requests convert `custom` tools to freeform `function` tools, drop `local_shell` plus unsupported nameless hosted tools, strip OpenAI-only hosted tool fields like `external_web_access`, and strip OpenAI encrypted reasoning blobs that xAI cannot decode.
+- xAI Responses requests remove `tool_choice` when `tools` is absent, empty, or fully removed by normalization; valid non-empty tool lists preserve `tool_choice`.
 - Final xAI executor return must run `normalizeXaiResponsesPayload(transformed)` after `injectReasoningContent(...)`. The first helper-only patch existed in source but live outgoing payloads still retained `encrypted_content`; this final-return strip is the regression guard.
 - xAI request input sanitizer must drop `reasoning` items, convert `custom_tool_call` / `custom_tool_call_output` to normal function call variants, and stringify `function_call_output.output` arrays/objects. Live xAI rejects these with `data did not match any variant of untagged enum ModelInput`.
 
@@ -684,14 +689,26 @@ Verification:
 - `/v1/responses` request with model `grok-4.5` succeeds and latest request details row shows provider `xai`.
 - `/v1/responses` request with Codex custom tools should not fail with `unknown variant custom`.
 - `/api/usage/<xai connection id>` returns quota rows instead of “Usage API not implemented”.
+- Regression on 2026-07-13: a 248-message Codex request arrived with `tool_choice` but no `tools`; xAI returned HTTP 400 `A tool_choice was set on the request but no tools were specified` on every retry.
+- Source fix `6927f65` removes stale `tool_choice` for absent, empty, and fully filtered tool sets while retaining it for usable tools.
+- Normalizer self-check passed 5/5; xAI/GitHub Responses regression passed 12/12; focused ESLint and `git diff --check` passed.
+- Full staged build completed Next.js, TypeScript, 126 pages, standalone copy, and MITM bundle in 22m15s at 57 MB.
+- Isolated `127.0.0.1:20129` exact canary with `tool_choice:"auto"` and no tools returned HTTP 200. Stored provider request had neither `tools` nor `tool_choice`.
+- Isolated all-filtered canary with only `local_shell` plus `tool_choice:"required"` returned HTTP 200. Stored provider request again had neither field.
+- Temporary 191 MB credential-bearing QA DB was deleted after candidate tests; isolated process stopped and port `20129` was released.
+- A two-snapshot zero-active gate safely aborted without touching live files because traffic never stayed idle. First deployment attempt used a zero-active instant but rolled back when the post-deploy Grok canary returned unrelated HTTP 403 `bad-credentials`; local/raw/short health recovered immediately.
+- Log evidence showed xAI access expiry around 02:56 and three failed refresh attempts. Final deployment therefore used candidate proof plus source/bundle/DB and tunnel gates instead of an impossible live OAuth canary.
+- Final deployment exchanged the bundle at a zero-active snapshot and restarted PM2 once. Local, raw, and short health returned HTTP 200; cloudflared remained PID `237493`; DB integrity and full verifier passed.
+- Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-xai-tool-choice-20260713T094526Z`.
+- Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-xai-tool-choice-20260713T094526Z/data.sqlite`; integrity check returned `ok`.
 
 Upstream status:
 
 - Open PRs:
   - xAI/Grok catalog, bare `grok-*` routing, Responses transport, `grok-4.5`, and reasoning options: <https://github.com/decolua/9router/pull/2439>
   - xAI local quota rows from `usageHistory` and provider cost preservation: <https://github.com/decolua/9router/pull/2453>
-- PR #2439 now includes model-aware GitHub native-Responses routing at commit `d4d99c0`; GitHub merge state was `CLEAN` after push on 2026-07-12.
-- Clean PR branch passed 15 focused Vitest cases, four xAI node self-checks, focused ESLint, and `git diff --check` before push.
+- PR #2439 now includes model-aware GitHub native-Responses routing plus stale `tool_choice` cleanup at head `76bc3ee`; GitHub merge state is `CLEAN` after push on 2026-07-13.
+- Clean PR branch passed 15 focused Vitest cases, five xAI node self-checks, focused ESLint, and `git diff --check` before push.
 - Bare `grok-*` routing is generic enough for upstream, but keep it in the catalog/Responses PR so it remains reviewable.
 
 ### P10. Staged CLI bundle builds for live-safe deploy
