@@ -639,6 +639,7 @@ Verification:
 
 - Local Codex request with proxy on should not fail immediately with `fetch connect timeout`.
 - OAuth no-proxy exchange should not hit Go gateway logs.
+- Gateway-side no-header stalls are tracked separately in `/home/home/.openclaw/gateway/PATCH_LEDGER.md` as G1. Do not raise 9Router's 60-second fetch timer to hide them: G1 bounds each ChatGPT proxy response-header attempt at 20 seconds and leaves SSE duration unlimited after headers.
 
 Upstream status:
 
