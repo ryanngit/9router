@@ -142,10 +142,11 @@ function checkSource() {
 
   mustContain("open-sse/executors/codex.js", "body.service_tier === \"fast\"", "Codex fast tier detection");
   mustContain("open-sse/executors/codex.js", "body.service_tier = \"priority\"", "Codex fast tier maps to priority");
+  mustContain("open-sse/executors/codex.js", "supportsCodexFastTier", "Codex fast tier model gate");
   mustContain("open-sse/executors/codex.js", "CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT = 256_000", "Codex priority long-context safety cutoff");
-  mustContain("open-sse/executors/codex.js", "|\\s+|", "Codex priority estimator counts whitespace");
+  mustContain("open-sse/executors/codex.js", "isEcmaWhitespace", "Codex priority estimator counts whitespace");
   mustContain("open-sse/executors/codex.js", "Math.ceil(asciiChars / 5)", "Codex priority estimator calibrates whole ASCII payload");
-  mustContain("open-sse/executors/codex.js", "Math.floor(asciiWhitespace / 20)", "Codex priority estimator protects long whitespace");
+  mustContain("open-sse/executors/codex.js", "Math.floor(asciiWhitespaceRun / 20)", "Codex priority estimator protects long whitespace");
   mustContain("open-sse/executors/codex.js", "Priority disabled for long context", "Codex priority removal log");
   mustContain("open-sse/executors/codex.js", "value === \"xhigh\"", "GPT-5.6 upgrades legacy xhigh reasoning");
   mustContain("open-sse/executors/codex.js", "return \"max\"", "GPT-5.6 legacy effort upgrade target");
