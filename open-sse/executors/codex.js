@@ -40,7 +40,6 @@ const CODEX_LITE_METADATA_HEADERS = [
 ];
 const CODEX_PRIORITY_SHORT_CONTEXT_LIMIT = 272_000;
 const CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT = 256_000;
-const CODEX_TOKEN_PART_PATTERN = /[^\s\u0080-\uFFFF]+|\s+|[\u0080-\uFFFF]/g;
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -156,6 +155,17 @@ function defaultReasoningEffortForModel(model) {
   return /^gpt-5\.6(?:-|$)/.test(model || "") ? "max" : "low";
 }
 
+function supportsCodexFastTier(model) {
+  return /^gpt-5\.(?:4|5)(?:-|$)/.test(model || "");
+}
+
+function isEcmaWhitespace(code) {
+  return (code >= 0x09 && code <= 0x0d) || code === 0x20 || code === 0xa0 ||
+    code === 0x1680 || (code >= 0x2000 && code <= 0x200a) ||
+    code === 0x2028 || code === 0x2029 || code === 0x202f ||
+    code === 0x205f || code === 0x3000 || code === 0xfeff;
+}
+
 function estimateCodexInputTokens(body, stopAt = Number.POSITIVE_INFINITY) {
   let json;
   try {
@@ -168,29 +178,28 @@ function estimateCodexInputTokens(body, stopAt = Number.POSITIVE_INFINITY) {
   let asciiChars = 0;
   let whitespaceExtraTokens = 0;
   let unicodeTokens = 0;
-  for (const match of json.matchAll(CODEX_TOKEN_PART_PATTERN)) {
-    const part = match[0];
-    if (/^\s/.test(part)) {
-      let unicodeWhitespace = 0;
-      if (!/^[\x00-\x7F]+$/.test(part)) {
-        for (let i = 0; i < part.length; i++) {
-          if (part.charCodeAt(i) > 0x7f) unicodeWhitespace += 1;
-        }
-      }
-      const asciiWhitespace = part.length - unicodeWhitespace;
-      asciiChars += asciiWhitespace;
-      unicodeTokens += unicodeWhitespace;
+  let asciiWhitespaceRun = 0;
+  for (let i = 0; i < json.length; i++) {
+    const code = json.charCodeAt(i);
+    if (code <= 0x7f) asciiChars += 1;
+    else unicodeTokens += 1;
+
+    if (isEcmaWhitespace(code)) {
+      if (code <= 0x7f) asciiWhitespaceRun += 1;
+    } else if (asciiWhitespaceRun) {
       // Raises long ASCII whitespace from 1 token per 5 chars to 1 per 4.
-      whitespaceExtraTokens += Math.floor(asciiWhitespace / 20);
-    } else if (part.charCodeAt(0) <= 0x7f) {
-      asciiChars += part.length;
-    } else {
-      unicodeTokens += part.length;
+      whitespaceExtraTokens += Math.floor(asciiWhitespaceRun / 20);
+      asciiWhitespaceRun = 0;
     }
 
-    const tokens = Math.ceil(asciiChars / 5) + whitespaceExtraTokens + unicodeTokens;
-    if (tokens >= stopAt) return tokens;
+    // Keep bounded early exit without running several regexes per token-sized part.
+    if ((i & 4095) === 4095) {
+      const tokens = Math.ceil(asciiChars / 5) + whitespaceExtraTokens +
+        Math.floor(asciiWhitespaceRun / 20) + unicodeTokens;
+      if (tokens >= stopAt) return tokens;
+    }
   }
+  whitespaceExtraTokens += Math.floor(asciiWhitespaceRun / 20);
   return Math.ceil(asciiChars / 5) + whitespaceExtraTokens + unicodeTokens;
 }
 
@@ -585,14 +594,21 @@ export class CodexExecutor extends BaseExecutor {
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
 
-    if (body.service_tier === "fast") body.service_tier = "priority";
+    if (body.service_tier === "fast") {
+      if (supportsCodexFastTier(body.model)) body.service_tier = "priority";
+      else delete body.service_tier;
+    }
     if (body.service_tier === "priority" && /^gpt-/.test(body.model)) {
-      const estimatedInputTokens = estimateCodexInputTokens(body, CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT);
-      if (estimatedInputTokens >= CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT) {
+      if (!supportsCodexFastTier(body.model)) {
         delete body.service_tier;
-        console.log(
-          `[Codex] Priority disabled for long context | estimated_input>=${CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT} | short_limit=${CODEX_PRIORITY_SHORT_CONTEXT_LIMIT}`,
-        );
+      } else {
+        const estimatedInputTokens = estimateCodexInputTokens(body, CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT);
+        if (estimatedInputTokens >= CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT) {
+          delete body.service_tier;
+          console.log(
+            `[Codex] Priority disabled for long context | estimated_input>=${CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT} | short_limit=${CODEX_PRIORITY_SHORT_CONTEXT_LIMIT}`,
+          );
+        }
       }
     }
     if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;

@@ -27,8 +27,8 @@ describe("Codex fast tier and capacity handling", () => {
 
   it("keeps fast tier below the short-context limit", () => {
     const executor = new CodexExecutor();
-    const body = executor.transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
       input: "word ".repeat(220_000),
       service_tier: "fast",
     }, true, {});
@@ -38,8 +38,8 @@ describe("Codex fast tier and capacity handling", () => {
 
   it("does not round every JSON punctuation mark up to one token", () => {
     const executor = new CodexExecutor();
-    const body = executor.transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
       input: "key:value,".repeat(110_000),
       service_tier: "fast",
     }, true, {});
@@ -49,8 +49,8 @@ describe("Codex fast tier and capacity handling", () => {
 
   it("removes direct priority tier from long GPT requests", () => {
     const executor = new CodexExecutor();
-    const body = executor.transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
       input: "word ".repeat(260_000),
       service_tier: "priority",
     }, true, {});
@@ -60,9 +60,37 @@ describe("Codex fast tier and capacity handling", () => {
 
   it("counts whitespace-heavy long input conservatively", () => {
     const executor = new CodexExecutor();
-    const body = executor.transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
       input: `x${" ".repeat(1_024_000)}`,
+      service_tier: "fast",
+    }, true, {});
+
+    expect(body.service_tier).toBeUndefined();
+  });
+
+  it("drops unsupported fast and priority tiers for GPT-5.6", () => {
+    const executor = new CodexExecutor();
+    const fast = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+      service_tier: "fast",
+    }, true, {});
+    const priority = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+      service_tier: "priority",
+    }, true, {});
+
+    expect(fast.service_tier).toBeUndefined();
+    expect(priority.service_tier).toBeUndefined();
+  });
+
+  it("counts non-ASCII input conservatively", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: "é".repeat(256_000),
       service_tier: "fast",
     }, true, {});
 
