@@ -97,7 +97,7 @@ Review the diff against the patch ledger:
 - Did it remove Stripe filtering or 18889 browsing behavior? If touching gateway/proxy code, stop and inspect those routes separately.
 - Did it route bare `gpt-5.5` to Codex, not OpenAI API?
 - Did it preserve P12 endpoint-wide routing for both bare and provider-prefixed `gpt-*` models?
-- Does `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'` show target `cx/gpt-5.6-sol` and effort `max`?
+- Does `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'` show target `cx/gpt-5.6-sol`, effort `max`, and service tier `default`?
 - Did it preserve explicit proxy pools and `__none__` no-proxy behavior?
 - Did it preserve local route access on `127.0.0.1:20128`?
 - Does Console Log still work through both raw and short tunnel URLs when SSE is buffered?
@@ -127,13 +127,13 @@ node scripts/verify-local-patches.mjs \
 Targeted manual checks by patch:
 
 - P1 OAuth: expired/fake Codex exchange returns OpenAI JSON, not Cloudflare HTML.
-- P2 Codex fast/max: `service_tier=fast` does not produce `Unsupported service_tier: fast`; Codex `max` does not produce invalid `max`.
+- P2 Codex fast/max: GPT-5.4/GPT-5.5 `fast` maps to `priority`; GPT-5.6 `fast`/`priority` is removed; Codex `max` does not produce invalid `max`.
 - P3 workspace: same email with different workspace/account IDs remains distinct.
 - P4 capacity: capacity text triggers account retry, not client failure.
 - P5 Copilot models: `claude-opus-4.8` and `claude-fable-5` route to `github`.
 - P6 usage: cached tokens lower cost; API-key grouping remains separated.
 - P7 reset bank: confirmation appears before reset consume; cancel does not POST.
-- P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol`, effort `max`, and short-context Priority.
+- P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol` with effort `max`, no provider service tier, and effective response tier `default`.
 - P14 Responses Lite: omit `reasoning.context` and `parallel_tool_calls`; provider request must contain `reasoning.context="all_turns"` and `parallel_tool_calls=false`. Repeat with incoming `parallel_tool_calls=true`.
 - P15 console: local SSE emits `init`; raw and short tunnels fall back to ETag polling after silent SSE.
 - P16 quota: countdown advances once per real second and one refresh occurs at the deadline.
@@ -200,7 +200,7 @@ env \
   NINE_ROUTER_BEST_GPT_ENABLED=true \
   NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol \
   NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max \
-  NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast \
+  NINE_ROUTER_BEST_GPT_SERVICE_TIER=default \
   pm2 start "$ENTRYPOINT" --name 9router --cwd "$LIVE" --merge-logs --update-env
 
 if ! curl -fsS --max-time 20 http://127.0.0.1:20128/api/health; then
@@ -213,7 +213,7 @@ if ! curl -fsS --max-time 20 http://127.0.0.1:20128/api/health; then
     NINE_ROUTER_BEST_GPT_ENABLED=true \
     NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol \
     NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max \
-    NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast \
+    NINE_ROUTER_BEST_GPT_SERVICE_TIER=default \
     pm2 start "$LIVE/custom-server.js" --name 9router --cwd "$LIVE" --merge-logs --update-env
   exit 1
 fi
@@ -242,7 +242,7 @@ env \
   NINE_ROUTER_BEST_GPT_ENABLED=true \
   NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol \
   NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max \
-  NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast \
+  NINE_ROUTER_BEST_GPT_SERVICE_TIER=default \
   pm2 start "$LIVE/custom-server.js" --name 9router --cwd "$LIVE" --merge-logs --update-env
 curl -fsS http://127.0.0.1:20128/api/health
 ```
@@ -255,7 +255,7 @@ Notes:
 - P17 requires PM2 to run `app/custom-server.js`; verify `pm2 jlist` after deploy. Starting `cli.js` is not required.
 - Starting an unreviewed upstream wrapper can kill the stable quick tunnel. Keep the local wrapper until its process-management diff is rebased and tested separately.
 - After health passes, verify `curl http://127.0.0.1:20128/api/version`, `pm2 describe 9router`, both package files, and `9router --version` report the same release.
-- After every deploy, send a bare `gpt-5.4-mini` canary and verify response, request-detail, provider, and usage model are `gpt-5.6-sol`; routed/provider effort must be `max`.
+- After every deploy, send a bare `gpt-5.4-mini` canary and verify response, request-detail, provider, and usage model are `gpt-5.6-sol`; routed/provider effort must be `max`, provider tier absent, and effective response tier `default`.
 - After Usage SSE changes, open several candidate SSE clients, complete one model request, and verify `/api/health` stays responsive; never stress the pre-patch live SSE path against a large DB.
 - Treat sub-second health degradation during many concurrent 400-1,100-message requests as request parsing/serialization load. Investigate only if it persists without large concurrent requests or rises into multi-second stalls; provider TTFT is tracked separately.
 - Before an OAuth provider canary, run the same canary against current live bundle. A pre-existing `bad-credentials` result is a credential blocker, not a candidate rollback signal.

@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed runtime commits through `8573524` (final Grok corrections: `233181b`, `8f825bf`, `8573524`)
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed commits through `b4e6b99` (GPT-5.6 tier/runtime change: `d6af9d9`; verifier: `b4e6b99`)
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -18,15 +18,19 @@ Current live facts:
 - P9 xAI stale-tool-choice candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
 - P19 official Grok Build subscription candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
 - P19 model-aware effort, console-label, and paid zero-cap quota corrections were promoted on 2026-07-13; final isolated QA data was removed before deploy.
+- P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
 - Current known raw tunnel base: `https://rochester-wanted-ware-movements.trycloudflare.com`
 - Current detached cloudflared PID: `237493`
-- Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `fast`
+- Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
 - xAI OAuth profile `songoku200794@gmail.com` uses proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` (`http://127.0.0.1:18888`). Gateway routes `x.ai`/`grok.com` domains through US exits on both listeners.
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` on `http://127.0.0.1:18888`.
+- Current PM2 PID after GPT-5.6 tier correction: `1030170`.
+- Latest live backup from GPT-5.6 tier correction: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-gpt56-tier-latency-20260714-20260714T040713Z`.
+- Latest DB backup from GPT-5.6 tier correction: `/home/home/.9router/db/backups/pre-gpt56-tier-latency-20260714-20260714T040713Z/data.sqlite`.
 - Latest live backup from final Grok corrections: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-final-20260713-20260713T225502Z`
 - Latest DB backup from final Grok corrections: `/home/home/.9router/db/backups/pre-grok-final-20260713-20260713T225502Z/data.sqlite`
 - Latest live backup from official Grok Build deploy: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-cli-20260713T203029Z`
@@ -145,6 +149,25 @@ Important repository state:
 - Earlier rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-latency-20260713T074916Z`.
 - Earlier pre-deploy DB backup: `/home/home/.9router/db/backups/pre-latency-20260713T074916Z/data.sqlite`.
 
+### GPT-5.6 unsupported-tier latency correction on 2026-07-13 PDT
+
+- One-hour baseline: 490 successful Sol requests had TTFT mean `13.86s`, p50 `12.61s`, p95 `25.12s`; TTFT was 94.6% of total time and input averaged about 180K tokens with 96% cache reads.
+- Gateway correlation matched 489 requests: gateway/upstream mean `13.92s`; outside-gateway mean `813ms`. A stricter later split over 325 matches measured pre-gateway transform p50 `732ms`, post-gateway persistence p50 `77ms`.
+- Pre-gateway work scaled with provider payload: p50 `265ms` below 250KB, `430ms` at 250-750KB, `685ms` at 750KB-1.25MB, and `932ms` at 1.25MB or more.
+- Root cause: every Sol request still carried local `fast`, became `priority`, and ran the long-context lexical estimator even though all 799 sampled Priority-requested Sol responses reported effective tier `default`.
+- Official Codex documentation currently lists Fast mode for GPT-5.5 and GPT-5.4, not GPT-5.6. Official API Priority documentation applies to pay-as-you-go API projects; direct ChatGPT-account Sol probes did not gain Priority.
+- Old estimator cost about `108ms` at 250KB, `377ms` at 750KB, and `687ms` at 1.25MB. One-pass UTF-16 scanning preserved all 10,004 equivalence cases and measured `7ms`, `31ms`, and `49ms` p50 at those sizes.
+- Actual 1.377MB executor benchmark: supported GPT-5.5 guarded Fast averaged `104ms`; unsupported Sol skipped estimation at `0.3ms`.
+- Direct matched proxy A/B used one Team workspace and identical 23,415-token Lite/max requests with 23,296 cached tokens. Fast DC TTFT mean was `2.30s`; slow DC mean was `3.67s`. About `0.68s` came from tunnel/TLS setup and `0.53s` from later upstream wait.
+- Tunnel ingress is a separate client-visible cost excluded from 9Router TTFT. A valid 1.50MB request added about `0.15s` locally versus `7.74s` raw tunnel and `5.58s` short-domain before 9Router's clock. A fresh QUIC Quick Tunnel reproduced `4.13-7.24s`; changing tunnel protocol did not help.
+- Runtime fix: `fast` becomes `priority` only for GPT-5.4/GPT-5.5; GPT-5.6 `fast`/`priority` is removed. Supported-model estimation uses the equivalent one-pass scanner. Live PM2 policy now requests `default` for the private Sol route.
+- Public PR #2452 was updated at `418560f`; merge state was `CLEAN`. Latest public focused tests passed 24/24, ESLint and diff checks passed.
+- Canonical integration passed 60/60 Codex/Lite/reasoning tests, ESLint, source verifier, candidate bundle verifier, and isolated canary.
+- Production candidate built in 25m50s, size 57MB. Safe promotion used two zero-active gates, SQLite backup, atomic exchange, one PM2 restart, and automatic rollback protection.
+- Live short-domain canary returned `LIVE_NO_TIER_OK`; provider payload stored Sol `max`, `reasoning.context=all_turns`, `parallel_tool_calls=false`, no `service_tier`, and effective response tier `default`.
+- Local, raw, and short health passed; cloudflared stayed PID `237493`. Initial post-deploy strict samples reduced large-request pre-gateway p50 to `508ms` from the previous 750KB+ weighted range; keep collecting before treating that small sample as final.
+- Gateway client pooling remains unshipped. Curl proved a reusable tunnel avoids about `741ms` reconnect cost, but an exact `surf` diagnostic did not complete within bounded time. Require isolated gateway canary before changing live gateway code.
+
 ## Upstream Branches Already Pushed
 
 These branches were pushed before the current ledger existed. Current status was re-audited on 2026-07-09 from `/home/home/.openclaw/workspace-keyra/9router-prs-20260708`.
@@ -199,7 +222,8 @@ Upstream status:
 
 Purpose:
 
-- Codex app can send `service_tier: fast`; Codex backend accepts `priority`, not `fast`.
+- Codex app can send `service_tier: fast`; supported GPT-5.4/GPT-5.5 requests use upstream `priority`.
+- GPT-5.6 ChatGPT-account requests do not currently receive Fast/Priority service and must skip its costly long-context estimate.
 - Priority processing does not support GPT long-context requests.
 - GPT-5.6 uses `max`; legacy clients can still send `xhigh`.
 - Codex Ultra is a client-side orchestration preset whose upstream reasoning effort is `max`; 9Router must preserve that value.
@@ -214,10 +238,12 @@ Files:
 
 Required invariants:
 
-- Codex `service_tier: fast` becomes `priority`.
-- Final GPT provider payloads estimated at 256,000 input tokens or more have `service_tier` removed before sending.
+- Codex `service_tier: fast` becomes `priority` only for GPT-5.4 and GPT-5.5.
+- GPT-5.6 `fast` and direct `priority` are removed; effective response tier is tracked separately.
+- Final supported Fast-mode GPT payloads estimated at 256,000 input tokens or more have `service_tier` removed before sending.
 - The operational cutoff leaves a 16,000-token safety margin below the 272,000-token short-context boundary because Codex sends no exact pre-request token count.
 - The lexical estimate counts whole serialized ASCII payload at about five characters per token, surcharges long ASCII whitespace to one token per four characters, and counts non-ASCII UTF-16 units conservatively.
+- Estimation uses one bounded UTF-16 pass. Do not restore regex-per-token scanning; it consumed hundreds of milliseconds on normal 0.75-1.5MB Codex payloads.
 - Other unsupported Codex service tiers are removed.
 - GPT-5.6 `xhigh` becomes `max`; `max` is never downgraded.
 - Unified translation preserves `max` for Codex Sol, Terra, and Luna before request-summary logging; generic OpenAI models still clamp unsupported `max` to `xhigh`.
@@ -225,14 +251,16 @@ Required invariants:
 
 Verification:
 
-- Send a short `cx/gpt-5.6-sol` request with `service_tier=fast`; provider payload contains `service_tier:"priority"`. Record response tier separately because upstream can serve the request as `default`.
-- Send a long synthetic GPT request with `service_tier=fast` and direct `priority`; transformed request omits `service_tier` and console logs `Priority disabled for long context`.
+- Send short GPT-5.4/GPT-5.5 executor requests with `service_tier=fast`; transformed payload contains `service_tier:"priority"`.
+- Send short `cx/gpt-5.6-sol` requests with `fast` and direct `priority`; transformed provider payload omits `service_tier` and effective response tier remains `default`.
+- Send a long synthetic supported Fast-mode GPT request with `fast` and direct `priority`; transformed request omits `service_tier` and logs `Priority disabled for long context`.
 - Send `cx/gpt-5.6-sol` with `reasoning_effort=max`; no reasoning-effort 400.
 - Send `gh/claude-opus-4.8` with `reasoning_effort=max`; request details show provider effort `max`.
 - 2026-07-10 isolated bundle on `127.0.0.1:20129` passed source and bundle verification, then completed a short Sol request whose provider payload contained `service_tier:"priority"`.
 - 2026-07-10 live probe returned `LIVE_OK`; request details confirmed incoming `fast` became provider `priority`. Upstream OAuth response reported effective `default`, so effective-tier accounting correctly did not claim Priority service.
 - Focused test covers `fast`, direct `priority`, and whitespace-heavy long payloads.
 - 2026-07-13 calibration tests prove 220K repeated words and punctuation-heavy 1.1M-character input retain Priority; 260K repeated words and 1,024,000 consecutive spaces remove it.
+- 2026-07-13 PDT follow-up proved GPT-5.6 Priority ineffective, gated Fast to GPT-5.4/GPT-5.5, replaced the estimator with an equivalent one-pass scan, and deployed with one safe PM2 restart. See the latency correction record above.
 - Live deploy used one PM2 restart. Local, `rkeyra9`, and raw TryCloudflare health passed; cloudflared PID remained `206858`.
 - GPT-5.6 max-log correction deployed 2026-07-12:
   - Root cause: unified OpenAI translation changed `max` to `xhigh` before request-summary logging. Codex executor changed it back to `max`, so actual provider wire was already correct but console `THINK:xhigh` was misleading and verifier missed the earlier stage.
@@ -251,10 +279,10 @@ Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2452>
 - Supersedes closed split PRs #1817, #1820, and #2344.
-- Rebased onto upstream `v0.5.30` and updated 2026-07-13 at head `2631f94`; GitHub merge state is `CLEAN`.
-- PR now preserves GPT-5.6 `max` through unified translation and console logging, exposes `max` for Sol/Terra/Luna, removes Priority at the 256,000-token estimate, and preserves upstream workspace/account fallback.
+- Rebased onto upstream `v0.5.30` and updated 2026-07-13 at head `418560f`; GitHub merge state is `CLEAN`.
+- PR now preserves GPT-5.6 `max`, removes unsupported GPT-5.6 Fast/Priority, maps supported GPT-5.4/GPT-5.5 Fast, uses a one-pass 256K guard, and preserves upstream workspace/account fallback.
 - PR excludes private bare-model routing and the local GPT-5.6 `xhigh` -> `max` compatibility policy.
-- Seven focused Codex/reasoning suites passed 39/39; focused ESLint and `git diff --check` passed.
+- Latest focused Codex/reasoning suites passed 24/24; estimator equivalence passed 10,004/10,004; focused ESLint and `git diff --check` passed.
 - Pre-rebase branch retained locally as `backup/codex-fast-capacity-fallback-pre-rebase-20260712`.
 - Local invariant command: `node scripts/verify-local-patches.mjs --root . --bundle /home/home/.npm-global/lib/node_modules/9router/app --db /home/home/.9router/db/data.sqlite`
 
@@ -817,7 +845,7 @@ Runtime PM2 policy:
 - `NINE_ROUTER_BEST_GPT_ENABLED=true`
 - `NINE_ROUTER_BEST_GPT_TARGET=cx/gpt-5.6-sol`
 - `NINE_ROUTER_BEST_GPT_REASONING_EFFORT=max`
-- `NINE_ROUTER_BEST_GPT_SERVICE_TIER=fast`
+- `NINE_ROUTER_BEST_GPT_SERVICE_TIER=default`
 
 Database aliases:
 
@@ -831,8 +859,9 @@ Required invariants:
 - Apply best-GPT routing after naming/warmup bypass handling and before combo/model resolution.
 - Bare `gpt-5.4-mini`, bare `gpt-5.5`, and prefixed names such as `cx/gpt-5.6-terra` all route to the configured target.
 - Non-GPT models remain unchanged. `NINE_ROUTER_BEST_GPT_ENABLED=false` remains an emergency kill switch.
-- Default target is `cx/gpt-5.6-sol`; default routed reasoning is `max`; default routed service tier is `fast`.
-- Codex translates routed `fast` to Priority for short context and removes Priority at the long-context guard.
+- Default target is `cx/gpt-5.6-sol`; default routed reasoning is `max`.
+- Live PM2 routed service tier is `default`. The source fallback remains `fast` for older targets, but P2 removes it after routing to unsupported GPT-5.6.
+- Sol provider payloads contain no `service_tier`; effective response tier is `default`. Change PM2 tier only after proving a future target supports Fast.
 - Unified route log includes `GPT-ROUTE`, original model, target, effort, and tier.
 - Usage and request details store the actual provider model `gpt-5.6-sol`, not the incoming alias such as `gpt-5.4-mini`.
 - PM2 must not retain stale target `cx/gpt-5.5` or stale effort `xhigh` after deploy.
@@ -874,6 +903,7 @@ Verification:
 - Live legacy probe sent bare `gpt-5.5` plus `xhigh`; request detail recorded provider `codex`, model `gpt-5.6-sol`, outgoing effort `max`, and status `success`.
 - Final deploy backup: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-20260709-161352-pre-xhigh-upgrade`.
 - Earlier pre-GPT-5.6 deploy backup: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-20260709-155249-gpt56-max`.
+- 2026-07-13 PDT live tier correction returned `LIVE_NO_TIER_OK`; stored provider payload had `max`, `all_turns`, `parallel_tool_calls=false`, and no service tier. Rollback and DB backup paths are recorded in current live facts.
 
 Upstream status:
 
@@ -1250,7 +1280,7 @@ Run before every 9Router update:
 - Record which patch IDs are expected to change.
 - Use a fresh clone for upstream PR prep if `git status` fails in this directory.
 - Compare upstream `cli/cli.js` with the local tunnel-preserving wrapper; do not replace it blindly.
-- Check `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'`; target must be `cx/gpt-5.6-sol` and effort must be `max`.
+- Check `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'`; target must be `cx/gpt-5.6-sol`, effort `max`, and service tier `default`.
 - Confirm `src/app/api/usage/stream/route.js` does not import or call `getUsageStats`.
 
 Run after every update/deploy:
@@ -1262,7 +1292,7 @@ Run after every update/deploy:
 - If startup auto-resume and `/api/tunnel/enable` overlap and both report `cloudflared killed`, disable tunnel first. If stale in-flight enables still race, launch one detached Quick Tunnel, persist its PID/state/settings, register `keyra9`, and verify short health.
 - Verify `/api/version`, PM2 version, live app package version, CLI package version, and `9router --version` agree.
 - Verify the original cloudflared PID still serves port `20128`.
-- Send `gpt-5.4-mini` to `/v1/responses`; confirm route log, request details, response model, and usage model all resolve to `gpt-5.6-sol`, with routed effort `max`.
+- Send `gpt-5.4-mini` to `/v1/responses`; confirm route log, request details, response model, and usage model all resolve to `gpt-5.6-sol`, with routed effort `max`, no provider service tier, and effective tier `default`.
 - Send one Responses Lite request with context omitted and confirm stored provider context is `all_turns`.
 - Open Console Log through local, raw, and short URLs; local must remain on SSE and tunnel paths must populate through fallback polling.
 - Observe quota countdown for at least 70 seconds through the short URL; it must decrement once per real second and refresh once.
