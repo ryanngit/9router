@@ -932,7 +932,7 @@ Required invariants:
 - Client opt-in header `x-openai-internal-codex-responses-lite: true` reaches the Codex backend.
 - Only allowlisted Codex metadata headers, valid `originator`, and native Codex user agents are forwarded.
 - `codex_exec`, `codex_cli_rs`, and `codex-cli` user agents use native Codex passthrough.
-- Lite requests preserve `additional_tools` and `parallel_tool_calls`.
+- Lite requests preserve `additional_tools` and always send `parallel_tool_calls=false`; the backend rejects omitted or true values.
 - Lite requests always send `reasoning.context="all_turns"` because the Codex backend rejects missing or other context values when the Lite header is present.
 - System prompt injection never adds `content` to an `additional_tools` item.
 - Compact requests are transformed before URL selection, use `/backend-api/codex/responses/compact`, stay non-streaming, and retain compact state through retries.
@@ -959,14 +959,22 @@ Verification:
 - Active catalog SHA-256: `087182e46cc7dfa80e1c87091c9bbeff967173cea4add4883e4098d9af329448`.
 - `0.5.30` canary accepted both missing context and invalid `current_turn`, normalizing each to `all_turns`.
 - Post-upgrade public tunnel probe on 2026-07-10 returned HTTP 200 and `OK`; request detail recorded incoming context `null`, provider context `all_turns`, effort `max`, and success.
+- On 2026-07-13, a Codex client omitted `parallel_tool_calls`; all seven account retries returned HTTP 400 because Lite requires explicit `false`. P14 now normalizes both omitted and `true` to `false`, with regression coverage for both cases.
+- Isolated `0.5.30` candidate canaries on port `20129` returned HTTP 200 for both omitted and incoming `parallel_tool_calls=true`. Stored provider payloads contained `parallel_tool_calls=false`, `reasoning.context="all_turns"`, and `reasoning.effort="max"`.
+- Live deploy on 2026-07-14 waited for two consecutive zero-active checks, atomically exchanged bundles, and used one PM2 reload. PM2 PID changed from `875138` to `934108`; local health recovered in 17.6 seconds; cloudflared PID remained `237493`.
+- Post-deploy verifier returned zero failures. Local, raw Quick Tunnel, and `https://rkeyra9.abc-tunnel.us/api/health` returned HTTP 200.
+- Short-domain omitted-field canary returned HTTP 200 with `LIVE_LITE_FALSE_OK`; stored provider payload contained `parallel_tool_calls=false`, `reasoning.context="all_turns"`, and `reasoning.effort="max"`.
+- Rollback bundle: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-20260714T003627Z-pre-lite-parallel`.
+- Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-lite-parallel-20260714T003627Z/data.sqlite`; integrity `ok`; SHA-256 `ef0d97e7680ce475848fa370de7171fffd4f8279dec09c1f2eea8b975b6f09b6`.
 
 Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2511>
-- Clean branch: `/home/home/.openclaw/workspace-keyra/9router-responses-lite-pr`, branch `codex-responses-lite`, head `b7c69ef`.
+- Clean branch: `/home/home/.openclaw/workspace-keyra/9router-responses-lite-pr`, branch `codex-responses-lite`, head `1e59517`.
 - PR was rebased onto upstream `v0.5.30`; GitHub merge state is `CLEAN`.
-- Focused Lite tests passed 20/20; broader Codex capacity/refresh/reset/normalization tests passed 23/23.
+- Focused Lite tests passed 21/21; broader Codex capacity/refresh/reset/normalization tests passed 23/23.
 - Context-normalization follow-up passed ESLint and `git diff --check`.
+- Parallel-tool normalization follow-up was pushed to PR #2511 as `1e59517`; ESLint, `git diff --check`, omitted-field self-check, and focused tests passed.
 - Two `codex-image-fetch.test.js` failures reproduce unchanged on clean upstream `v0.5.30`; not introduced by P14.
 - Private GPT aliases, catalog contents, effort upgrades, and routing policy are excluded.
 

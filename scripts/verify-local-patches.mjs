@@ -175,6 +175,7 @@ function checkSource() {
   mustContain("open-sse/executors/codex.js", "CODEX_COMPACT_REQUEST", "Codex compact retry marker");
   mustContain("open-sse/executors/codex.js", "\"parallel_tool_calls\", \"reasoning\"", "Codex Lite reasoning context preservation");
   mustContain("open-sse/executors/codex.js", "body.reasoning.context = \"all_turns\"", "Codex Lite reasoning context normalization");
+  mustContain("open-sse/executors/codex.js", "body.parallel_tool_calls = false", "Codex Lite parallel tool contract");
   mustContain("open-sse/executors/base.js", "const transformedBody = this.transformRequest", "request transformed before URL resolution");
   mustContain("open-sse/utils/clientDetector.js", "ua.includes(\"codex_exec\")", "Codex Desktop executor detection");
   mustContain("open-sse/rtk/systemInject.js", "m?.type !== \"additional_tools\"", "Responses Lite additional_tools protection");
@@ -341,6 +342,10 @@ function checkBundle() {
     if (!text.includes(needle)) pass(`bundle: absent ${label}`);
     else fail(`bundle: still contains ${label}`);
   };
+  const matches = (pattern, label) => {
+    if (pattern.test(text)) pass(`bundle: ${label}`);
+    else fail(`bundle: missing ${label}`);
+  };
 
   contains("https://auth.openai.com/api/accounts/oauth/token", "Codex account token endpoint");
   notContains("https://auth.openai.com/oauth/token", "stale Codex token endpoint");
@@ -382,6 +387,7 @@ function checkBundle() {
   contains("codex_exec", "Codex Desktop executor detection");
   contains("responses/compact", "Codex compact endpoint");
   contains("additional_tools", "Responses Lite additional_tools handling");
+  matches(/parallel_tool_calls\s*=\s*!1.{0,120}reasoning\.context\s*=\s*["']all_turns["']/, "Responses Lite parallel tool contract");
   contains("If-None-Match", "console conditional polling");
   contains("CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
   contains("apiKeyClients", "API-key client activity storage");

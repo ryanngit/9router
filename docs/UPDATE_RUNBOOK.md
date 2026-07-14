@@ -134,7 +134,7 @@ Targeted manual checks by patch:
 - P6 usage: cached tokens lower cost; API-key grouping remains separated.
 - P7 reset bank: confirmation appears before reset consume; cancel does not POST.
 - P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol`, effort `max`, and short-context Priority.
-- P14 Responses Lite: omit `reasoning.context`; provider request must contain `reasoning.context="all_turns"`.
+- P14 Responses Lite: omit `reasoning.context` and `parallel_tool_calls`; provider request must contain `reasoning.context="all_turns"` and `parallel_tool_calls=false`. Repeat with incoming `parallel_tool_calls=true`.
 - P15 console: local SSE emits `init`; raw and short tunnels fall back to ETag polling after silent SSE.
 - P16 quota: countdown advances once per real second and one refresh occurs at the deadline.
 - P17 API clients: trusted-IP tests pass; one keyed canary appears under Usage > API Key Clients.

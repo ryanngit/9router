@@ -40,7 +40,6 @@ describe("CodexExecutor tool normalization", () => {
         { type: "message", role: "developer", content: [{ type: "input_text", text: "instructions" }] },
         { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
       ],
-      parallel_tool_calls: false,
       reasoning: { effort: "max", summary: "auto" },
       stream: true,
     };
@@ -57,6 +56,24 @@ describe("CodexExecutor tool normalization", () => {
     expect(body.parallel_tool_calls).toBe(false);
     expect(body.input[0].type).toBe("additional_tools");
     expect(body.reasoning.context).toBe("all_turns");
+  });
+
+  it("disables parallel tool calls required by Responses Lite", () => {
+    const executor = new CodexExecutor();
+    const body = {
+      model: "gpt-5.6-sol",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
+      parallel_tool_calls: true,
+      reasoning: { effort: "max", summary: "auto" },
+      stream: true,
+    };
+
+    executor.transformRequest("gpt-5.6-sol", body, true, {
+      connectionId: "responses-lite-parallel",
+      rawHeaders: { "x-openai-internal-codex-responses-lite": "true" },
+    });
+
+    expect(body.parallel_tool_calls).toBe(false);
   });
 
   it("keeps Responses Lite compact requests unary and compact-only", () => {

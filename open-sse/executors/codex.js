@@ -553,7 +553,10 @@ export class CodexExecutor extends BaseExecutor {
       body.reasoning.effort = effort;
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
-    if (responsesLite) body.reasoning.context = "all_turns";
+    if (responsesLite) {
+      body.parallel_tool_calls = false;
+      body.reasoning.context = "all_turns";
+    }
     delete body.reasoning_effort;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
