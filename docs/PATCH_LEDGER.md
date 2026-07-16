@@ -1225,6 +1225,8 @@ Required invariants:
 - Subscription inference uses `https://cli-chat-proxy.grok.com/v1/responses`, model `grok-build`, `stream:true`, `store:false`, and encrypted reasoning continuity.
 - Current official fingerprint is `grok-shell/0.2.99`; model metadata is 500,000 context and 64,000 max output.
 - Do not restore invented `x-compaction-at`; official CLI compaction is client-side near 85% context.
+- Cross-provider Codex/OpenAI history is normalized at the Grok CLI executor boundary: foreign encrypted reasoning is removed, while native Grok `rs_`/`msg_`/`fc_` UUID items retain IDs and encrypted continuity.
+- Codex custom calls become normal function-call history and custom tool definitions become `{input:string}` function schemas. Non-string outputs use JSON text, and outputs without a surviving matching call ID are removed.
 - `grok-4.5` reasoning maps `max` to `xhigh`, keeps `low|medium|high|xhigh`, and normalizes unsupported values to `high`. Unknown/non-reasoning models omit effort while retaining summary and encrypted continuity.
 - Empty, absent, or fully filtered tools remove `tool_choice`; custom tool choices become matching flat function choices.
 - Session fallback stays stable when assistant history first appears. Per-session turn state is LRU-bounded at 5,000 entries; retries of the same body do not advance the turn.
