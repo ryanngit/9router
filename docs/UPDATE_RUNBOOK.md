@@ -9,7 +9,7 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - Live data is `/home/home/.9router`.
 - Live app is `/home/home/.npm-global/lib/node_modules/9router/app`.
 - Live wrapper workspace is `/home/home/.openclaw/workspace-keyra/9router-patch`.
-- Use a clean version-specific worktree for source changes and builds. Current clean source is `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`.
+- Use a clean version-specific worktree for source changes and builds. Current clean source is `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`.
 - User traffic may be connected through 9Router; avoid restarts until the final deploy step.
 - Do not rely on `git status` in `9router-patch` until broken worktree metadata is fixed.
 - Do not push upstream branches from a dirty/broken worktree.
@@ -41,7 +41,7 @@ cat /home/home/.9router/tunnel/state.json 2>/dev/null || true
 - Check source/live invariants:
 
 ```bash
-cd /home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30
+cd /home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35
 node scripts/verify-local-patches.mjs \
   --root . \
   --bundle /home/home/.npm-global/lib/node_modules/9router/app \

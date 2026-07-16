@@ -1,18 +1,18 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`; deployed code commit `3f481ed` (public Grok history subset: `b8f288c`; GPT-5.6 tier/runtime change: `d6af9d9`)
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; audited source HEAD `05f895d` and runtime fix HEAD `4c386b4`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
 - Current PM2 entrypoint: `/home/home/.npm-global/lib/node_modules/9router/app/custom-server.js`.
-- Current package version: `0.5.30`
+- Current app and retained-wrapper package version: `0.5.35`.
 - P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
 - P2/P18 latency candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed after deploy.
 - P9 xAI stale-tool-choice candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
@@ -22,8 +22,8 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://uni-found-thought-podcast.trycloudflare.com`
-- Current cloudflared PID: `714728`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://created-identifies-blades-domestic.trycloudflare.com`.
+- Current cloudflared PID: `2311237`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
 - The 2026-07-15 controlled promotion applied that policy with `--update-env`; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2`.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
@@ -31,9 +31,11 @@ Current live facts:
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
 - Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
-- Current PM2 PID after the reviewed cross-provider history v2 deployment: `714356`.
-- Latest live backup from reviewed cross-provider Grok history v2: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-v2-20260715-20260716T034051Z`.
-- Latest DB backup from reviewed cross-provider Grok history v2: `/home/home/.9router/db/backups/pre-grok-history-v2-20260715-20260716T034051Z/data.sqlite`.
+- Current PM2 PID after the `0.5.35` promotion: `2311000`.
+- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`.
+- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z/data.sqlite`.
+- Previous live backup from reviewed cross-provider Grok history v2: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-v2-20260715-20260716T034051Z`.
+- Previous DB backup from reviewed cross-provider Grok history v2: `/home/home/.9router/db/backups/pre-grok-history-v2-20260715-20260716T034051Z/data.sqlite`.
 - Previous live backup from initial cross-provider Grok history normalization: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-20260715-20260716T022152Z`.
 - Previous DB backup from initial cross-provider Grok history normalization: `/home/home/.9router/db/backups/pre-grok-history-20260715-20260716T022152Z/data.sqlite`.
 - Latest live backup from GPT-5.6 tier correction: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-gpt56-tier-latency-20260714-20260714T040713Z`.
@@ -1398,7 +1400,18 @@ Public PR refresh:
 
 Deployment status:
 
-- Live remains `0.5.30` until detached promotion and post-swap verification complete. Pre-promotion PM2 PID was `1323261`; cloudflared PID was `1324069`; raw URL was `https://bills-genesis-rpm-prescription.trycloudflare.com`; short URL remained `https://rkeyra9.abc-tunnel.us`.
+- Pre-promotion PM2 PID was `1323261`; cloudflared PID was `1324069`; raw URL was `https://bills-genesis-rpm-prescription.trycloudflare.com`; short URL remained `https://rkeyra9.abc-tunnel.us`.
+- The first detached helper used normal `MAX_ACTIVE=0`, observed one continuously active task plus intermittent second traffic, and was stopped before backup or swap. The second run used the documented `MAX_ACTIVE=1` exception, still refused two requests, required two five-second snapshots, and swapped only after the second gate was at or below one request.
+- Promotion exchanged only `cli/app`, restarted PM2 once, and retained the tunnel-safe local wrapper. Local app health and all bundle invariants passed by `21:03:50Z`; PM2 is online as PID `2311000` through `app/custom-server.js`.
+- The PM2 restart replaced child cloudflared PID `1324069`. Guarded recovery created PID `2311237` and raw `https://created-identifies-blades-domestic.trycloudflare.com`; raw and short health both passed by `21:04:41Z`.
+- Live app, `/api/version`, PM2, retained wrapper package, and `9router --version` report `0.5.35`. `pm2 save` persisted Sol/max/default and `HOSTNAME=0.0.0.0` on port `20128`.
+- Bare short-domain `gpt-5.4-mini` returned `GPT_V0535_OK` as `gpt-5.6-sol` with effort `max` and effective tier `default`. A Responses Lite request omitted context, sent incoming `parallel_tool_calls=true`, and returned `LITE_V0535_OK`, proving provider normalization remained accepted.
+- Opus 4.8 and Fable 5 returned HTTP 200 through `/v1/responses`; streaming emitted `response.completed`. Stored native GitHub wire used `thinking.type=adaptive` and `output_config.effort=max` for both.
+- Bare short-domain Grok 4.5 returned `GROK_V0535_OK` and streaming `response.completed` as `grok-4.5-build`. Console and stored wire confirmed `grok-cli`, strict pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3`, port `18889`, and translated effort `xhigh`.
+- Malformed Grok semantic input returned local HTTP 400 immediately. Hashes of test status, error, backoff, last-error, and model-lock fields were identical before and after, proving no account lock/fallback mutation.
+- Console REST returned HTTP 200 through local/raw/short paths, immediate conditional fetch returned HTTP 304, and local SSE emitted `init`. Short usage/provider APIs listed `codex`, `github`, and `grok-cli`; API-client usage returned nine tracked clients.
+- Final source/live-bundle/DB/local/raw/short verifier returned zero failures and zero warnings. Live and backup SQLite integrity checks returned `ok`.
+- Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`; DB backup: `/home/home/.9router/db/backups/pre-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z/data.sqlite`.
 
 ## Not Yet Verified As Local Patch
 
