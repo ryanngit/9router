@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`, deployed commits through `b4e6b99` (GPT-5.6 tier/runtime change: `d6af9d9`; verifier: `b4e6b99`)
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.30`, branch `local-v0.5.30-upgrade`; deployed code commit `3f481ed` (public Grok history subset: `b8f288c`; GPT-5.6 tier/runtime change: `d6af9d9`)
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
