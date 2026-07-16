@@ -338,7 +338,10 @@ describe("handleImageGenerationCore", () => {
       modelInfo: { provider: "codex", model: "gpt-5.5-image" },
       credentials: {
         accessToken: "codex-token",
-        providerSpecificData: { chatgptAccountId: "account-123" },
+        providerSpecificData: {
+          workspaceId: "workspace-123",
+          chatgptAccountId: "account-123",
+        },
       },
       log: null,
     });
@@ -350,7 +353,7 @@ describe("handleImageGenerationCore", () => {
         method: "POST",
         headers: expect.objectContaining({
           authorization: "Bearer codex-token",
-          "chatgpt-account-id": "account-123",
+          "ChatGPT-Account-ID": "workspace-123",
           version: "0.136.0",
         }),
       })

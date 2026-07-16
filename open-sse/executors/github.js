@@ -11,6 +11,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
+import { supportsNativeResponses } from "../services/provider.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
@@ -116,8 +117,7 @@ export class GithubExecutor extends BaseExecutor {
   // therefore never be escalated to /responses, even if /chat/completions
   // returned a "not supported" error for an unrelated reason. Fixes #1062.
   supportsResponsesEndpoint(model) {
-    const m = (model || "").toLowerCase();
-    return !(m.includes("gemini") || m.includes("claude"));
+    return supportsNativeResponses("github", model);
   }
 
   async execute(options) {

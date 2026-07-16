@@ -20,6 +20,14 @@ describe("applyThinking (openai): clamp max effort to xhigh", () => {
     expect(out.reasoning_effort).toBe("xhigh");
   });
 
+  it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])(
+    "Codex %s preserves max directly",
+    (model) => {
+      const out = applyThinking(FORMATS.OPENAI, model, { reasoning_effort: "max" }, "codex");
+      expect(out.reasoning_effort).toBe("max");
+    },
+  );
+
   it("\"xhigh\" passes through unchanged (highest valid OpenAI level)", () => {
     const body = { reasoning_effort: "xhigh" };
     const out = applyThinking(FORMATS.OPENAI, "gpt-5", body, "openai");

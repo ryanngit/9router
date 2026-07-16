@@ -61,6 +61,8 @@ export default {
     { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
+    { id: "claude-opus-4.8", name: "Claude Opus 4.8" },
+    { id: "claude-fable-5", name: "Claude Fable 5" },
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },

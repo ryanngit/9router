@@ -8,7 +8,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getApiKeyUsageLimitStatus, getSettings, recordApiKeyClientRequest } from "@/lib/localDb";
+import { getApiKeyClientIdentity } from "@/lib/apiKeyClientIdentity";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -22,6 +23,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { applyBestGptRoute } from "../services/bestGptRoute.js";
 
 /**
  * Handle chat completion request
@@ -48,7 +50,7 @@ export async function handleChat(request, clientRawRequest = null) {
   }
   cacheClaudeHeaders(clientRawRequest.headers);
 
-  const modelStr = body.model;
+  let modelStr = body.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -76,6 +78,28 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
+  if (apiKey) {
+    const limitStatus = await getApiKeyUsageLimitStatus(apiKey);
+    if (limitStatus.exceeded) {
+      const used = Math.round(limitStatus.usedTokens);
+      const limit = Math.round(limitStatus.limitTokens);
+      log.warn("AUTH", `API key daily token limit exceeded (${used}/${limit})`);
+      return errorResponse(HTTP_STATUS.RATE_LIMITED, `API key daily token limit exceeded (${used}/${limit} tokens)`);
+    }
+
+    try {
+      const identity = await getApiKeyClientIdentity(request, body);
+      const trackedClient = await recordApiKeyClientRequest(
+        apiKey,
+        identity,
+        clientRawRequest?.endpoint,
+      );
+      if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
+    } catch (error) {
+      log.warn("AUTH", `Failed to record API key client: ${error.message}`);
+    }
+  }
+
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -85,6 +109,16 @@ export async function handleChat(request, clientRawRequest = null) {
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
+
+  const bestGptRoute = applyBestGptRoute(body);
+  if (bestGptRoute.applied) {
+    body = bestGptRoute.body;
+    modelStr = bestGptRoute.model;
+    log.info(
+      "GPT-ROUTE",
+      `${bestGptRoute.from} → ${modelStr} | effort=${bestGptRoute.config.reasoningEffort} | tier=${bestGptRoute.config.serviceTier}`
+    );
+  }
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
@@ -231,7 +265,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
+      body: { ...structuredClone(body), model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,

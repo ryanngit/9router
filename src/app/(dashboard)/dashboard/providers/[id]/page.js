@@ -42,6 +42,7 @@ export default function ProviderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [proxyPoolsReady, setProxyPoolsReady] = useState(false);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
@@ -299,6 +300,7 @@ export default function ProviderDetailPage() {
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
       }
+      setProxyPoolsReady(true);
       // Load per-provider strategy override
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
@@ -329,6 +331,7 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error fetching connections:", error);
+      setProxyPoolsReady(true);
     } finally {
       setLoading(false);
     }
@@ -1649,6 +1652,8 @@ export default function ProviderDetailPage() {
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
         />
       ) : providerId === "cursor" ? (
         <CursorAuthModal
@@ -1662,6 +1667,8 @@ export default function ProviderDetailPage() {
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
         />
       ) : (
         <OAuthModal
@@ -1670,6 +1677,8 @@ export default function ProviderDetailPage() {
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
         />
       )}
       {providerId === "iflow" && (

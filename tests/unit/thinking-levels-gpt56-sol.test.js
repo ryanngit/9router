@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 
 describe("getThinkingLevels", () => {
-  it("adds max for gpt-5.6-sol on codex", () => {
-    const levels = getThinkingLevels("codex", "gpt-5.6-sol");
+  it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])("adds max for %s on codex", (model) => {
+    const levels = getThinkingLevels("codex", model);
     expect(levels).toContain("max");
     expect(levels).toContain("xhigh");
     expect(levels).not.toContain("ultra");

@@ -23,6 +23,23 @@ const CODEX_SSE_USER_OUTPUT_PATTERNS = [
 ];
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
+const CODEX_COMPACT_REQUEST = Symbol("codexCompactRequest");
+const CODEX_RESPONSES_LITE_HEADER = "x-openai-internal-codex-responses-lite";
+const CODEX_LITE_METADATA_HEADERS = [
+  "openai-beta",
+  "x-client-request-id",
+  "x-codex-beta-features",
+  "x-codex-installation-id",
+  "x-codex-parent-thread-id",
+  "x-codex-turn-metadata",
+  "x-codex-turn-state",
+  "x-codex-window-id",
+  "x-openai-memgen-request",
+  "x-openai-subagent",
+  "x-responsesapi-include-timing-metrics",
+];
+const CODEX_PRIORITY_SHORT_CONTEXT_LIMIT = 272_000;
+const CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT = 256_000;
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -40,8 +57,13 @@ const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
-  "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata",
-  "text"
+  "parallel_tool_calls", "reasoning", "service_tier", "include", "prompt_cache_key",
+  "client_metadata", "text"
+]);
+
+const COMPACT_API_ALLOWLIST = new Set([
+  "model", "input", "instructions", "tools", "parallel_tool_calls", "reasoning",
+  "service_tier", "prompt_cache_key", "text"
 ]);
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
@@ -124,8 +146,61 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
-function normalizeReasoningEffort(value) {
-  return value === "max" ? "xhigh" : value;
+function normalizeReasoningEffort(value, model) {
+  if (/^gpt-5\.6(?:-|$)/.test(model || "") && value === "xhigh") return "max";
+  return value;
+}
+
+function defaultReasoningEffortForModel(model) {
+  return /^gpt-5\.6(?:-|$)/.test(model || "") ? "max" : "low";
+}
+
+function supportsCodexFastTier(model) {
+  return /^gpt-5\.(?:4|5)(?:-|$)/.test(model || "");
+}
+
+function isEcmaWhitespace(code) {
+  return (code >= 0x09 && code <= 0x0d) || code === 0x20 || code === 0xa0 ||
+    code === 0x1680 || (code >= 0x2000 && code <= 0x200a) ||
+    code === 0x2028 || code === 0x2029 || code === 0x202f ||
+    code === 0x205f || code === 0x3000 || code === 0xfeff;
+}
+
+function estimateCodexInputTokens(body, stopAt = Number.POSITIVE_INFINITY) {
+  let json;
+  try {
+    json = JSON.stringify(body);
+  } catch {
+    return 0;
+  }
+
+  // ponytail: Codex sends no input-token count; replace this lexical estimate when one becomes available.
+  let asciiChars = 0;
+  let whitespaceExtraTokens = 0;
+  let unicodeTokens = 0;
+  let asciiWhitespaceRun = 0;
+  for (let i = 0; i < json.length; i++) {
+    const code = json.charCodeAt(i);
+    if (code <= 0x7f) asciiChars += 1;
+    else unicodeTokens += 1;
+
+    if (isEcmaWhitespace(code)) {
+      if (code <= 0x7f) asciiWhitespaceRun += 1;
+    } else if (asciiWhitespaceRun) {
+      // Raises long ASCII whitespace from 1 token per 5 chars to 1 per 4.
+      whitespaceExtraTokens += Math.floor(asciiWhitespaceRun / 20);
+      asciiWhitespaceRun = 0;
+    }
+
+    // Keep bounded early exit without running several regexes per token-sized part.
+    if ((i & 4095) === 4095) {
+      const tokens = Math.ceil(asciiChars / 5) + whitespaceExtraTokens +
+        Math.floor(asciiWhitespaceRun / 20) + unicodeTokens;
+      if (tokens >= stopAt) return tokens;
+    }
+  }
+  whitespaceExtraTokens += Math.floor(asciiWhitespaceRun / 20);
+  return Math.ceil(asciiChars / 5) + whitespaceExtraTokens + unicodeTokens;
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -180,6 +255,33 @@ function codexSseErrorResponse(status, message) {
   });
 }
 
+function usesResponsesLite(credentials) {
+  return String(credentials?.rawHeaders?.[CODEX_RESPONSES_LITE_HEADER] || "").trim().toLowerCase() === "true";
+}
+
+function copyResponsesLiteHeaders(headers, credentials) {
+  if (!usesResponsesLite(credentials)) return;
+  const rawHeaders = credentials?.rawHeaders || {};
+  headers[CODEX_RESPONSES_LITE_HEADER] = "true";
+
+  for (const name of CODEX_LITE_METADATA_HEADERS) {
+    const value = rawHeaders[name];
+    if (typeof value === "string" && value && value.length <= 16_384) {
+      headers[name] = value;
+    }
+  }
+
+  const userAgent = rawHeaders["user-agent"];
+  if (typeof userAgent === "string" && /^codex(?:_cli_rs|_exec|-cli)\//i.test(userAgent)) {
+    headers["User-Agent"] = userAgent;
+  }
+
+  const originator = rawHeaders.originator;
+  if (typeof originator === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(originator)) {
+    headers.originator = originator;
+  }
+}
+
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
  * Automatically injects default instructions if missing
@@ -211,6 +313,7 @@ export class CodexExecutor extends BaseExecutor {
     if (typeof accountId === "string" && accountId && !headers["ChatGPT-Account-ID"]) {
       headers["ChatGPT-Account-ID"] = accountId;
     }
+    copyResponsesLiteHeaders(headers, credentials);
     return headers;
   }
 
@@ -384,9 +487,12 @@ export class CodexExecutor extends BaseExecutor {
   /**
    * Transform request before sending - inject default instructions if missing.
    * Image fetching is handled separately in prefetchImages() so this stays sync.
-   */
+  */
   transformRequest(model, body, stream, credentials) {
-    this._isCompact = !!body._compact;
+    const isCompact = body._compact === true || body[CODEX_COMPACT_REQUEST] === true;
+    if (isCompact) body[CODEX_COMPACT_REQUEST] = true;
+    const responsesLite = usesResponsesLite(credentials);
+    this._isCompact = isCompact;
     delete body._compact;
     // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
     this._currentSessionId = resolveCacheSessionId(body, credentials);
@@ -406,16 +512,20 @@ export class CodexExecutor extends BaseExecutor {
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
-    // Ensure streaming is enabled (Codex API requires it)
-    body.stream = true;
+    // Standard Responses calls stream; /responses/compact is unary JSON.
+    if (isCompact) delete body.stream;
+    else body.stream = true;
 
     // If no instructions provided, inject default Codex instructions
-    if (!body.instructions || body.instructions.trim() === "") {
+    if (!responsesLite && !isCompact && (!body.instructions || body.instructions.trim() === "")) {
       body.instructions = CODEX_DEFAULT_INSTRUCTIONS;
+    } else if (responsesLite && body.instructions === "") {
+      delete body.instructions;
     }
 
     // Ensure store is false (Codex requirement)
-    body.store = false;
+    if (isCompact) delete body.store;
+    else body.store = false;
 
     // Inject prompt_cache_key for stable Codex prompt caching
     if (!body.prompt_cache_key && this._currentSessionId) {
@@ -427,7 +537,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -438,19 +548,31 @@ export class CodexExecutor extends BaseExecutor {
       }
     }
 
-    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
+    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > model default
+    const effort = normalizeReasoningEffort(
+      body.reasoning?.effort ||
+        body.reasoning_effort ||
+        modelEffort ||
+        defaultReasoningEffortForModel(body.model),
+      body.model,
+    );
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.reasoning_effort || modelEffort || 'low');
       body.reasoning = { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.reasoning.effort);
+      body.reasoning.effort = effort;
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
+    }
+    if (responsesLite) {
+      body.parallel_tool_calls = false;
+      body.reasoning.context = "all_turns";
     }
     delete body.reasoning_effort;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
-    if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
+    if (!isCompact && body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
       body.include = ["reasoning.encrypted_content"];
+    } else if (isCompact) {
+      delete body.include;
     }
 
     // Remove unsupported parameters for Codex API
@@ -472,12 +594,29 @@ export class CodexExecutor extends BaseExecutor {
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
 
-    if (body.service_tier === "fast") body.service_tier = "priority";
+    if (body.service_tier === "fast") {
+      if (supportsCodexFastTier(body.model)) body.service_tier = "priority";
+      else delete body.service_tier;
+    }
+    if (body.service_tier === "priority" && /^gpt-/.test(body.model)) {
+      if (!supportsCodexFastTier(body.model)) {
+        delete body.service_tier;
+      } else {
+        const estimatedInputTokens = estimateCodexInputTokens(body, CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT);
+        if (estimatedInputTokens >= CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT) {
+          delete body.service_tier;
+          console.log(
+            `[Codex] Priority disabled for long context | estimated_input>=${CODEX_PRIORITY_ESTIMATED_INPUT_LIMIT} | short_limit=${CODEX_PRIORITY_SHORT_CONTEXT_LIMIT}`,
+          );
+        }
+      }
+    }
     if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
 
-    // Final allowlist filter — strip any unknown field that could trigger upstream "routing_unsupported"
+    // Final allowlist filter — compact and streaming Responses use different contracts.
+    const allowlist = isCompact ? COMPACT_API_ALLOWLIST : RESPONSES_API_ALLOWLIST;
     for (const k of Object.keys(body)) {
-      if (!RESPONSES_API_ALLOWLIST.has(k)) delete body[k];
+      if (!allowlist.has(k)) delete body[k];
     }
 
     return body;

@@ -148,11 +148,14 @@ export default {
   stream: true,
   buildUrl: () => CODEX_RESPONSES_URL,
   buildHeaders: (creds) => {
-    const accountId = creds?.providerSpecificData?.chatgptAccountId || decodeAccountId(creds?.idToken);
+    const accountId = creds?.providerSpecificData?.workspaceId
+      || creds?.providerSpecificData?.chatgptAccountId
+      || creds?.providerSpecificData?.accountId
+      || decodeAccountId(creds?.idToken);
     return {
       "accept": "text/event-stream, application/json",
       "authorization": `Bearer ${creds?.accessToken || ""}`,
-      "chatgpt-account-id": accountId || "",
+      "ChatGPT-Account-ID": accountId || "",
       "content-type": "application/json",
       "originator": CODEX_ORIGINATOR,
       "session_id": randomUUID(),

@@ -18,6 +18,11 @@ for (const entry of REGISTRY) {
 }
 
 const BUILTIN_MODEL_ALIASES = {
+  "gpt-5.6-sol": "cx/gpt-5.6-sol",
+  "gpt-5.6-terra": "cx/gpt-5.6-terra",
+  "gpt-5.6-luna": "cx/gpt-5.6-luna",
+  "claude-opus-4.8": "gh/claude-opus-4.8",
+  "claude-fable-5": "gh/claude-fable-5",
   "grok-build": "gcli/grok-build",
 };
 
@@ -126,6 +131,7 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 const MODEL_PREFIX_PROVIDERS = [
   [/^claude-/, "anthropic"],
   [/^gemini-/, "gemini"],
+  [/^grok-/, "xai"],
   [/^gpt-/, "openai"],
   [/^o[134]/, "openai"],
   [/^deepseek-/, "openrouter"],

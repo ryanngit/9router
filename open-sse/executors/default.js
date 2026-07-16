@@ -76,13 +76,208 @@ const REFRESH_GRANTS = Object.fromEntries(
     })
 );
 
+const XAI_RESPONSES_TOOL_TYPES = new Set([
+  "function",
+  "web_search",
+  "x_search",
+  "collections_search",
+  "file_search",
+  "code_execution",
+  "code_interpreter",
+  "mcp",
+  "shell",
+]);
+
+const XAI_FREEFORM_TOOL_PARAMETERS = {
+  type: "object",
+  properties: {
+    input: { type: "string", description: "Freeform tool input." },
+  },
+  required: ["input"],
+};
+
+function getToolName(tool) {
+  const name = tool?.name || tool?.function?.name;
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
+function normalizeFunctionParameters(parameters) {
+  if (!parameters) return { type: "object", properties: {} };
+  if (parameters.type === "object" && !parameters.properties) return { ...parameters, properties: {} };
+  return parameters;
+}
+
+function toXaiFunctionTool(tool, parameters = null) {
+  const name = getToolName(tool);
+  if (!name) return null;
+  return {
+    type: "function",
+    name,
+    description: String(tool.description || tool.function?.description || ""),
+    parameters: normalizeFunctionParameters(parameters || tool.parameters || tool.function?.parameters),
+  };
+}
+
+function normalizeXaiHostedTool(tool) {
+  if (tool.external_web_access === undefined) return tool;
+  const { external_web_access, ...next } = tool;
+  return next;
+}
+
+function normalizeXaiResponsesTool(tool) {
+  if (!tool || typeof tool !== "object") return null;
+  if (tool.type === "local_shell") return null;
+  // ponytail: xAI rejects Responses custom tools; wrap as freeform function until xAI supports custom_tool_call.
+  if (tool.type === "custom") return toXaiFunctionTool(tool, XAI_FREEFORM_TOOL_PARAMETERS);
+  if (!XAI_RESPONSES_TOOL_TYPES.has(tool.type)) return toXaiFunctionTool(tool);
+  if (tool.type === "function") return toXaiFunctionTool(tool);
+  return normalizeXaiHostedTool(tool);
+}
+
+export function normalizeXaiResponsesTools(body) {
+  if (!Array.isArray(body?.tools)) {
+    if (body?.tools !== undefined || body?.tool_choice === undefined) return body;
+    const next = { ...body };
+    delete next.tool_choice;
+    return next;
+  }
+
+  let changed = false;
+  const tools = [];
+  for (const tool of body.tools) {
+    const normalized = normalizeXaiResponsesTool(tool);
+    if (!normalized) {
+      changed = true;
+      continue;
+    }
+    if (normalized !== tool) changed = true;
+    tools.push(normalized);
+  }
+
+  if (!changed && tools.length > 0) return body;
+  const next = { ...body };
+  if (tools.length > 0) next.tools = tools;
+  else {
+    delete next.tools;
+    delete next.tool_choice;
+  }
+  return next;
+}
+
+function stripEncryptedContent(value) {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const items = value.map((item) => {
+      const next = stripEncryptedContent(item);
+      if (next !== item) changed = true;
+      return next;
+    });
+    return changed ? items : value;
+  }
+  if (!value || typeof value !== "object") return value;
+
+  let changed = false;
+  const next = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "encrypted_content") {
+      changed = true;
+      continue;
+    }
+    const stripped = stripEncryptedContent(child);
+    if (stripped !== child) changed = true;
+    next[key] = stripped;
+  }
+  return changed ? next : value;
+}
+
+function stringifyXaiToolOutput(output) {
+  if (typeof output === "string") return output;
+  if (output == null) return "";
+  if (Array.isArray(output)) {
+    return output.map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item?.text === "string") return item.text;
+      if (typeof item?.content === "string") return item.content;
+      return JSON.stringify(item);
+    }).join("");
+  }
+  return JSON.stringify(output);
+}
+
+function normalizeXaiResponsesInputItem(item) {
+  if (!item || typeof item !== "object") return item;
+  if (item.type === "reasoning") return null;
+
+  if (item.type === "function_call_output") {
+    return { ...item, output: stringifyXaiToolOutput(item.output) };
+  }
+
+  if (item.type === "custom_tool_call") {
+    const callId = item.call_id || item.id;
+    const name = getToolName(item);
+    if (!callId || !name) return null;
+    return {
+      type: "function_call",
+      call_id: callId,
+      name,
+      arguments: JSON.stringify({ input: stringifyXaiToolOutput(item.input ?? item.arguments) }),
+    };
+  }
+
+  if (item.type === "custom_tool_call_output") {
+    const callId = item.call_id || item.id;
+    if (!callId) return null;
+    return {
+      type: "function_call_output",
+      call_id: callId,
+      output: stringifyXaiToolOutput(item.output),
+    };
+  }
+
+  return item;
+}
+
+export function normalizeXaiResponsesPayload(body) {
+  let transformed = stripEncryptedContent(body);
+
+  if (Array.isArray(transformed?.include) && transformed.include.includes("reasoning.encrypted_content")) {
+    transformed = {
+      ...transformed,
+      include: transformed.include.filter((item) => item !== "reasoning.encrypted_content"),
+    };
+    if (transformed.include.length === 0) delete transformed.include;
+  }
+
+  if (Array.isArray(transformed?.input)) {
+    const input = [];
+    let changed = false;
+    for (const item of transformed.input) {
+      const normalized = normalizeXaiResponsesInputItem(item);
+      if (!normalized) {
+        changed = true;
+        continue;
+      }
+      if (normalized !== item) changed = true;
+      input.push(normalized);
+    }
+    if (changed) transformed = { ...transformed, input };
+  }
+
+  return transformed;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
-    const transformed = this.applyJsonSchemaFallback(body);
+  transformRequest(model, body, stream, credentials) {
+    let transformed = this.applyJsonSchemaFallback(body);
+
+    if (this.provider === "xai" && credentials?.runtimeTransport?.format === "openai-responses") {
+      transformed = normalizeXaiResponsesTools(transformed);
+      transformed = normalizeXaiResponsesPayload(transformed);
+    }
 
     if (transformed && typeof transformed === "object") {
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
@@ -92,7 +287,8 @@ export class DefaultExecutor extends BaseExecutor {
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
-    return injectReasoningContent({ provider: this.provider, model, body: transformed });
+    transformed = injectReasoningContent({ provider: this.provider, model, body: transformed });
+    return this.provider === "xai" ? normalizeXaiResponsesPayload(transformed) : transformed;
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.

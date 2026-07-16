@@ -12,28 +12,127 @@ function streamFromText(text) {
 }
 
 describe("Codex fast tier and capacity handling", () => {
-  it("maps Codex fast tier to priority and max reasoning to xhigh", () => {
+  it("maps Codex fast tier to priority and preserves max reasoning", () => {
     const executor = new CodexExecutor();
     const body = executor.transformRequest("gpt-5.5", {
       model: "gpt-5.5",
       input: "hi",
-      reasoning_effort: "max",
+      reasoning: { effort: "max" },
       service_tier: "fast",
     }, true, {});
 
     expect(body.service_tier).toBe("priority");
-    expect(body.reasoning.effort).toBe("xhigh");
+    expect(body.reasoning.effort).toBe("max");
   });
 
-  it("uses ChatGPT workspace header fallback", () => {
+  it("keeps fast tier below the short-context limit", () => {
     const executor = new CodexExecutor();
-    const headers = executor.buildHeaders({
-      accessToken: "token",
-      connectionId: "conn_1",
-      providerSpecificData: { chatgptAccountId: "acct_1" },
-    });
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: "word ".repeat(220_000),
+      service_tier: "fast",
+    }, true, {});
 
-    expect(headers["ChatGPT-Account-ID"]).toBe("acct_1");
+    expect(body.service_tier).toBe("priority");
+  });
+
+  it("does not round every JSON punctuation mark up to one token", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: "key:value,".repeat(110_000),
+      service_tier: "fast",
+    }, true, {});
+
+    expect(body.service_tier).toBe("priority");
+  });
+
+  it("removes direct priority tier from long GPT requests", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: "word ".repeat(260_000),
+      service_tier: "priority",
+    }, true, {});
+
+    expect(body.service_tier).toBeUndefined();
+  });
+
+  it("counts whitespace-heavy long input conservatively", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: `x${" ".repeat(1_024_000)}`,
+      service_tier: "fast",
+    }, true, {});
+
+    expect(body.service_tier).toBeUndefined();
+  });
+
+  it("drops unsupported fast and priority tiers for GPT-5.6", () => {
+    const executor = new CodexExecutor();
+    const fast = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+      service_tier: "fast",
+    }, true, {});
+    const priority = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+      service_tier: "priority",
+    }, true, {});
+
+    expect(fast.service_tier).toBeUndefined();
+    expect(priority.service_tier).toBeUndefined();
+  });
+
+  it("counts non-ASCII input conservatively", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: "é".repeat(256_000),
+      service_tier: "fast",
+    }, true, {});
+
+    expect(body.service_tier).toBeUndefined();
+  });
+
+  it("leaves non-GPT priority requests unchanged", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("claude-opus-4.8", {
+      model: "claude-opus-4.8",
+      input: "word ".repeat(220_000),
+      service_tier: "priority",
+    }, true, {});
+
+    expect(body.service_tier).toBe("priority");
+  });
+
+  it("normalizes GPT-5.6 reasoning to max without changing GPT-5.5 xhigh", () => {
+    const executor = new CodexExecutor();
+    const defaulted = executor.transformRequest("gpt-5.6-sol", {
+      model: "gpt-5.6-sol",
+      input: "hi",
+    }, true, {});
+    const legacy = executor.transformRequest("gpt-5.6-terra", {
+      model: "gpt-5.6-terra",
+      input: "hi",
+      reasoning: { effort: "xhigh" },
+    }, true, {});
+    const suffix = executor.transformRequest("gpt-5.6-luna-max", {
+      model: "gpt-5.6-luna-max",
+      input: "hi",
+    }, true, {});
+    const previousModel = executor.transformRequest("gpt-5.5", {
+      model: "gpt-5.5",
+      input: "hi",
+      reasoning: { effort: "xhigh" },
+    }, true, {});
+
+    expect(defaulted.reasoning.effort).toBe("max");
+    expect(legacy.reasoning.effort).toBe("max");
+    expect(suffix).toMatchObject({ model: "gpt-5.6-luna", reasoning: { effort: "max" } });
+    expect(previousModel.reasoning.effort).toBe("xhigh");
   });
 
   it("classifies 200-SSE model capacity as account fallback", async () => {

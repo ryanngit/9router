@@ -27,6 +27,8 @@ export default {
       "low",
       "medium",
       "high",
+      "xhigh",
+      "max",
     ],
     defaultMode: "auto",
   },
@@ -67,7 +69,7 @@ export default {
   oauth: {
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
     authorizeUrl: "https://auth.openai.com/oauth/authorize",
-    tokenUrl: "https://auth.openai.com/oauth/token",
+    tokenUrl: "https://auth.openai.com/api/accounts/oauth/token",
     scope: "openid profile email offline_access",
     codeChallengeMethod: "S256",
     fixedPort: 1455,
