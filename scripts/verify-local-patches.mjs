@@ -266,6 +266,10 @@ function checkSource() {
   mustContain("open-sse/executors/grok-cli.js", "supportsGrokCliReasoningEffort", "model-aware Grok CLI reasoning effort");
   mustContain("open-sse/executors/grok-cli.js", "delete body.reasoning.effort", "unsupported Grok CLI effort removal");
   mustContain("open-sse/executors/grok-cli.js", "GROK_CLI_TURN_STORE_MAX", "bounded Grok CLI turn state");
+  mustContain("open-sse/executors/grok-cli.js", "normalizeGrokCliInput", "Grok CLI cross-provider input normalization");
+  mustContain("open-sse/executors/grok-cli.js", "custom_tool_call_output", "Grok CLI custom tool history conversion");
+  mustContain("open-sse/executors/grok-cli.js", "stringifyGrokCliToolOutput", "Grok CLI array tool output normalization");
+  mustContain("open-sse/executors/grok-cli.js", "GROK_CLI_NATIVE_ITEM_ID", "Grok CLI native encrypted reasoning preservation");
   mustNotContain("open-sse/executors/grok-cli.js", "x-compaction-at", "invented Grok CLI compaction header");
   mustContain("src/lib/oauth/providers.js", "requestDeviceCode: async (config, _codeChallenge, _options, proxyOptions)", "Grok CLI device request proxy propagation");
   mustContain("src/lib/oauth/providers.js", "pollToken: async (config, deviceCode, _codeVerifier, _extraData, proxyOptions)", "Grok CLI poll proxy propagation");

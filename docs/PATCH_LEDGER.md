@@ -1,6 +1,6 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
@@ -18,17 +18,24 @@ Current live facts:
 - P9 xAI stale-tool-choice candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
 - P19 official Grok Build subscription candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
 - P19 model-aware effort, console-label, and paid zero-cap quota corrections were promoted on 2026-07-13; final isolated QA data was removed before deploy.
+- P19 cross-provider history normalization was promoted on 2026-07-15 PDT; its copied credential-bearing candidate HOME and replay script were removed after live QA.
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://rochester-wanted-ware-movements.trycloudflare.com`
-- Current detached cloudflared PID: `237493`
-- Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`
+- Current known raw tunnel base: `https://uni-found-thought-podcast.trycloudflare.com`
+- Current cloudflared PID: `714728`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
+- The 2026-07-15 controlled promotion applied that policy with `--update-env`; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2`.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
 - xAI OAuth profile `songoku200794@gmail.com` uses proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` (`http://127.0.0.1:18888`). Gateway routes `x.ai`/`grok.com` domains through US exits on both listeners.
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
-- Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` on `http://127.0.0.1:18888`.
-- Current PM2 PID after GPT-5.6 tier correction: `1030170`.
+- Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
+- Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
+- Current PM2 PID after the reviewed cross-provider history v2 deployment: `714356`.
+- Latest live backup from reviewed cross-provider Grok history v2: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-v2-20260715-20260716T034051Z`.
+- Latest DB backup from reviewed cross-provider Grok history v2: `/home/home/.9router/db/backups/pre-grok-history-v2-20260715-20260716T034051Z/data.sqlite`.
+- Previous live backup from initial cross-provider Grok history normalization: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-20260715-20260716T022152Z`.
+- Previous DB backup from initial cross-provider Grok history normalization: `/home/home/.9router/db/backups/pre-grok-history-20260715-20260716T022152Z/data.sqlite`.
 - Latest live backup from GPT-5.6 tier correction: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-gpt56-tier-latency-20260714-20260714T040713Z`.
 - Latest DB backup from GPT-5.6 tier correction: `/home/home/.9router/db/backups/pre-gpt56-tier-latency-20260714-20260714T040713Z/data.sqlite`.
 - Latest live backup from final Grok corrections: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-final-20260713-20260713T225502Z`
@@ -1247,6 +1254,26 @@ Verification:
 - Real billing for X Premium+ returned `onDemandCap=0`, `onDemandUsed=0`, `hasGrokCodeAccess=true`, and `subscriptionTier=XPremiumPlus` while inference remained active. Zero means no separate on-demand allowance, not exhausted subscription quota.
 - Paid tiers with no numeric allotment now report active subscription and explicitly state that Grok exposes no numeric included quota. Tierless zero-cap promo/free profiles retain the depleted state.
 - Final live canaries returned HTTP 200 for build, Composer, and `grok-4.5` through local/short paths. Stored wire omitted build/Composer effort, sent `xhigh` for `grok-4.5`, and console labels matched the provider wire.
+- 2026-07-15 incident: bare `grok-4.5` still resolved to the expired xAI OAuth profile and returned delayed HTTP 403 `unauthenticated:bad-credentials`. The active Grok CLI token and identical inference payload returned HTTP 200 direct, HTTP 400 Cloudflare HTML through DC port `18888`, and HTTP 200 through residential port `18889`; `/v1/models` returned HTTP 200 on all three paths.
+- Created dedicated strict pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` for `http://127.0.0.1:18889`, bound only the `grok-cli` profile, and set private DB alias `grok-4.5 -> grok-cli/grok-4.5`. This keeps `18888` DC and `18889` residential semantics separate.
+- Post-fix explicit local canary returned `GROKCLI_RESI_OK`; bare short-domain canary returned `BARE_GROK45_OK` as `grok-4.5-build`. Stored provider was `grok-cli`, model `grok-4.5`, effort `xhigh`, status `success`.
+- Pre-change DB backup: `/home/home/.9router/db/backups/pre-grok-cli-residential-20260716T010837Z/data.sqlite`.
+- 2026-07-15 cross-provider history incident: a 990,841-byte Codex `/v1/responses` body with 463 input items failed through `grok-cli/grok-4.5` with HTTP 422 `data did not match any variant of untagged enum ModelInput`. Failed provider payloads contained 162-172 foreign OpenAI reasoning items, 123-132 custom-tool call/output pairs, structured tool outputs, and OpenAI-only metadata.
+- Root fix runs at the Grok CLI executor boundary: discard foreign encrypted reasoning; preserve native Grok encrypted reasoning only when IDs use Grok's hyphenated UUID form; convert Codex `custom_tool_call` history to `function_call`; convert custom outputs to string-valued `function_call_output`; remove OpenAI passthrough metadata; and expose custom tools as normal function schemas with one required string `input`.
+- Focused executor QA passed 21/21 in canonical source; four-file Grok CLI QA passed 40/40; ESLint and `git diff --check` passed. A direct sanitized 590 KB replay and compiled-candidate 990,841-byte replay both returned HTTP 200. Native Grok encrypted two-turn continuity and a forced custom `exec` call also returned HTTP 200.
+- Candidate source/bundle/DB verifier returned zero failures and warnings. Promotion used two zero-active gates, SQLite backup, atomic app exchange, one PM2 restart, and automatic rollback protection.
+- Restart replaced child cloudflared PID `40865`, so the old raw target returned HTTP 530 until the guarded tunnel-enable path created `https://tattoo-recovery-industries-predict.trycloudflare.com` and re-registered `rkeyra9`. Local, raw, and short health then returned HTTP 200.
+- Exact live short-domain replay returned HTTP 200 SSE for all 990,841 request bytes and 463 items. Latest stored row was `grok-cli/grok-4.5`, effort `xhigh`, status `success`, with no provider error.
+- Live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-20260715-20260716T022152Z`; pre-deploy DB backup: `/home/home/.9router/db/backups/pre-grok-history-20260715-20260716T022152Z/data.sqlite`.
+- Post-deploy cleanup removed `/home/home/.openclaw/workspace-keyra/9router-candidate-grok-history-home` and `/tmp/grok-candidate-history-request.mjs`. PM2 policy was saved as Sol/max/default.
+- Mandatory post-implementation review found four defects in that first version: structured arrays were concatenated and `null` became empty text; invalid calls could leave orphan outputs; the existing Grok multi-turn fixture still failed; and native `fc_` preservation lacked coverage. These were treated as deployment defects, not deferred.
+- V2 JSON-stringifies every non-string output, filters `function_call_output` against normalized call IDs, changes the stale continuity fixture to real native UUID IDs, and covers native `rs_`, `msg_`, and `fc_` items. TDD first reproduced two focused failures, then passed 28/28; canonical seven-file QA passed 56/56 and public PR QA passed 57/57. Focused ESLint and `git diff --check` passed; independent re-review found no actionable issues.
+- V2 production build compiled, type-checked, generated 126 pages, copied standalone assets, and bundled MITM output at 57 MB in 19m09s. Source/candidate/DB verifier returned zero failures and warnings.
+- Isolated v2 exact replay completed HTTP 200 SSE for 990,844 bytes and 463 items. A small provider-wire canary retained `[1,2]` as the string `"[1,2]"`, retained `null` as `"null"`, and removed an orphan output. Native encrypted two-turn continuity and forced custom `exec` both completed.
+- V2 safe promotion used two zero-active gates, SQLite backup, atomic exchange, one PM2 restart, and rollback protection. Because restart killed the known child tunnel PID, the ops guard waited 10 seconds instead of 120 before guarded re-enable; raw and short health recovered in 42 seconds at `https://uni-found-thought-podcast.trycloudflare.com`.
+- Live short-domain v2 replay completed all 990,844 bytes/463 items with HTTP 200 and `response.completed`. Live structured-output wire and native encrypted two-turn checks passed. Source/live/DB verifier returned zero failures/warnings; live and backup SQLite integrity checks returned `ok`.
+- V2 rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-v2-20260715-20260716T034051Z`; pre-deploy DB backup: `/home/home/.9router/db/backups/pre-grok-history-v2-20260715-20260716T034051Z/data.sqlite`.
+- Cleanup removed `/home/home/.openclaw/workspace-keyra/9router-candidate-grok-history-v2-home`, `/tmp/grok-history-v2-canary.mjs`, and `/tmp/grok-native-v2-canary.mjs`. `pm2 save` persisted Sol/max/default after final promotion.
 - Bare `gpt-5.4-mini` through the short URL returned HTTP 200 as `gpt-5.6-sol`; stored request used `max` and Priority. Local, raw, and short health passed; cloudflared stayed PID `237493`.
 - X Premium+ quota returned plan `XPremiumPlus`, empty numeric quotas, and the active-subscription message. Live and backup SQLite integrity checks returned `ok`; full source/live/DB verifier returned zero failures and warnings.
 - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-final-20260713-20260713T225502Z`.
@@ -1254,7 +1281,7 @@ Verification:
 
 Upstream status:
 
-- Protocol/model/session/quota PR <https://github.com/decolua/9router/pull/2590> is open and merge-clean at `5ae7473`; 47 focused tests passed.
+- Protocol/model/session/quota PR <https://github.com/decolua/9router/pull/2590> is open and merge-clean at `b8f288c`; 57 focused tests passed. Public history normalization includes executor/tests only; private alias, pool, verifier, ledger, and ops changes remain excluded.
 - OAuth proxy PR <https://github.com/decolua/9router/pull/2343> is open and merge-clean at `640fa12`; 15 focused tests passed.
 - Private GPT/Claude routing and personal aliases beyond bare official `grok-build` remain excluded from upstream.
 
@@ -1264,6 +1291,8 @@ Upstream status:
 - Second attempt started the candidate and passed local health, but the post-swap verifier inherited the ops directory as its source root. Automatic rollback exchanged the previous app back, restarted it, and passed rollback health. Cloudflared stayed PID `237493`.
 - The helper now runs the exact source/candidate/DB verifier before waiting, uses `mv -T --exchange`, passes explicit verifier paths after swap, requires two zero-active snapshots both before backup and immediately before exchange, and keeps rollback armed through local health and invariant checks.
 - Final promotion used `/home/home/.openclaw/workspace-keyra/9router-ops/safe-promote-app.sh`, one successful app restart, PM2 PID `875138`, and no tunnel restart. Earlier controlled rollback caused two additional app restarts; both are recorded instead of hidden.
+- Cross-provider history v1 was promoted only after protocol replay passed, but later independent code review exposed output-fidelity, orphan-pair, and regression-test gaps. V2 was built and safely promoted in the same run; the first deployment and its rollback artifacts remain recorded above.
+- `safe-promote-app.sh` now shortens only the post-restart external-health loop when the captured tunnel PID is already gone. This reduced measured v2 short-domain recovery from about 200 seconds to 42 seconds without changing normal 60-attempt behavior when the tunnel process survives.
 
 ## Not Yet Verified As Local Patch
 
