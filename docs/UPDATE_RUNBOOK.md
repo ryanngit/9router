@@ -187,6 +187,8 @@ Canonical promotion helper for current `0.5.30` source:
 
 This helper runs the source/bundle/DB verifier, waits for two zero-active snapshots before backup and again before exchange, uses `mv -T --exchange`, restarts only PM2 `9router`, keeps rollback armed through local health and invariant checks, and polls existing raw/short tunnel health before any guarded tunnel-enable attempt.
 
+Default `MAX_ACTIVE=0` must remain the normal gate. When the deployment controller itself is the one active 9Router request and cannot finish before deployment, launch the detached helper with `MAX_ACTIVE=1` only after confirming the count is exactly one. Both quiet snapshots still apply, and any second request blocks the swap. Record this exception because that one control request may reconnect during PM2 restart.
+
 Before staged CLI build, verify nested CLI dev dependencies exist:
 
 ```bash
