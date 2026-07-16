@@ -1225,8 +1225,8 @@ Required invariants:
 - Subscription inference uses `https://cli-chat-proxy.grok.com/v1/responses`, model `grok-build`, `stream:true`, `store:false`, and encrypted reasoning continuity.
 - Current official fingerprint is `grok-shell/0.2.99`; model metadata is 500,000 context and 64,000 max output.
 - Do not restore invented `x-compaction-at`; official CLI compaction is client-side near 85% context.
-- Cross-provider Codex/OpenAI history is normalized at the Grok CLI executor boundary: foreign encrypted reasoning is removed, while native Grok `rs_`/`msg_`/`fc_` UUID items retain IDs and encrypted continuity.
-- Codex custom calls become normal function-call history and custom tool definitions become `{input:string}` function schemas. Non-string outputs use JSON text, and outputs without a surviving matching call ID are removed.
+- Cross-provider Codex/OpenAI history is normalized by the pure Grok compatibility codec: foreign encrypted reasoning is removed; native `rs_<UUID>` and self-identifying `tco_*` reasoning retains encrypted continuity; output-only message/function IDs and statuses are removed.
+- Codex custom calls become normal function-call history and custom tool definitions become `{input:string}` function schemas. Valid typed text/image outputs stay typed; other non-string outputs use deterministic JSON text. Orphans are removed, duplicate outputs keep the last result, and dangling calls receive the official cancellation result.
 - `grok-4.5` reasoning maps `max` to `xhigh`, keeps `low|medium|high|xhigh`, and normalizes unsupported values to `high`. Unknown/non-reasoning models omit effort while retaining summary and encrypted continuity.
 - Empty, absent, or fully filtered tools remove `tool_choice`; custom tool choices become matching flat function choices.
 - Session fallback stays stable when assistant history first appears. Per-session turn state is LRU-bounded at 5,000 entries; retries of the same body do not advance the turn.
@@ -1295,6 +1295,62 @@ Upstream status:
 - Final promotion used `/home/home/.openclaw/workspace-keyra/9router-ops/safe-promote-app.sh`, one successful app restart, PM2 PID `875138`, and no tunnel restart. Earlier controlled rollback caused two additional app restarts; both are recorded instead of hidden.
 - Cross-provider history v1 was promoted only after protocol replay passed, but later independent code review exposed output-fidelity, orphan-pair, and regression-test gaps. V2 was built and safely promoted in the same run; the first deployment and its rollback artifacts remain recorded above.
 - `safe-promote-app.sh` now shortens only the post-restart external-health loop when the captured tunnel PID is already gone. This reduced measured v2 short-domain recovery from about 200 seconds to 42 seconds without changing normal 60-attempt behavior when the tunnel process survives.
+
+### P20. Complete Grok Responses compatibility codec
+
+Purpose:
+
+- Replace accumulated Grok request mutations with one source-pinned OpenAI Responses compatibility codec based on `xai-org/grok-build` commit `b189869b7755d2b482969acf6c92da3ecfeffd36`.
+- Preserve native Grok reasoning/backend-tool continuity and successful SSE while deterministically translating only client history and tools Grok can represent.
+- Stop schema failures locally or at one account without treating them as account health failures.
+
+Files:
+
+- `open-sse/executors/grok-cli-compat.js`
+- `open-sse/executors/grok-cli.js`
+- `open-sse/services/accountFallback.js`
+- `open-sse/services/grokCliModels.js`
+- `src/lib/oauth/providers.js`
+- `tests/unit/account-fallback.test.js`
+- `tests/unit/grok-cli-executor.test.js`
+- `tests/unit/grok-cli-models.test.js`
+- `tests/unit/grok-cli-responses-compat.test.js`
+- `scripts/verify-local-patches.mjs`
+
+Required invariants:
+
+- Build a fresh provider body; never mutate client input. Keep validated Responses fields only, set `stream:true` and `store:false`, and convert non-empty instructions into one exact-byte system message.
+- Preserve native `rs_<UUID>` reasoning only with encrypted content. Preserve `tco_*` only when ciphertext starts with its own ID plus `_`. Add `reasoning_text`, remove status/internal metadata, and discard foreign OpenAI ciphertext.
+- Preserve native x-search `ctc_*` plus `xs_call-*`, `web_search_call`, and `code_interpreter_call` history. Do not convert native x-search into client function history.
+- Convert non-native custom calls/tools to function wire with one required string `input`. Require call ID/name, repair malformed JSON args to `{}`, preserve valid typed output arrays, stringify other structures, remove orphans, keep last duplicate output, and repair dangling calls.
+- Allow only exact `web_search` with filtered non-empty domains and exact `x_search`. Deduplicate hosted tools, let hosted tools win name collisions, and reconcile tool choice against final tools. Never send `external_web_access`.
+- Rebuild reasoning with concise summary; translate `max -> xhigh` only for proven reasoning models and request `reasoning.encrypted_content`. Rebuild plain text or JSON schema output without verbosity/provider modifiers.
+- Inference sends official `X-XAI-Token-Auth`, `x-authenticateresponse`, `x-grok-client-mode`, `x-grok-*` request identity, and optional `x-grok-user-id`. Resource endpoints keep `x-userid`/`x-email`.
+- Successful Grok Responses SSE stays byte-for-byte provider passthrough. Unknown semantic input returns local HTTP 400 before provider transport.
+- Unmatched HTTP 400/422 causes no account lock/fallback. Existing capacity, overload, rate, and quota text rules remain higher priority.
+- `/v1/models` normalizes `apiBackend`, context/output limits, backend-search/reasoning capability, effort options, compaction fields, and streaming tool-call metadata from top level or `_meta`.
+- Private alias `grok-4.5 -> grok-cli/grok-4.5`, strict residential pool, credentials, deployment artifacts, verifier, ledger, and runbook never enter the public PR.
+
+Verification before deployment:
+
+- TDD codec/executor/model/fallback matrix passed 81/81 across ten focused files; focused ESLint, syntax, `git diff --check`, and pinned-source invariants passed.
+- Full local unit run passed 1,031 tests, skipped 24, and retained 26 unrelated baseline/local failures outside all changed Grok/account files. No changed test failed.
+- Independent review found missing official proxy headers, cross-account agent-ID carryover, empty-message retention, and instruction trimming. Red tests reproduced all four; commits `0210ee1` and `decde81` fixed them. Review request to allowlist backend history was rejected because it conflicts with the approved/source-backed full native backend-item preservation contract.
+- Production build completed in 117 seconds: Next.js compiled, TypeScript passed, 126 pages generated, standalone assets copied, MITM bundled, final size 57 MB.
+- Source/candidate/copied-DB verifier passed with zero failures/warnings. Candidate bound only `127.0.0.1:20129`; copied DB integrity was `ok`, contained zero refresh tokens, and no candidate tunnel started.
+- Minimal `grok-4.5` returned HTTP 200 as `grok-4.5-build`; stored provider wire used model `grok-4.5`, effort `xhigh`, `parallel_tool_calls:false`, and encrypted reasoning include.
+- Strict web search returned HTTP 200 with reasoning/message/web-search output. Stored wire retained only `web_search.filters.allowed_domains=["x.com"]`; `external_web_access` and search modifiers were absent.
+- Native x-search emitted and replayed 24 `ctc_*` plus 24 self-identifying `tco_*` items; second turn returned `CONTINUITY_OK` with HTTP 200.
+- Combined history canary returned HTTP 200 and proved malformed args repaired, typed image retained, duplicate output deduped, orphan removed, dangling result inserted, custom history converted, and JSON schema retained.
+- Local unknown semantic input returned HTTP 400 in 17 ms with nested `grok_cli_compatibility_error`; account lock/test/error/backoff state stayed byte-identical.
+- A 1,088,882-byte request with 463 history items and 336,865 provider input tokens returned `LARGE_OK` in 42.4 seconds. Eighty-three concurrent health probes stayed below 6.6 ms.
+- Four-way non-streaming through the one residential profile produced three HTTP 200 responses and one upstream proxy socket close/502; after its 30-second transient cooldown, two-way streaming returned two HTTP 200 responses with complete `response.completed` events.
+- Candidate recorded 11 successful Grok canaries and three deliberate/transport errors. Final copied DB integrity was `ok`; credential-bearing candidate home and temporary payloads were removed before promotion.
+
+Deployment/upstream status:
+
+- Staged candidate: `/home/home/.openclaw/workspace-keyra/9router-candidate-grok-compat-v3-app`.
+- Live promotion, rollback paths, final tunnel/PID evidence, and PR #2590 head are recorded after completion below; do not infer deployment from candidate success alone.
 
 ## Not Yet Verified As Local Patch
 

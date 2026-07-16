@@ -1,6 +1,6 @@
 # 9Router Update Runbook
 
-Last updated: 2026-07-13
+Last updated: 2026-07-16
 
 Use this before updating, patching, deploying, or preparing upstream PRs. The goal is minimal downtime and no rediscovery of fragile behavior.
 
@@ -15,6 +15,7 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - Do not push upstream branches from a dirty/broken worktree.
 - Never restart or replace cloudflared during an app upgrade.
 - P17 deployments must run `app/custom-server.js`; `app/server.js` loses trusted tunnel client identity.
+- P19/P20 Grok subscription inference is a strict Responses compatibility boundary. Never restore the old incremental mutators in `grok-cli.js`; request semantics live in `grok-cli-compat.js`.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
 ## 1. Brainstorm / Analyze
@@ -103,6 +104,9 @@ Review the diff against the patch ledger:
 - Does Console Log still work through both raw and short tunnel URLs when SSE is buffered?
 - Does quota refresh have one scheduler and one real-time countdown?
 - Does API-key client tracking avoid raw IP/full user-agent storage and remain observe-only?
+- Does Grok inference still use `X-XAI-Token-Auth`, `x-authenticateresponse`, `x-grok-client-mode`, and `x-grok-user-id`, while model/usage resource calls retain `x-userid`/`x-email`?
+- Does Grok preserve native `rs_<UUID>`, self-identifying `tco_*`, `ctc_*` plus `xs_call-*`, web-search, and code-interpreter history while removing foreign OpenAI reasoning?
+- Are unmatched HTTP 400/422 errors returned without account lock/fallback, while capacity/rate/quota text still rotates accounts?
 
 Do not mark upstream-ready until:
 
@@ -139,6 +143,9 @@ Targeted manual checks by patch:
 - P16 quota: countdown advances once per real second and one refresh occurs at the deadline.
 - P17 API clients: trusted-IP tests pass; one keyed canary appears under Usage > API Key Clients.
 - P18 usage SSE: route never calls `getUsageStats`; payload contains only active/recent/error/pending fields and overlapping events coalesce.
+- P19 Grok subscription: bare private `grok-4.5` still resolves to `grok-cli/grok-4.5` through its strict residential pool; do not upstream that alias or pool.
+- P20 Grok codec: run minimal text, strict web search, native x-search two-turn replay, typed function/custom history, structured output, malformed/duplicate/orphan/dangling repair, local 400 no-lock, and approximately 1 MB/463-item replay.
+- P20 candidate safety: copy the live DB with SQLite `.backup`, remove every `refreshToken`, bind candidate to `127.0.0.1:20129`, start no tunnel, then delete the credential-bearing candidate home after QA.
 
 Known clean-upstream `0.5.30` baseline failures:
 
@@ -170,6 +177,16 @@ For runtime source changes:
 9. Confirm cloudflared PID is unchanged.
 10. Update only `cli/package.json` version after successful app health if retaining the local wrapper.
 
+Canonical promotion helper for current `0.5.30` source:
+
+```bash
+/home/home/.openclaw/workspace-keyra/9router-ops/safe-promote-app.sh \
+  /path/to/verified/candidate/app \
+  descriptive-label
+```
+
+This helper runs the source/bundle/DB verifier, waits for two zero-active snapshots before backup and again before exchange, uses `mv -T --exchange`, restarts only PM2 `9router`, keeps rollback armed through local health and invariant checks, and polls existing raw/short tunnel health before any guarded tunnel-enable attempt.
+
 Before staged CLI build, verify nested CLI dev dependencies exist:
 
 ```bash
@@ -180,7 +197,7 @@ If missing, install the already-declared CLI dev dependencies before building. N
 
 Allow at least 45 minutes for `build-cli.js` on this host. A verified 2026-07-13 build took about 23 minutes; 10-minute and 20-minute command ceilings killed valid builds before standalone packaging completed.
 
-Skeleton:
+Manual fallback skeleton:
 
 ```bash
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
