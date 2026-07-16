@@ -135,6 +135,7 @@ Targeted manual checks by patch:
 - P3 workspace: same email with different workspace/account IDs remains distinct.
 - P4 capacity: capacity text triggers account retry, not client failure.
 - P5 Copilot models: `claude-opus-4.8` and `claude-fable-5` route to `github`.
+- P5 Copilot thinking: Opus 4.8 and Fable 5 with `max` must both reach native `/v1/messages`; Fable wire must use adaptive thinking plus `output_config.effort`.
 - P6 usage: cached tokens lower cost; API-key grouping remains separated.
 - P7 reset bank: confirmation appears before reset consume; cancel does not POST.
 - P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol` with effort `max`, no provider service tier, and effective response tier `default`.
@@ -147,11 +148,11 @@ Targeted manual checks by patch:
 - P20 Grok codec: run minimal text, strict web search, native x-search two-turn replay, typed function/custom history, structured output, malformed/duplicate/orphan/dangling repair, local 400 no-lock, and approximately 1 MB/463-item replay.
 - P20 candidate safety: copy the live DB with SQLite `.backup`, remove every `refreshToken`, bind candidate to `127.0.0.1:20129`, start no tunnel, then delete the credential-bearing candidate home after QA.
 
-Known clean-upstream `0.5.30` baseline failures:
+Known clean-upstream `0.5.35` baseline:
 
-- Eight Cursor auto-import tests.
-- Two Codex image-fetch MIME tests.
-- Reproduce failures in a clean detached worktree before attributing them to local patches.
+- Full suite passes 1,299, fails 46, and leaves 59 pending in this environment.
+- Customized `0.5.35` has the exact same 46 failures and 59 pending; compare failure sets before attributing any full-suite failure to a local patch.
+- Stock and customized trees also share 12 React lint errors and two warnings. Run changed-path lint separately and compare any touched failing UI file against clean `v0.5.35`.
 
 Tunnel checks:
 
@@ -177,7 +178,7 @@ For runtime source changes:
 9. Confirm cloudflared PID is unchanged.
 10. Update only `cli/package.json` version after successful app health if retaining the local wrapper.
 
-Canonical promotion helper for current `0.5.30` source:
+Canonical promotion helper for current verified source:
 
 ```bash
 /home/home/.openclaw/workspace-keyra/9router-ops/safe-promote-app.sh \
@@ -186,6 +187,8 @@ Canonical promotion helper for current `0.5.30` source:
 ```
 
 This helper runs the source/bundle/DB verifier, waits for two zero-active snapshots before backup and again before exchange, uses `mv -T --exchange`, restarts only PM2 `9router`, keeps rollback armed through local health and invariant checks, and polls existing raw/short tunnel health before any guarded tunnel-enable attempt.
+
+For isolated Next standalone candidates, set `HOSTNAME=127.0.0.1`; `HOST=127.0.0.1` is ignored and leaves the candidate on `0.0.0.0`. Verify with `ss -ltnp 'sport = :20129'` before any credential-bearing canary.
 
 Default `MAX_ACTIVE=0` must remain the normal gate. When the deployment controller itself is the one active 9Router request and cannot finish before deployment, launch the detached helper with `MAX_ACTIVE=1` only after confirming the count is exactly one. Both quiet snapshots still apply, and any second request blocks the swap. Record this exception because that one control request may reconnect during PM2 restart.
 
@@ -197,7 +200,7 @@ node -e "require.resolve('esbuild', { paths: ['./cli'] })"
 
 If missing, install the already-declared CLI dev dependencies before building. Never deploy a candidate after `build-cli.js` stops at the MITM step. If MITM source is unchanged and an emergency build must proceed, reuse the exact verified live bundled `src/mitm/server.js` and compare SHA-256 hashes.
 
-Allow at least 45 minutes for `build-cli.js` on this host. A verified 2026-07-13 build took about 23 minutes; 10-minute and 20-minute command ceilings killed valid builds before standalone packaging completed.
+Allow a long command ceiling for `build-cli.js`. Historical cold builds took 23 minutes; the verified `0.5.35` warm build took 112 seconds. Completion, not elapsed time, is the gate.
 
 Manual fallback skeleton:
 

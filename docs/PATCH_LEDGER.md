@@ -1365,6 +1365,41 @@ Deployment/upstream status:
 - Fresh V4 large replay sent 1,050,001 bytes and 463 mixed history items through the short domain. It returned HTTP 200 with structured `LARGE_V4_OK` in 20.5 seconds, recorded 178,704 provider input tokens and a 1,035,099-byte provider body, and stored status `success`. All 76 concurrent short-domain health probes completed; maximum observed latency was 840 ms.
 - Public branch head `ccb00ac` passed private-data leak scan and is open, mergeable, and `CLEAN` in replacement PR <https://github.com/decolua/9router/pull/2647>. Private aliases, pools, DB, verifier, ledger, runbook, and deployment artifacts remain excluded.
 
+## v0.5.35 Upgrade Audit (2026-07-16)
+
+Baseline and merge:
+
+- Published `0.5.30` is tag/git head `9845a170`; published `0.5.35` is tag/git head `bc252ea8`. Local customized `0.5.30` was `45634a41`.
+- Source/live/DB verification on customized `0.5.30` returned zero failures/warnings. Stock `0.5.30` failed 31 bundle invariants, proving deployed behavior was not the published bundle.
+- `0.5.30..0.5.35` contains 27 commits, overlaps local changes in 21 files, and produced ten explicit merge conflicts. Audited merge commit is `0098d86`; upgrade design/plan commit is `c47b0f0`.
+- P1-P4, P6-P9, P11-P12, and P14-P20 remain required. P5M and P10 are upstream; only dependent additions remain. GitHub Claude uses upstream native `/v1/messages`; Grok Build uses upstream protocol/model base plus local strict codec. Private aliases, proxy pools, ports, and best-GPT routing remain local.
+- Source and new-bundle verifier returned zero failures/warnings. Focused patch matrix passed 273/273.
+- Full merged suite passed 1,414, failed 46, pending 59. Clean `v0.5.35` passed 1,299 with the exact same 46 failures and 59 pending; merged source introduced zero new full-suite failures.
+- Lint produced the same 12 React errors and two warnings in customized `0.5.30`, stock `0.5.35`, and merged source. Changed-path server/test lint remained clean apart from existing anonymous-default-export warnings.
+
+Candidate QA:
+
+- Final standalone candidate built in 112 seconds, generated 130 routes, bundled MITM, and measured 58 MB. Staged app is `/home/home/.openclaw/workspace-keyra/9router-candidate-v0.5.35-app-v2`.
+- Candidate used a SQLite backup with integrity `ok`, zero direct/nested refresh tokens, no tunnel, and `127.0.0.1:20129` only. A restart command initially used `HOST`; Next standalone reads `HOSTNAME`, so it briefly bound `0.0.0.0`. Restart with `HOSTNAME=127.0.0.1` fixed the bind and the runbook now names the required variable.
+- Usage/provider APIs returned HTTP 200. Console REST returned 200, conditional ETag returned 304, and SSE emitted immediate `init`.
+- Bare GPT routed to `gpt-5.6-sol` with `max/default`. Responses Lite accepted incoming `parallel_tool_calls=true` and returned HTTP 200, proving provider wire normalization to serial tools and `reasoning.context=all_turns`.
+- GitHub Opus 4.8 returned HTTP 200. Stock `0.5.35` Fable failed with `thinking.type.enabled is not supported`; Opus control passed. Red test proved Fable was classified `claude-budget`; commit `4c386b4` changes only Fable to `claude-adaptive`. Rebuilt candidate returned HTTP 200 for Fable/max.
+- Grok 4.5 returned HTTP 200 through its strict residential route. Malformed input returned local HTTP 400 in 35 ms without changing model lock or last-error state.
+- First 940,522-byte/463-item high-token-density Grok stress attempt reached HTTP 200 but provider stream terminated after 54 seconds and omitted the marker; it was not counted as a pass. Lower-token-density replay sent 1,084,565 bytes/463 items, recorded 134,067 input tokens, returned marker plus `response.completed` in 14.0 seconds, and kept 55 concurrent health probes at zero failures, 5.3 ms p95, 68.2 ms max.
+- Candidate DB ended with integrity `ok`. Candidate PM2 process, copied credential home, old candidate app, and response artifacts were deleted; verified v2 app remains staged for promotion.
+
+Public PR refresh:
+
+- All existing public branches were merged normally onto `v0.5.35`; no force-push was used. Every open PR reports `CLEAN`.
+- Heads: #1570 `bd21faaa`, #1819 `2be8bfd2`, #2343 `1901e4b9`, #2345 `ff1a6b6f`, #2364 `f61f8852`, #2439 `0bd3215c`, #2452 `0a509a2e`, #2453 `302a4ba8`, #2454 `1e8b904f`, #2511 `990ff251`, #2553 `2f5927ca`, #2554 `8c5fc3d7`, and #2647 `41f7a38f`.
+- Conflict PR comments record retained upstream behavior and focused evidence. #2647 shrank from 19 changed files to 11 because upstream absorbed eight pieces; its focused matrix passed 73/73.
+- New Fable adaptive-thinking PR is <https://github.com/decolua/9router/pull/2652> at `cdfcfc7e`; focused matrix passed 18/18 and GitHub reports `CLEAN`.
+- Pre-update heads remain available as local `backup/v0535-pr-*` refs. Private ledger/runbook/verifier, aliases, pools, credentials, and deployment files were excluded from every public diff.
+
+Deployment status:
+
+- Live remains `0.5.30` until detached promotion and post-swap verification complete. Pre-promotion PM2 PID was `1323261`; cloudflared PID was `1324069`; raw URL was `https://bills-genesis-rpm-prescription.trycloudflare.com`; short URL remained `https://rkeyra9.abc-tunnel.us`.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
