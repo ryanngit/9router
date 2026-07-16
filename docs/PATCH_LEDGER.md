@@ -1349,8 +1349,12 @@ Verification before deployment:
 
 Deployment/upstream status:
 
-- Staged candidate: `/home/home/.openclaw/workspace-keyra/9router-candidate-grok-compat-v3-app`.
-- Live promotion, rollback paths, final tunnel/PID evidence, and PR #2590 head are recorded after completion below; do not infer deployment from candidate success alone.
+- Safe promotion `grok-compat-v3-20260716` completed through the detached two-snapshot/atomic-exchange guard. PM2 resumed online as PID `1047581` from `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app/custom-server.js`; the global package app resolves to the same promoted directory.
+- Restart replaced the prior child tunnel. Current cloudflared PID `1048656` serves raw `https://triple-alfred-broader-clouds.trycloudflare.com`; local, raw, and `https://rkeyra9.abc-tunnel.us` health each returned HTTP 200. Short health recovered without a second registration mutation.
+- Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-compat-v3-20260716-20260716T082831Z`. Pre-deploy DB backup: `/home/home/.9router/db/backups/pre-grok-compat-v3-20260716-20260716T082831Z/data.sqlite`. Live and backup SQLite integrity checks returned `ok`.
+- Live short-domain `grok-4.5` canary returned HTTP 200 with `GROK_CODEC_LIVE_OK` as `grok-4.5-build`. Stored provider was `grok-cli`, model `grok-4.5`, wire effort `xhigh`, status `success`; console confirmed strict pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
+- Live short-domain bare `gpt-5.4-mini` canary returned HTTP 200 with `GPT_DEFAULT_LIVE_OK` as `gpt-5.6-sol` and effective response tier `default`. Console recorded `gpt-5.4-mini -> cx/gpt-5.6-sol`, effort `max`, tier `default`; usage stored model `gpt-5.6-sol`.
+- Final source/live-bundle/DB verifier passed with zero failures and warnings after both canaries. Public PR #2590 remains pending refresh from its clean worktree; private aliases, pools, DB, verifier, ledger, runbook, and deployment artifacts remain excluded.
 
 ## Not Yet Verified As Local Patch
 
