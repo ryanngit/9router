@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; audited source HEAD `05f895d` and runtime fix HEAD `4c386b4`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; Claude pairing runtime fix HEAD `818ed87`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -22,8 +22,8 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://created-identifies-blades-domestic.trycloudflare.com`.
-- Current cloudflared PID: `2311237`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://fitting-reaction-products-emacs.trycloudflare.com`.
+- Current cloudflared PID: `2530526`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
 - The 2026-07-15 controlled promotion applied that policy with `--update-env`; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2`.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
@@ -31,9 +31,11 @@ Current live facts:
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
 - Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
-- Current PM2 PID after the `0.5.35` promotion: `2311000`.
-- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`.
-- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z/data.sqlite`.
+- Current PM2 PID after the Claude pairing promotion: `2529688`.
+- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-claude-pairing-max2-20260717T033932Z-20260717T034004Z`.
+- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-claude-pairing-max2-20260717T033932Z-20260717T034004Z/data.sqlite`.
+- Previous `0.5.35` live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`.
+- Previous `0.5.35` DB backup: `/home/home/.9router/db/backups/pre-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z/data.sqlite`.
 - Previous live backup from reviewed cross-provider Grok history v2: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-v2-20260715-20260716T034051Z`.
 - Previous DB backup from reviewed cross-provider Grok history v2: `/home/home/.9router/db/backups/pre-grok-history-v2-20260715-20260716T034051Z/data.sqlite`.
 - Previous live backup from initial cross-provider Grok history normalization: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-20260715-20260716T022152Z`.
@@ -500,7 +502,21 @@ Verification:
 
 Upstream status:
 
-- Public bug fix. Keep private aliases, pools, credentials, and deployment evidence out of its PR.
+- Public PR: <https://github.com/decolua/9router/pull/2663>, head `ee0ce30`, merge state `CLEAN`.
+- Public branch contains only translator and regression-test files; private aliases, pools, credentials, verifier, ledger, and deployment evidence are excluded.
+
+Verification and deployment:
+
+- Production failure was `github/claude-fable-5` HTTP 400: `unexpected tool_use_id ... Each tool_result block must have a corresponding tool_use block in the previous message`.
+- Red tests reproduced mixed valid/missing/orphan results and one-message orphan history. Focused public matrix passed 18/18; customized matrix passed 20/20; focused ESLint and `git diff --check` passed.
+- Full customized and clean `v0.5.35` JSON reports showed no changed-path failure. Differential failures remained unrelated generated provider snapshots/concurrency versus two clean xAI timing failures.
+- Candidate built 130 routes plus MITM at 58 MB. Copied DB integrity was `ok`, contained zero refresh tokens, tunnel was disabled, and bind was only `127.0.0.1:20129`.
+- Exact candidate wire retained `call-valid`, synthesized empty `call-missing`, converted `call-orphan` to labeled text, and returned `CLAUDE_PAIRING_CANDIDATE_OK`; streaming emitted `response.completed`. Opus control passed.
+- Continuous traffic required `MAX_ACTIVE=2`; helper still refused three active requests and used both five-second gates. App promotion passed at `03:40:14Z` with rollback retained.
+- Restart replaced child cloudflared. Raw `https://fitting-reaction-products-emacs.trycloudflare.com` became healthy, but helper timed out while short mapping remained HTTP 530. Manual current-state registration restored `https://rkeyra9.abc-tunnel.us` without another tunnel restart.
+- Exact live short-domain wire preserved the same pairing and returned `CLAUDE_PAIRING_LIVE_OK`; streaming emitted `response.completed`. No GitHub errors were recorded after deployment.
+- Final source/live-bundle/DB/local/raw/short verifier returned zero failures/warnings. Live and backup DB integrity returned `ok`; PM2 saved PID `2529688`, cloudflared PID `2530526`.
+- Promotion helper now reports `succeeded_external_pending` instead of `succeeded` when app promotion passes but raw/short recovery does not.
 
 ### P6. Usage/cost accuracy and API-key grouping
 
