@@ -1458,12 +1458,15 @@ Verification before deployment:
 
 Deployment/upstream status:
 
-- Candidate app was `/home/home/.openclaw/workspace-keyra/9router-candidate-responses-heartbeat-v0535-app-v2`. Candidate-only DB, mock provider, raised timeout, and temporary tunnel are cleanup-only artifacts after promotion QA.
+- Candidate HOME, staged/promote app copies, delayed mock, raised-timeout build HOME, and temporary tunnel artifacts were deleted after promotion QA. Clean upstream worktree and rollback artifacts remain.
 - Generic runtime/test files are isolated in clean upstream PR <https://github.com/decolua/9router/pull/2666>, branch `responses-stream-heartbeat`, head `d47cfc0`, merge state `CLEAN`. Its nine-file diff excludes private verifier, ledger, runbook, candidate data, tunnel URLs, routing, aliases, pools, DB, and deployment artifacts.
 - Safe promotion completed at `2026-07-17T07:22:37Z` through the two-snapshot atomic exchange guard. PM2 is online as PID `2694238`; guarded tunnel recovery started cloudflared PID `2694503`, raw `https://holidays-heating-revenues-cathedral.trycloudflare.com`, and restored short `https://rkeyra9.abc-tunnel.us`.
 - Rollback app is `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p21-responses-heartbeat-20260717-20260717T072141Z`; DB backup is `/home/home/.9router/db/backups/pre-p21-responses-heartbeat-20260717-20260717T072141Z/data.sqlite`. Both SQLite integrity checks returned `ok`.
 - Live short-domain Fable probes completed in `10.72s` and `11.08s` through distinct GitHub profiles; Sol completed in `7.65s`. A 140-second public delayed-header canary returned first byte in `232ms`, emitted five keepalives, started one provider request, completed once, and produced no `524` or retry.
 - Cancellation QA left one provider request aborted, zero active/completed, and no account lock/cooldown/error mutation. Final local/raw/short health and source/live-bundle/DB verifier returned zero failures and warnings.
+- Fresh final short-domain probes returned Sol HTTP 200 with `890ms` first byte and `7.01s` total, and Fable HTTP 200 with `562ms` first byte and `9.17s` total. Both emitted `: connected`, `response.completed`, and the requested marker; Go gateway recorded both provider requests as HTTP 200.
+- `pm2 save` persisted exactly one process with `custom-server.js`, port `20128`, `HOSTNAME=0.0.0.0`, and best-GPT `cx/gpt-5.6-sol`/`max`/`default`.
+- Final review's omitted-`stream` JSON-default correction is in source commit `c743708` and upstream PR #2666, but not the already-promoted live bundle. Live Codex uses explicit `stream:true`, so the `524` heartbeat/cancellation fix is active. Carry the one-condition gate in the next planned app rebuild; do not cause a second tunnel restart solely for this non-streaming compatibility correction.
 
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
