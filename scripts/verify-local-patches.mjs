@@ -195,6 +195,7 @@ function checkSource() {
   mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-opus-4.8\"", "GitHub registry Claude Opus 4.8");
   mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-fable-5\"", "GitHub registry Claude Fable 5");
   mustContain("open-sse/providers/capabilities.js", "*claude*fable*\",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: \"claude-adaptive\"", "Claude Fable adaptive thinking");
+  mustContain("open-sse/translator/formats/claude.js", "Unpaired tool result", "Claude orphan tool-result salvage");
   mustContain("open-sse/services/copilotModels.js", "api.githubcopilot.com/models", "Copilot live model catalog");
   mustContain("open-sse/services/copilotStatus.js", "free_limited_copilot", "Copilot free profile classification");
   mustContain("open-sse/services/provider.js", "supportsNativeResponses(provider, model)", "model-aware native Responses capability");
@@ -369,6 +370,7 @@ function checkBundle() {
   contains("claude-opus-4.8", "Claude Opus 4.8");
   contains("claude-fable-5", "Claude Fable 5");
   matches(/claude.{0,24}fable.{0,180}claude-adaptive/i, "Claude Fable adaptive thinking");
+  contains("Unpaired tool result", "Claude orphan tool-result salvage");
   contains("grok-4.5", "Grok 4.5");
   contains("gpt-5.5", "GPT-5.5 exact pricing/model");
   contains("gpt-5.6-sol", "GPT-5.6 Sol pricing/model");

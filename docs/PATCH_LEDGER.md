@@ -471,6 +471,37 @@ Upstream status:
 - Open PR: <https://github.com/decolua/9router/pull/2498>
 - Verification: `./node_modules/.bin/vitest run --config tests/vitest.config.js --testTimeout 20000 tests/unit/db-sqlite-vs-lowdb.test.js`
 
+### P5T. Claude tool-result pairing repair
+
+Purpose:
+
+- Codex compaction or cross-model history can retain `function_call_output` after dropping or separating its matching call.
+- GitHub Copilot Claude uses strict Anthropic `/v1/messages`; every structured `tool_result` must match a `tool_use` in the immediately previous assistant message.
+- Preserve orphaned output as labeled user text instead of returning HTTP 400 or silently deleting context.
+
+Files:
+
+- `open-sse/translator/formats/claude.js`
+- `tests/unit/claude-tool-result-pairing.test.js`
+- `scripts/verify-local-patches.mjs`
+
+Required invariants:
+
+- Keep one structured result for each matching immediately preceding tool use, in tool-use order.
+- Fill missing parallel results with the existing empty-result fallback.
+- Convert orphaned and duplicate results to labeled user text after valid structured results.
+- Apply the same reconciliation to one-message histories; do not bypass them through the old early return.
+- Preserve valid result content and every orphaned output byte represented by the parsed JSON body.
+
+Verification:
+
+- `./node_modules/.bin/vitest run --config tests/vitest.config.js --testTimeout 20000 tests/unit/claude-tool-result-pairing.test.js`
+- Send a Fable `/v1/responses` request containing one valid result, one missing parallel result, and one orphan result; provider request must contain only paired structured IDs and response must complete without Anthropic pairing errors.
+
+Upstream status:
+
+- Public bug fix. Keep private aliases, pools, credentials, and deployment evidence out of its PR.
+
 ### P6. Usage/cost accuracy and API-key grouping
 
 Purpose:
