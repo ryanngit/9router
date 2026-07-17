@@ -1,13 +1,13 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; Claude pairing runtime fix HEAD `818ed87`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; P21 is integrated above Claude pairing base `818ed87`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -22,8 +22,8 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://fitting-reaction-products-emacs.trycloudflare.com`.
-- Current cloudflared PID: `2530526`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://holidays-heating-revenues-cathedral.trycloudflare.com`.
+- Current cloudflared PID: `2694503`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
 - The 2026-07-15 controlled promotion applied that policy with `--update-env`; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2`.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
@@ -31,9 +31,11 @@ Current live facts:
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
 - Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
-- Current PM2 PID after the Claude pairing promotion: `2529688`.
-- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-claude-pairing-max2-20260717T033932Z-20260717T034004Z`.
-- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-claude-pairing-max2-20260717T033932Z-20260717T034004Z/data.sqlite`.
+- Current PM2 PID after the P21 promotion: `2694238`.
+- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p21-responses-heartbeat-20260717-20260717T072141Z`.
+- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-p21-responses-heartbeat-20260717-20260717T072141Z/data.sqlite`.
+- Previous live rollback app from Claude pairing: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-claude-pairing-max2-20260717T033932Z-20260717T034004Z`.
+- Previous DB backup from Claude pairing: `/home/home/.9router/db/backups/pre-claude-pairing-max2-20260717T033932Z-20260717T034004Z/data.sqlite`.
 - Previous `0.5.35` live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`.
 - Previous `0.5.35` DB backup: `/home/home/.9router/db/backups/pre-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z/data.sqlite`.
 - Previous live backup from reviewed cross-provider Grok history v2: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-grok-history-v2-20260715-20260716T034051Z`.
@@ -1414,6 +1416,55 @@ Deployment/upstream status:
 - Fresh V4 large replay sent 1,050,001 bytes and 463 mixed history items through the short domain. It returned HTTP 200 with structured `LARGE_V4_OK` in 20.5 seconds, recorded 178,704 provider input tokens and a 1,035,099-byte provider body, and stored status `success`. All 76 concurrent short-domain health probes completed; maximum observed latency was 840 ms.
 - Public branch head `ccb00ac` passed private-data leak scan and is open, mergeable, and `CLEAN` in replacement PR <https://github.com/decolua/9router/pull/2647>. Private aliases, pools, DB, verifier, ledger, runbook, and deployment artifacts remain excluded.
 
+### P21. Early Responses SSE heartbeat and cancellation
+
+Purpose:
+
+- Prevent Cloudflare `524` and Codex reconnect loops when account/provider work takes longer than the public tunnel's response-header window.
+- Stop disconnected public requests from continuing as orphan provider jobs or consuming another account.
+
+Files:
+
+- `src/app/api/v1/responses/route.js`
+- `src/sse/handlers/chat.js`
+- `open-sse/handlers/chatCore.js`
+- `open-sse/utils/responsesStreamBridge.js`
+- `open-sse/utils/responsesStreamHelpers.js`
+- `open-sse/utils/streamHandler.js`
+- `tests/unit/responses-early-stream.test.js`
+- `tests/unit/responses-route.test.js`
+- `tests/unit/headroom-chat-core.test.js`
+- `scripts/verify-local-patches.mjs`
+
+Required invariants:
+
+- Only explicit `stream:true` `/v1/responses` requests use the deferred bridge. `stream:false`, omitted `stream`, and invalid JSON retain direct HTTP status and JSON bodies.
+- Return HTTP 200/SSE immediately with `: connected`, then emit `: keepalive` every 25 seconds while account fallback or provider headers are pending.
+- Stop heartbeat immediately when provider SSE headers arrive, then pull one upstream chunk per downstream demand and preserve provider bytes exactly. This prevents comments from splitting fragmented provider events and bounds buffering.
+- Convert delayed JSON/transport errors into one schema-complete `response.failed` terminal plus `[DONE]`; include `sequence_number`, request model, and required Response object fields.
+- Downstream stream cancellation and inbound request abort both reach the provider `AbortController`; parent abort also closes downstream. Pre-aborted requests never start provider work. Normal completion removes the external listener and every abort/heartbeat timer.
+- Client cancellation returns internal `499` without calling `markAccountUnavailable`; real provider failures retain existing account fallback.
+- No gateway, proxy pool, model alias, port, credential, or tunnel registration belongs to this patch.
+
+Verification before deployment:
+
+- Root-cause correlation found stable tunnel health/PID while Fable provider headers arrived after 142,878-233,943 ms. Codex retried about every 125 seconds; provider jobs continued for 3-7 minutes. Several proxy header waits ended at 300,985-304,177 ms.
+- Initial TDD red run covered missing heartbeat/cancellation behavior. Independent review then found five concrete gaps: heartbeat insertion inside fragmented SSE, open downstream on parent abort, eager upstream draining, incomplete failure schema, and a redundant external-abort timer. Six red assertions reproduced them before the pull-based refactor. Final review also found that omitted `stream` incorrectly entered the bridge; its route regression test failed with `text/event-stream` before the one-condition fix. Final focused matrix passes 25/25 across bridge, route gate, chat-core cleanup, Responses terminal, and Claude pairing tests.
+- Full unit run passes 1,151, fails 27, and skips 24. Clean `v0.5.35` passes 1,023, fails the exact same 27 assertions in the exact same 16 files, and skips 24; P21 adds only passing tests. Changed-path ESLint and `git diff --check` pass.
+- Official staged build completed in 160.8 seconds, compiled and type-checked, generated 130 routes, bundled MITM, and produced a 58 MB app. Source/candidate-bundle/candidate-DB verifier returns zero failures/warnings.
+- Isolated candidate uses an integrity-checked 208 MB SQLite backup with zero nested `refreshToken` fields, no tunnel settings, and loopback-only `127.0.0.1:20129`. Real GitHub Fable returned HTTP 200 with `response.completed`; first byte arrived in 32 ms and total time was 9.88 seconds. Invalid JSON remained JSON HTTP 400; `stream:false` auth remained JSON HTTP 401; streaming auth became schema-complete SSE `response.failed` HTTP 200.
+- Fresh v2 public QA first omitted candidate-only `FETCH_CONNECT_TIMEOUT_MS=180000`; the custom delayed provider therefore made three expected 60-second header attempts and the test timed out. Live runtime was untouched. Restoring the recorded test environment produced HTTP 200, first byte 232 ms, total 140.484 seconds, five keepalives, exactly one upstream request, one completion, and no `524` or reconnect.
+- Public cancellation QA returned first byte in 679 ms. Client timeout left `started=1`, `active=0`, `completed=0`, `aborted=1`; cooldown, lock, backoff, error, and test-status state remained unchanged.
+
+Deployment/upstream status:
+
+- Candidate app was `/home/home/.openclaw/workspace-keyra/9router-candidate-responses-heartbeat-v0535-app-v2`. Candidate-only DB, mock provider, raised timeout, and temporary tunnel are cleanup-only artifacts after promotion QA.
+- Generic runtime/test files are suitable for a clean upstream PR. Private verifier, ledger, runbook, candidate data, tunnel URLs, and deployment artifacts stay local.
+- Safe promotion completed at `2026-07-17T07:22:37Z` through the two-snapshot atomic exchange guard. PM2 is online as PID `2694238`; guarded tunnel recovery started cloudflared PID `2694503`, raw `https://holidays-heating-revenues-cathedral.trycloudflare.com`, and restored short `https://rkeyra9.abc-tunnel.us`.
+- Rollback app is `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p21-responses-heartbeat-20260717-20260717T072141Z`; DB backup is `/home/home/.9router/db/backups/pre-p21-responses-heartbeat-20260717-20260717T072141Z/data.sqlite`. Both SQLite integrity checks returned `ok`.
+- Live short-domain Fable probes completed in `10.72s` and `11.08s` through distinct GitHub profiles; Sol completed in `7.65s`. A 140-second public delayed-header canary returned first byte in `232ms`, emitted five keepalives, started one provider request, completed once, and produced no `524` or retry.
+- Cancellation QA left one provider request aborted, zero active/completed, and no account lock/cooldown/error mutation. Final local/raw/short health and source/live-bundle/DB verifier returned zero failures and warnings.
+
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
 Baseline and merge:
@@ -1421,7 +1472,7 @@ Baseline and merge:
 - Published `0.5.30` is tag/git head `9845a170`; published `0.5.35` is tag/git head `bc252ea8`. Local customized `0.5.30` was `45634a41`.
 - Source/live/DB verification on customized `0.5.30` returned zero failures/warnings. Stock `0.5.30` failed 31 bundle invariants, proving deployed behavior was not the published bundle.
 - `0.5.30..0.5.35` contains 27 commits, overlaps local changes in 21 files, and produced ten explicit merge conflicts. Audited merge commit is `0098d86`; upgrade design/plan commit is `c47b0f0`.
-- P1-P4, P6-P9, P11-P12, and P14-P20 remain required. P5M and P10 are upstream; only dependent additions remain. GitHub Claude uses upstream native `/v1/messages`; Grok Build uses upstream protocol/model base plus local strict codec. Private aliases, proxy pools, ports, and best-GPT routing remain local.
+- P1-P4, P6-P9, P11-P12, and P14-P21 remain required. P5M and P10 are upstream; only dependent additions remain. GitHub Claude uses upstream native `/v1/messages`; Grok Build uses upstream protocol/model base plus local strict codec. Private aliases, proxy pools, ports, and best-GPT routing remain local.
 - Source and new-bundle verifier returned zero failures/warnings. Focused patch matrix passed 273/273.
 - Full merged suite passed 1,414, failed 46, pending 59. Clean `v0.5.35` passed 1,299 with the exact same 46 failures and 59 pending; merged source introduced zero new full-suite failures.
 - Lint produced the same 12 React errors and two warnings in customized `0.5.30`, stock `0.5.35`, and merged source. Changed-path server/test lint remained clean apart from existing anonymous-default-export warnings.

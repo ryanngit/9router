@@ -203,6 +203,23 @@ function checkSource() {
   mustContain("open-sse/handlers/responsesHandler.js", "supportsNativeResponses(modelInfo?.provider, modelInfo?.model)", "Responses bridge uses model-aware capability");
   mustContain("open-sse/handlers/chatCore.js", "resolveTransport(provider, sourceFormat, model)", "transport resolution includes model");
   mustContain("open-sse/executors/github.js", "supportsNativeResponses(\"github\", model)", "GitHub executor shares Responses policy");
+  mustContain("src/app/api/v1/responses/route.js", "createDeferredResponsesResponse(", "Responses route returns deferred SSE");
+  mustContain("src/app/api/v1/responses/route.js", "body?.stream !== true", "Responses explicit-stream gate");
+  mustContain("src/app/api/v1/responses/route.js", "{ signal: request.signal, model: body?.model }", "Responses failure model propagation");
+  mustContain("open-sse/utils/responsesStreamBridge.js", "keepaliveMs = 25_000", "Responses tunnel heartbeat interval");
+  mustContain("open-sse/utils/responsesStreamBridge.js", "buildResponsesFailureTerminalBytes", "Responses delayed error framing");
+  mustContain("open-sse/utils/responsesStreamBridge.js", "const state = await ready", "Responses pull-based upstream bridge");
+  mustContain("open-sse/utils/responsesStreamBridge.js", "cancelWork(parentSignal?.reason || \"client closed\", true)", "Responses parent abort closes downstream");
+  mustContain("open-sse/utils/responsesStreamHelpers.js", "sequence_number: sequenceNumber", "Responses failure sequence number");
+  mustContain("open-sse/utils/responsesStreamHelpers.js", "object: \"response\"", "Responses failure object shape");
+  mustContain("open-sse/utils/streamHandler.js", "externalSignal.addEventListener(\"abort\", externalAbort", "provider external abort propagation");
+  mustContain("src/sse/handlers/chat.js", "if (externalSignal?.aborted) return result.response", "client abort skips account cooldown");
+  mustContain("tests/unit/responses-early-stream.test.js", "sends an immediate comment and keepalives before provider headers", "Responses heartbeat regression test");
+  mustContain("tests/unit/responses-early-stream.test.js", "preserves fragmented provider SSE bytes without inserting keepalives", "Responses fragmented SSE regression test");
+  mustContain("tests/unit/responses-early-stream.test.js", "reads one provider chunk per downstream pull", "Responses backpressure regression test");
+  mustContain("tests/unit/responses-early-stream.test.js", "does not start provider work for an already-aborted request", "Responses pre-abort regression test");
+  mustContain("tests/unit/responses-route.test.js", "keeps omitted stream non-streaming", "Responses omitted-stream regression test");
+  mustContain("tests/unit/headroom-chat-core.test.js", "detaches the client abort listener after an executor error", "failed-attempt abort-listener regression test");
 
   mustContain("src/lib/db/repos/usageRepo.js", "const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0", "cached token stats");
   mustContain("src/lib/db/repos/usageRepo.js", "cacheCreationTokens", "cache-write stats");
@@ -371,6 +388,11 @@ function checkBundle() {
   contains("claude-fable-5", "Claude Fable 5");
   matches(/claude.{0,24}fable.{0,180}claude-adaptive/i, "Claude Fable adaptive thinking");
   contains("Unpaired tool result", "Claude orphan tool-result salvage");
+  contains(": connected", "Responses immediate SSE comment");
+  contains(": keepalive", "Responses tunnel keepalive");
+  contains("upstream_error", "Responses delayed error framing");
+  contains("sequence_number", "Responses failure sequence number");
+  contains("stream_disconnected", "Responses structured disconnect error");
   contains("grok-4.5", "Grok 4.5");
   contains("gpt-5.5", "GPT-5.5 exact pricing/model");
   contains("gpt-5.6-sol", "GPT-5.6 Sol pricing/model");

@@ -147,6 +147,7 @@ Targeted manual checks by patch:
 - P19 Grok subscription: bare private `grok-4.5` still resolves to `grok-cli/grok-4.5` through its strict residential pool; do not upstream that alias or pool.
 - P20 Grok codec: run minimal text, strict web search, native x-search two-turn replay, typed function/custom history, structured output, malformed/duplicate/orphan/dangling repair, local 400 no-lock, and approximately 1 MB/463-item replay.
 - P20 candidate safety: copy the live DB with SQLite `.backup`, remove every `refreshToken`, bind candidate to `127.0.0.1:20129`, start no tunnel, then delete the credential-bearing candidate home after QA.
+- P21 Responses heartbeat: an explicit `stream:true` `/v1/responses` request must return an SSE comment before provider headers, emit comments every 25 seconds only while headers are pending, then preserve provider bytes and downstream backpressure exactly. It must survive at least 130 seconds through a temporary public tunnel and start exactly one provider request. Cancelling the client must close downstream, abort that provider request, leave no timer, and avoid account locks. Repeat `stream:false`, omitted-`stream`, invalid-JSON, and streaming-error controls; synthetic `response.failed` must carry the request model and required Responses fields.
 
 Known clean-upstream `0.5.35` baseline:
 
@@ -284,6 +285,7 @@ Notes:
 - Treat sub-second health degradation during many concurrent 400-1,100-message requests as request parsing/serialization load. Investigate only if it persists without large concurrent requests or rises into multi-second stalls; provider TTFT is tracked separately.
 - Before an OAuth provider canary, run the same canary against current live bundle. A pre-existing `bad-credentials` result is a credential blocker, not a candidate rollback signal.
 - Never let an isolated DB copy refresh a rotatable OAuth token. Copy a fresh unexpired access token, then remove its refresh token in candidate DB; reauthorize live profile first when access is already near expiry.
+- For P21 delayed-header QA, use a candidate-only compatible provider and loopback mock. Never add the mock provider, raised connect timeout, temporary tunnel, or QA credentials to live DB/PM2 state.
 
 ## 7. Retrospective
 
