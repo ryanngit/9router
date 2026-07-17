@@ -1466,7 +1466,7 @@ Deployment/upstream status:
 - Cancellation QA left one provider request aborted, zero active/completed, and no account lock/cooldown/error mutation. Final local/raw/short health and source/live-bundle/DB verifier returned zero failures and warnings.
 - Fresh final short-domain probes returned Sol HTTP 200 with `890ms` first byte and `7.01s` total, and Fable HTTP 200 with `562ms` first byte and `9.17s` total. Both emitted `: connected`, `response.completed`, and the requested marker; Go gateway recorded both provider requests as HTTP 200.
 - `pm2 save` persisted exactly one process with `custom-server.js`, port `20128`, `HOSTNAME=0.0.0.0`, and best-GPT `cx/gpt-5.6-sol`/`max`/`default`.
-- Final review's omitted-`stream` JSON-default correction is in source commit `c743708` and upstream PR #2666, but not the already-promoted live bundle. Live Codex uses explicit `stream:true`, so the `524` heartbeat/cancellation fix is active. Carry the one-condition gate in the next planned app rebuild; do not cause a second tunnel restart solely for this non-streaming compatibility correction.
+- Final review's omitted-`stream` JSON-default correction from source commit `c743708` and upstream PR #2666 was carried in the P22 app rebuild. Live invalid-model control with omitted `stream` now returns direct HTTP 404 `application/json`; source and live bundle are aligned.
 
 ### P22. Codex cross-model encrypted-history recovery
 
@@ -1497,11 +1497,21 @@ Verification:
 - GREEN regression passes three cases: same-account sanitized retry, accepted ciphertext preservation, and unrelated-400 no-retry.
 - Focused Codex/Responses/reasoning/account-fallback matrix passes 54/54.
 - Changed-file ESLint, syntax checks, and `git diff --check` pass.
+- Full unit run passes 1,155, fails the same 27 assertions in the same 16 files, and skips 24. Recorded pre-P22 source passed 1,151 with those same 27 failures and 24 skips; P22 plus the pending P21 route test add only passing coverage.
+- Standalone candidate built in 200.2 seconds, compiled/type-checked 130 routes, bundled MITM, measured 58 MB, and passed source/candidate/DB verification with zero failures/warnings.
+- Candidate DB integrity was `ok`, contained zero `refreshToken` fields, disabled tunnel startup, kept one Codex profile active, and bound only `127.0.0.1:20129`. Credential-bearing candidate HOME and response artifacts were deleted after QA.
+- Real candidate malformed-cipher replay received upstream `invalid_encrypted_content`, logged one count-only same-account recovery, and returned HTTP 200 with `P22_RECOVERY_OK`. A returned valid Lite reasoning item then completed with `P22_CONTINUITY_OK` without increasing recovery count.
+- Exact candidate switch sequence completed Fable HTTP 200, then desktop-style Responses Lite Sol HTTP 200 with `P22_SWITCH_OK`; total recovery count increased by exactly one and active Codex model locks remained zero.
 
 Deployment/upstream status:
 
-- Source implemented on `local-v0.5.35-upgrade`; isolated bundle and live promotion pending.
-- Generic provider-safe upstream patch pending clean-branch extraction after live QA.
+- Source commit is `28ed332` on `local-v0.5.35-upgrade`.
+- Safe promotion passed at `2026-07-17T08:52:13Z` using documented `MAX_ACTIVE=1` control-request exception. Guard observed a transient second active request, delayed, then required two five-second snapshots before backup and exchange. PM2 is online as PID `2744827`; exactly one restart changed count from seven to eight.
+- Rollback app is `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p22-encrypted-history-20260717-20260717T085151Z`. DB backup is `/home/home/.9router/db/backups/pre-p22-encrypted-history-20260717-20260717T085151Z/data.sqlite`; live and backup integrity checks returned `ok`.
+- PM2 restart replaced its child Quick Tunnel. Guarded recovery created cloudflared PID `2745020` and raw `https://hanging-reward-activities-outlets.trycloudflare.com`. Helper timed out as `succeeded_external_pending` while short registration still returned 530, then raw and `https://rkeyra9.abc-tunnel.us` recovered without another restart or manual registration.
+- Live short-domain malformed Lite history returned HTTP 200 with `P22_LIVE_SWITCH_OK`, exactly one recovery log, and latest stored Codex request status `success`. Local/raw/short health and authenticated Console REST all return HTTP 200.
+- Final source/live-bundle/DB verifier reports zero failures/warnings. `pm2 save` persists `custom-server.js`, port `20128`, and best-GPT `cx/gpt-5.6-sol`/`max`/`default`.
+- Generic provider-safe upstream patch pending clean-branch extraction; private verifier, ledger, aliases, pools, credentials, and deployment artifacts stay local.
 
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
