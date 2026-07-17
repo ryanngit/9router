@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; P21 is integrated above Claude pairing base `818ed87`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; P21 runtime commit is `c743708` above Claude pairing base `818ed87`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -1459,7 +1459,7 @@ Verification before deployment:
 Deployment/upstream status:
 
 - Candidate app was `/home/home/.openclaw/workspace-keyra/9router-candidate-responses-heartbeat-v0535-app-v2`. Candidate-only DB, mock provider, raised timeout, and temporary tunnel are cleanup-only artifacts after promotion QA.
-- Generic runtime/test files are suitable for a clean upstream PR. Private verifier, ledger, runbook, candidate data, tunnel URLs, and deployment artifacts stay local.
+- Generic runtime/test files are isolated in clean upstream PR <https://github.com/decolua/9router/pull/2666>, branch `responses-stream-heartbeat`, head `d47cfc0`, merge state `CLEAN`. Its nine-file diff excludes private verifier, ledger, runbook, candidate data, tunnel URLs, routing, aliases, pools, DB, and deployment artifacts.
 - Safe promotion completed at `2026-07-17T07:22:37Z` through the two-snapshot atomic exchange guard. PM2 is online as PID `2694238`; guarded tunnel recovery started cloudflared PID `2694503`, raw `https://holidays-heating-revenues-cathedral.trycloudflare.com`, and restored short `https://rkeyra9.abc-tunnel.us`.
 - Rollback app is `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p21-responses-heartbeat-20260717-20260717T072141Z`; DB backup is `/home/home/.9router/db/backups/pre-p21-responses-heartbeat-20260717-20260717T072141Z/data.sqlite`. Both SQLite integrity checks returned `ok`.
 - Live short-domain Fable probes completed in `10.72s` and `11.08s` through distinct GitHub profiles; Sol completed in `7.65s`. A 140-second public delayed-header canary returned first byte in `232ms`, emitted five keepalives, started one provider request, completed once, and produced no `524` or retry.
