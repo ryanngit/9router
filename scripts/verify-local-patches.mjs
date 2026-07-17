@@ -161,6 +161,10 @@ function checkSource() {
   mustContain("open-sse/executors/codex.js", "CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS", "Codex SSE account fallback patterns");
   mustContain("open-sse/executors/codex.js", "Selected model is at capacity. Please try a different model.", "Codex capacity message detection");
   mustContain("open-sse/executors/codex.js", "replacementBody", "Codex SSE body reassembly after peek");
+  mustContain("open-sse/executors/codex.js", "invalid_encrypted_content", "Codex encrypted-content recovery detection");
+  mustContain("open-sse/executors/codex.js", "removeInvalidEncryptedReasoning", "Codex encrypted reasoning sanitizer");
+  mustContain("open-sse/executors/codex.js", "retrying same account without", "Codex same-account encrypted-content retry");
+  mustContain("tests/unit/codex-encrypted-content-recovery.test.js", "preserves encrypted reasoning when upstream accepts it", "Codex encrypted continuity regression test");
   mustContain("src/sse/handlers/chat.js", "excludeConnectionIds.add(credentials.connectionId)", "account fallback excludes failed connection");
 
   mustContain("src/sse/services/bestGptRoute.js", "NINE_ROUTER_BEST_GPT_TARGET", "best-GPT runtime target knob");
@@ -384,6 +388,8 @@ function checkBundle() {
   notContains("https://auth.openai.com/oauth/token", "stale Codex token endpoint");
   contains("disableEnvProxy", "env proxy bypass support");
   contains("Selected model is at capacity. Please try a different model.", "Codex capacity message");
+  contains("invalid_encrypted_content", "Codex encrypted-content recovery");
+  contains("retrying same account without", "Codex same-account encrypted-content retry");
   contains("claude-opus-4.8", "Claude Opus 4.8");
   contains("claude-fable-5", "Claude Fable 5");
   matches(/claude.{0,24}fable.{0,180}claude-adaptive/i, "Claude Fable adaptive thinking");

@@ -1468,6 +1468,41 @@ Deployment/upstream status:
 - `pm2 save` persisted exactly one process with `custom-server.js`, port `20128`, `HOSTNAME=0.0.0.0`, and best-GPT `cx/gpt-5.6-sol`/`max`/`default`.
 - Final review's omitted-`stream` JSON-default correction is in source commit `c743708` and upstream PR #2666, but not the already-promoted live bundle. Live Codex uses explicit `stream:true`, so the `524` heartbeat/cancellation fix is active. Carry the one-condition gate in the next planned app rebuild; do not cause a second tunnel restart solely for this non-streaming compatibility correction.
 
+### P22. Codex cross-model encrypted-history recovery
+
+Purpose:
+
+- Recover a Codex conversation when switching from GitHub Claude back to OpenAI Codex leaves stale or foreign `reasoning.encrypted_content` in client history.
+- Preserve valid encrypted reasoning continuity on normal requests.
+- Avoid pointless account rotation for deterministic encrypted-payload errors.
+
+Files:
+
+- `open-sse/executors/codex.js`
+- `tests/unit/codex-encrypted-content-recovery.test.js`
+- `scripts/verify-local-patches.mjs`
+
+Required invariants:
+
+- Normal Codex requests keep every incoming reasoning `encrypted_content` value unchanged.
+- Only an upstream HTTP 400 carrying `invalid_encrypted_content` or its exact verification/decryption message activates recovery.
+- Recovery clones the already-transformed request, removes `encrypted_content` only from top-level `type:reasoning` input items, and drops reasoning items with no remaining summary/content.
+- Recovery retries exactly once through the same executor call, credentials, workspace header, proxy, model, and signal.
+- Retry logs contain only removed-item count, never ciphertext.
+- A second encrypted-content failure or any unrelated HTTP 400 returns normally. Existing deterministic-400 classification prevents account cooldown/fallback.
+
+Verification:
+
+- TDD RED returned the original HTTP 400 after one upstream call.
+- GREEN regression passes three cases: same-account sanitized retry, accepted ciphertext preservation, and unrelated-400 no-retry.
+- Focused Codex/Responses/reasoning/account-fallback matrix passes 54/54.
+- Changed-file ESLint, syntax checks, and `git diff --check` pass.
+
+Deployment/upstream status:
+
+- Source implemented on `local-v0.5.35-upgrade`; isolated bundle and live promotion pending.
+- Generic provider-safe upstream patch pending clean-branch extraction after live QA.
+
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
 Baseline and merge:
