@@ -1511,7 +1511,9 @@ Deployment/upstream status:
 - PM2 restart replaced its child Quick Tunnel. Guarded recovery created cloudflared PID `2745020` and raw `https://hanging-reward-activities-outlets.trycloudflare.com`. Helper timed out as `succeeded_external_pending` while short registration still returned 530, then raw and `https://rkeyra9.abc-tunnel.us` recovered without another restart or manual registration.
 - Live short-domain malformed Lite history returned HTTP 200 with `P22_LIVE_SWITCH_OK`, exactly one recovery log, and latest stored Codex request status `success`. Local/raw/short health and authenticated Console REST all return HTTP 200.
 - Final source/live-bundle/DB verifier reports zero failures/warnings. `pm2 save` persists `custom-server.js`, port `20128`, and best-GPT `cx/gpt-5.6-sol`/`max`/`default`.
-- Generic provider-safe upstream patch pending clean-branch extraction; private verifier, ledger, aliases, pools, credentials, and deployment artifacts stay local.
+- Generic provider-safe patch is open in upstream PR <https://github.com/decolua/9router/pull/2667>, branch `codex-encrypted-history-recovery`, head `bc3162a`, and reports `MERGEABLE`. Public diff contains only `open-sse/executors/codex.js`, `open-sse/services/accountFallback.js`, and its regression test.
+- Stock `v0.5.35` rotates accounts for every unmatched 400, so PR #2667 includes a narrow code/message classifier that suppresses fallback only for `invalid_encrypted_content`. Live already has the stronger P20 deterministic-400 policy; no extra live patch is needed.
+- Upstream focused matrix passes 15/15. Full stock differential passes 1,027 versus 1,023 before P22, with the same 27 failures and 24 skips. ESLint, syntax, diff, and private-data scans pass; private verifier, ledger, aliases, pools, credentials, and deployment artifacts stay local.
 
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
