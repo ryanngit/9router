@@ -9,7 +9,7 @@ import {
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
 import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsForPool } from "@/lib/oauth/proxyOptions";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -19,24 +19,10 @@ import {
   startXaiProxy,
   stopXaiProxy,
   registerXaiSession,
+  getXaiSessionContext,
   getXaiSessionStatus,
   clearXaiSession,
 } from "@/lib/oauth/utils/server";
-
-async function proxyOptionsForPool(proxyPoolId) {
-  if (!proxyPoolId || proxyPoolId === "__none__") return { disableEnvProxy: true };
-  const proxyConfig = await resolveConnectionProxyConfig({ proxyPoolId });
-  if (!proxyConfig || proxyConfig.source === "none" || proxyConfig.source === "error") {
-    throw new Error(`Proxy pool ${proxyPoolId} is unavailable`);
-  }
-  return {
-    connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-    connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-    connectionNoProxy: proxyConfig.connectionNoProxy || "",
-    vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-    strictProxy: proxyConfig.strictProxy === true,
-  };
-}
 
 function withProxyPoolData(providerSpecificData, proxyPoolId) {
   return {
@@ -45,15 +31,13 @@ function withProxyPoolData(providerSpecificData, proxyPoolId) {
   };
 }
 
-async function completeXaiManualCode(code, state, proxyPoolId = null) {
-  const session = state ? getXaiSessionStatus(state) : null;
+async function completeXaiManualCode(code, state, session) {
   if (!session) {
     throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
   }
   if (!code) throw new Error("Missing xAI authorization code");
 
   try {
-    const selectedProxyPoolId = proxyPoolId || session.proxyPoolId;
     const tokenData = await exchangeTokens(
       "xai",
       code,
@@ -61,20 +45,20 @@ async function completeXaiManualCode(code, state, proxyPoolId = null) {
       session.codeVerifier,
       state,
       undefined,
-      await proxyOptionsForPool(selectedProxyPoolId)
+      session.proxyOptions
     );
     const connection = await createProviderConnection({
       provider: "xai",
       authType: "oauth",
       ...tokenData,
-      providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, selectedProxyPoolId),
+      providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, session.proxyPoolId),
       expiresAt: tokenData.expiresIn
         ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
         : null,
       testStatus: "active",
     });
     clearXaiSession(state);
-    stopXaiProxy();
+    await stopXaiProxy();
     return {
       id: connection.id,
       provider: connection.provider,
@@ -83,7 +67,7 @@ async function completeXaiManualCode(code, state, proxyPoolId = null) {
     };
   } catch (err) {
     clearXaiSession(state);
-    stopXaiProxy();
+    await stopXaiProxy();
     throw err;
   }
 }
@@ -117,30 +101,6 @@ export async function GET(request, { params }) {
       return NextResponse.json(authData);
     }
 
-    if (action === "start-proxy") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
-      }
-      const appPort = searchParams.get("app_port");
-      if (!appPort) {
-        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
-      }
-      const state = searchParams.get("state");
-      const codeVerifier = searchParams.get("code_verifier");
-      const redirectUri = searchParams.get("redirect_uri");
-      const proxyPoolId = searchParams.get("proxyPoolId");
-      const result = provider === "xai"
-        ? await startXaiProxy(Number(appPort))
-        : await startCodexProxy(Number(appPort));
-      let serverSide = false;
-      if (result.success && state && codeVerifier && redirectUri) {
-        serverSide = provider === "xai"
-          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId })
-          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId });
-      }
-      return NextResponse.json({ ...result, serverSide });
-    }
-
     if (action === "poll-status") {
       if (!["codex", "xai"].includes(provider)) {
         return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
@@ -152,7 +112,12 @@ export async function GET(request, { params }) {
       const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
       if (!session) return NextResponse.json({ status: "unknown" });
       if (session.status === "done" || session.status === "error") {
-        const payload = { ...session };
+        const payload = {
+          status: session.status,
+          ...(session.connectionId ? { connectionId: session.connectionId } : {}),
+          ...(session.email ? { email: session.email } : {}),
+          ...(session.error ? { error: session.error } : {}),
+        };
         if (provider === "xai") clearXaiSession(state);
         else clearCodexSession(state);
         return NextResponse.json(payload);
@@ -164,8 +129,14 @@ export async function GET(request, { params }) {
       if (!["codex", "xai"].includes(provider)) {
         return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
       }
-      if (provider === "xai") stopXaiProxy();
-      else stopCodexProxy();
+      const state = searchParams.get("state");
+      if (provider === "xai") {
+        if (state) clearXaiSession(state);
+        await stopXaiProxy();
+      } else {
+        if (state) clearCodexSession(state);
+        await stopCodexProxy();
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -222,17 +193,51 @@ export async function GET(request, { params }) {
   }
 }
 
-// POST /api/oauth/[provider]/exchange - Exchange code for tokens and save
-// POST /api/oauth/[provider]/poll - Poll for token (device_code flow)
+// POST actions: start-proxy, exchange, poll, manual-code
 export async function POST(request, { params }) {
   try {
     await ensureOutboundProxyInitialized();
     const { provider, action } = await params;
+    if (action === "start-proxy") {
+      const mediaType = (request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+      if (mediaType !== "application/json" && !mediaType.endsWith("+json")) {
+        return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+      }
+    }
     let body;
     try {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
+    }
+
+    if (action === "start-proxy") {
+      if (!["codex", "xai"].includes(provider)) {
+        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
+      }
+      const { appPort, state, codeVerifier, redirectUri, proxyPoolId } = body;
+      if (appPort === undefined || appPort === null || appPort === "") {
+        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+      }
+      const appPortNumber = typeof appPort === "number"
+        ? appPort
+        : typeof appPort === "string" && /^[0-9]+$/.test(appPort)
+          ? Number(appPort)
+          : Number.NaN;
+      if (!Number.isInteger(appPortNumber) || appPortNumber < 1 || appPortNumber > 65535) {
+        return NextResponse.json({ error: "Invalid app_port" }, { status: 400 });
+      }
+      const proxyOptions = await proxyOptionsForPool(proxyPoolId);
+      const result = provider === "xai"
+        ? await startXaiProxy(appPortNumber)
+        : await startCodexProxy(appPortNumber);
+      let serverSide = false;
+      if (result.success && state && codeVerifier && redirectUri) {
+        serverSide = provider === "xai"
+          ? registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions })
+          : registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions });
+      }
+      return NextResponse.json({ ...result, serverSide });
     }
 
     if (action === "exchange") {
@@ -390,7 +395,22 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Manual code only supported for xai" }, { status: 400 });
       }
       const { code, state, proxyPoolId } = body;
-      const connection = await completeXaiManualCode(String(code || "").trim(), String(state || "").trim(), proxyPoolId);
+      const sessionState = String(state || "").trim();
+      const session = getXaiSessionContext(sessionState);
+      const suppliedProxyPoolId = proxyPoolId && proxyPoolId !== "__none__" ? String(proxyPoolId) : null;
+      const sessionProxyPoolId = session?.proxyPoolId && session.proxyPoolId !== "__none__"
+        ? String(session.proxyPoolId)
+        : null;
+      if (proxyPoolId !== undefined && suppliedProxyPoolId !== sessionProxyPoolId) {
+        clearXaiSession(sessionState);
+        await stopXaiProxy();
+        return NextResponse.json({ error: "Proxy pool does not match xAI OAuth session" }, { status: 400 });
+      }
+      const connection = await completeXaiManualCode(
+        String(code || "").trim(),
+        sessionState,
+        session,
+      );
       return NextResponse.json({ success: true, connection });
     }
 

@@ -118,22 +118,69 @@ export function waitForCallback(timeoutMs = 300000) {
 // Singleton proxy server for Codex OAuth callback on fixed port
 let codexProxyServer = null;
 let codexProxyTimeout = null;
+let codexProxyClosing = null;
+let codexProxyStarting = null;
 
 const CODEX_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const CODEX_PORT = CODEX_CONFIG.fixedPort;
+const PROXY_CLOSE_GRACE_MS = 30000;
+const OAUTH_SESSION_TTL_MS = 300000;
+
+function closeProxyServer(server) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(forceTimer);
+      resolve();
+    };
+    const forceTimer = setTimeout(() => {
+      server.closeAllConnections?.();
+      finish();
+    }, PROXY_CLOSE_GRACE_MS);
+
+    try {
+      server.close(finish);
+    } catch {
+      finish();
+    }
+  });
+}
 
 // Pending exchange sessions keyed by state — used by server-side exchange mode
 const pendingExchanges = new Map();
+
+function pruneExpiredSessions(sessions, now = Date.now()) {
+  for (const [state, session] of sessions) {
+    if (now - session.createdAt > OAUTH_SESSION_TTL_MS) sessions.delete(state);
+  }
+}
+
+function getLiveSession(sessions, state) {
+  pruneExpiredSessions(sessions);
+  return state ? sessions.get(state) || null : null;
+}
+
+function publicSessionStatus(session) {
+  if (!session) return null;
+  const status = { ...session };
+  delete status.proxyOptions;
+  return status;
+}
 
 /**
  * Register a pending exchange session for server-side mode.
  * Modal client calls this before opening popup.
  */
-export function registerCodexSession({ state, codeVerifier, redirectUri }) {
+export function registerCodexSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
+  pruneExpiredSessions(pendingExchanges);
   pendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    proxyPoolId,
+    proxyOptions,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -144,7 +191,7 @@ export function registerCodexSession({ state, codeVerifier, redirectUri }) {
  * Read session status (modal polls this).
  */
 export function getCodexSessionStatus(state) {
-  return pendingExchanges.get(state) || null;
+  return publicSessionStatus(getLiveSession(pendingExchanges, state));
 }
 
 /**
@@ -152,6 +199,13 @@ export function getCodexSessionStatus(state) {
  */
 export function clearCodexSession(state) {
   pendingExchanges.delete(state);
+}
+
+function withProxyPoolData(providerSpecificData, proxyPoolId) {
+  return {
+    ...(providerSpecificData || {}),
+    ...(proxyPoolId && proxyPoolId !== "__none__" ? { proxyPoolId } : {}),
+  };
 }
 
 function escapeHtml(str) {
@@ -181,13 +235,12 @@ function renderCodexResultPage(success, message) {
  * Mode A (server-side): if any session was registered, proxy auto-exchanges + saves DB.
  * Mode B (channel fallback): if no session, proxy 302 redirects to app port for legacy channel-based flow.
  */
-export function startCodexProxy(appPort) {
-  return new Promise((resolve) => {
-    if (codexProxyServer) {
-      resolve({ success: true });
-      return;
-    }
+export async function startCodexProxy(appPort) {
+  if (codexProxyClosing) await codexProxyClosing;
+  if (codexProxyServer) return { success: true };
+  if (codexProxyStarting) return codexProxyStarting;
 
+  const starting = new Promise((resolve) => {
     const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
 
@@ -200,7 +253,7 @@ export function startCodexProxy(appPort) {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
-      const session = state ? pendingExchanges.get(state) : null;
+      const session = getLiveSession(pendingExchanges, state);
 
       // Mode A: server-side exchange (session registered)
       if (session) {
@@ -219,12 +272,15 @@ export function startCodexProxy(appPort) {
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
+            undefined,
+            session.proxyOptions
           );
           const connection = await createProviderConnection({
             provider: "codex",
             authType: "oauth",
             ...tokenData,
+            providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, session.proxyPoolId),
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
@@ -269,20 +325,37 @@ export function startCodexProxy(appPort) {
       }
     });
   });
+  codexProxyStarting = starting;
+  try {
+    return await starting;
+  } finally {
+    if (codexProxyStarting === starting) codexProxyStarting = null;
+  }
 }
 
 /**
  * Stop the Codex proxy server and cleanup
  */
-export function stopCodexProxy() {
+export async function stopCodexProxy() {
+  pruneExpiredSessions(pendingExchanges);
   if (codexProxyTimeout) {
     clearTimeout(codexProxyTimeout);
     codexProxyTimeout = null;
   }
-  if (codexProxyServer) {
-    codexProxyServer.close();
-    codexProxyServer = null;
+  if (codexProxyStarting) await codexProxyStarting;
+  if (codexProxyTimeout) {
+    clearTimeout(codexProxyTimeout);
+    codexProxyTimeout = null;
   }
+  if (codexProxyClosing) return codexProxyClosing;
+  if (!codexProxyServer) return Promise.resolve();
+
+  const server = codexProxyServer;
+  codexProxyClosing = closeProxyServer(server).then(() => {
+    if (codexProxyServer === server) codexProxyServer = null;
+    codexProxyClosing = null;
+  });
+  return codexProxyClosing;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -293,15 +366,20 @@ export function stopCodexProxy() {
 
 let xaiProxyServer = null;
 let xaiProxyTimeout = null;
+let xaiProxyClosing = null;
+let xaiProxyStarting = null;
 const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
 
-export function registerXaiSession({ state, codeVerifier, redirectUri }) {
+export function registerXaiSession({ state, codeVerifier, redirectUri, proxyPoolId, proxyOptions }) {
   if (!state || !codeVerifier || !redirectUri) return false;
+  pruneExpiredSessions(xaiPendingExchanges);
   xaiPendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    proxyPoolId,
+    proxyOptions,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -309,7 +387,12 @@ export function registerXaiSession({ state, codeVerifier, redirectUri }) {
 }
 
 export function getXaiSessionStatus(state) {
-  return xaiPendingExchanges.get(state) || null;
+  return publicSessionStatus(getLiveSession(xaiPendingExchanges, state));
+}
+
+export function getXaiSessionContext(state) {
+  const session = getLiveSession(xaiPendingExchanges, state);
+  return session ? { ...session } : null;
 }
 
 export function clearXaiSession(state) {
@@ -325,13 +408,12 @@ function renderXaiResultPage(success, message) {
  * Mode A (server-side): if any session was registered, proxy auto-exchanges + saves DB.
  * Mode B (channel fallback): if no session, proxy 302 redirects to app port.
  */
-export function startXaiProxy(appPort) {
-  return new Promise((resolve) => {
-    if (xaiProxyServer) {
-      resolve({ success: true });
-      return;
-    }
+export async function startXaiProxy(appPort) {
+  if (xaiProxyClosing) await xaiProxyClosing;
+  if (xaiProxyServer) return { success: true };
+  if (xaiProxyStarting) return xaiProxyStarting;
 
+  const starting = new Promise((resolve) => {
     const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
       if (url.pathname !== "/callback" && url.pathname !== "/auth/callback") {
@@ -343,7 +425,7 @@ export function startXaiProxy(appPort) {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
-      const session = state ? xaiPendingExchanges.get(state) : null;
+      const session = getLiveSession(xaiPendingExchanges, state);
 
       // Mode A: server-side exchange
       if (session) {
@@ -361,12 +443,15 @@ export function startXaiProxy(appPort) {
             code,
             session.redirectUri,
             session.codeVerifier,
-            state
+            state,
+            undefined,
+            session.proxyOptions
           );
           const connection = await createProviderConnection({
             provider: "xai",
             authType: "oauth",
             ...tokenData,
+            providerSpecificData: withProxyPoolData(tokenData.providerSpecificData, session.proxyPoolId),
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
@@ -411,16 +496,32 @@ export function startXaiProxy(appPort) {
       }
     });
   });
+  xaiProxyStarting = starting;
+  try {
+    return await starting;
+  } finally {
+    if (xaiProxyStarting === starting) xaiProxyStarting = null;
+  }
 }
 
-export function stopXaiProxy() {
+export async function stopXaiProxy() {
+  pruneExpiredSessions(xaiPendingExchanges);
   if (xaiProxyTimeout) {
     clearTimeout(xaiProxyTimeout);
     xaiProxyTimeout = null;
   }
-  if (xaiProxyServer) {
-    xaiProxyServer.close();
-    xaiProxyServer = null;
+  if (xaiProxyStarting) await xaiProxyStarting;
+  if (xaiProxyTimeout) {
+    clearTimeout(xaiProxyTimeout);
+    xaiProxyTimeout = null;
   }
-}
+  if (xaiProxyClosing) return xaiProxyClosing;
+  if (!xaiProxyServer) return Promise.resolve();
 
+  const server = xaiProxyServer;
+  xaiProxyClosing = closeProxyServer(server).then(() => {
+    if (xaiProxyServer === server) xaiProxyServer = null;
+    xaiProxyClosing = null;
+  });
+  return xaiProxyClosing;
+}

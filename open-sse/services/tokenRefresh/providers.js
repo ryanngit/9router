@@ -5,8 +5,21 @@ import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
+
+function oauthRefreshProxyOptions(proxyOptions) {
+  if (proxyOptions?.disableEnvProxy === true) return proxyOptions;
+  const hasConnectionProxy = (
+    (proxyOptions?.connectionProxyEnabled === true || proxyOptions?.enabled === true) &&
+    !!String(proxyOptions?.connectionProxyUrl || proxyOptions?.url || "").trim()
+  );
+  return hasConnectionProxy || proxyOptions?.vercelRelayUrl
+    ? proxyOptions
+    : { disableEnvProxy: true };
+}
+
 export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("xai", refreshToken, async () => {
     try {
       if (!_xaiServiceSingleton) {
@@ -43,6 +56,8 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
     log?.warn?.("TOKEN_REFRESH", `No refresh token available for provider: ${provider}`);
     return null;
   }
+
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
 
   return dedupRefresh(provider, refreshToken, async () => {
   try {
@@ -92,8 +107,9 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
   }, log);
 }
 
-export async function refreshClaudeOAuthToken(refreshToken, log) {
+export async function refreshClaudeOAuthToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("claude", refreshToken, async () => {
   try {
     const response = await fetch(OAUTH_ENDPOINTS.anthropic.token, {
@@ -107,6 +123,7 @@ export async function refreshClaudeOAuthToken(refreshToken, log) {
         refresh_token: refreshToken,
         client_id: PROVIDERS.claude.clientId,
       }),
+      proxyOptions,
     });
 
     if (!response.ok) {
@@ -125,8 +142,9 @@ export async function refreshClaudeOAuthToken(refreshToken, log) {
   }, log);
 }
 
-export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log) {
+export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh(`google:${clientId}`, refreshToken, async () => {
   try {
     const response = await fetch(OAUTH_ENDPOINTS.google.token, {
@@ -141,6 +159,7 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
         client_id: clientId,
         client_secret: clientSecret,
       }),
+      proxyOptions,
     });
 
     if (!response.ok) {
@@ -159,8 +178,9 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
   }, log);
 }
 
-export async function refreshQwenToken(refreshToken, log) {
+export async function refreshQwenToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("qwen", refreshToken, async () => {
   const endpoint = OAUTH_ENDPOINTS.qwen.token;
 
@@ -176,6 +196,7 @@ export async function refreshQwenToken(refreshToken, log) {
         refresh_token: refreshToken,
         client_id: PROVIDERS.qwen.clientId,
       }),
+      proxyOptions,
     });
 
     if (response.status === 200) {
@@ -234,8 +255,9 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   return { status, code, description, permanent };
 }
 
-export async function refreshCodexToken(refreshToken, log) {
+export async function refreshCodexToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("codex", refreshToken, async () => {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
@@ -249,9 +271,7 @@ export async function refreshCodexToken(refreshToken, log) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
         }),
-        // ponytail: Codex refresh has no per-connection proxy context here;
-        // pass proxyOptions through refreshTokenByProvider before honoring pools.
-        proxyOptions: { disableEnvProxy: true },
+        proxyOptions,
       });
 
       if (!response.ok) {
@@ -296,18 +316,19 @@ export async function refreshCodexToken(refreshToken, log) {
   }, log);
 }
 
-async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn) {
+async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn, proxyOptions) {
   if (providerSpecificData?.profileArn) return {};
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
     const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
-    profileArn = await fetchKiroProfileArn(accessToken);
+    profileArn = await fetchKiroProfileArn(accessToken, proxyOptions);
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
 }
 
 export async function refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("kiro", refreshToken, async () => {
   const authMethod = providerSpecificData?.authMethod;
   const clientId = providerSpecificData?.clientId;
@@ -397,7 +418,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken || refreshToken,
       expiresIn: tokens.expiresIn,
-      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
+      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn, proxyOptions)),
     };
   }
 
@@ -433,13 +454,14 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken || refreshToken,
     expiresIn: tokens.expiresIn,
-    ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
+    ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn, proxyOptions)),
   };
   }, log);
 }
 
-export async function refreshIflowToken(refreshToken, log) {
+export async function refreshIflowToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("iflow", refreshToken, async () => {
   const basicAuth = btoa(`${PROVIDERS.iflow.clientId}:${PROVIDERS.iflow.clientSecret}`);
 
@@ -456,6 +478,7 @@ export async function refreshIflowToken(refreshToken, log) {
       client_id: PROVIDERS.iflow.clientId,
       client_secret: PROVIDERS.iflow.clientSecret,
     }),
+    proxyOptions,
   });
 
   if (!response.ok) {
@@ -483,8 +506,9 @@ export async function refreshIflowToken(refreshToken, log) {
   }, log);
 }
 
-export async function refreshGitHubToken(refreshToken, log) {
+export async function refreshGitHubToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("github", refreshToken, async () => {
   const params = {
     grant_type: "refresh_token",
@@ -502,6 +526,7 @@ export async function refreshGitHubToken(refreshToken, log) {
       Accept: "application/json",
     },
     body: new URLSearchParams(params),
+    proxyOptions,
   });
 
   if (!response.ok) {
@@ -529,8 +554,9 @@ export async function refreshGitHubToken(refreshToken, log) {
   }, log);
 }
 
-export async function refreshCopilotToken(githubAccessToken, log) {
+export async function refreshCopilotToken(githubAccessToken, log, proxyOptions = null) {
   if (!githubAccessToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("copilot", githubAccessToken, async () => {
   try {
     const response = await fetch(PROVIDER_OAUTH["github"]?.copilotTokenUrl, {
@@ -541,7 +567,8 @@ export async function refreshCopilotToken(githubAccessToken, log) {
         "Editor-Plugin-Version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
         "Accept": "application/json",
         "x-github-api-version": GITHUB_COPILOT.API_VERSION
-      }
+      },
+      proxyOptions,
     });
 
     if (!response.ok) {
@@ -576,8 +603,9 @@ export async function refreshCopilotToken(githubAccessToken, log) {
 // CodeBuddy (Tencent) refresh — POST /v2/plugin/auth/token/refresh with the
 // refresh token carried in the X-Refresh-Token header (not a form body),
 // matching the official CodeBuddy CLI. Response: { code: 0, data: <token> }.
-export async function refreshCodebuddyToken(refreshToken, log) {
+export async function refreshCodebuddyToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("codebuddy-cn", refreshToken, async () => {
     const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
     const response = await fetch(oauth.refreshUrl, {
@@ -593,6 +621,7 @@ export async function refreshCodebuddyToken(refreshToken, log) {
         "X-Product": "SaaS",
       },
       body: "{}",
+      proxyOptions,
     });
 
     if (!response.ok) {
