@@ -16,7 +16,9 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
   const [error, setError] = useState(null);
-  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
+  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState(
+    () => proxyPools.find((pool) => pool.isActive === true)?.id || "",
+  );
   const { copied, copy } = useCopyToClipboard();
   const openedRef = useRef(false);
   const flowGenerationRef = useRef(0);
