@@ -918,6 +918,7 @@ Required invariants:
 - Daily window is the server local day.
 - Prompt, completion, and reasoning tokens count toward the limit.
 - Same-prefix API keys remain separate in usage grouping and masking.
+- Current ceiling is a preflight soft cap: concurrent in-flight requests can overshoot. Add atomic token reservations plus request-ID reconciliation before selling this as a hard billing cap.
 
 Verification:
 
@@ -930,7 +931,7 @@ Verification:
 Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2454>
-- Public head `b287342`; two test-only follow-ups add and harden handler-level admission proof. PR is `OPEN`/`CLEAN`.
+- Public head `91c4706`; two test-only follow-ups add and harden handler-level admission proof, and one comment records the concurrent soft-cap ceiling. PR is `OPEN`/`CLEAN`.
 
 ### P12. Private best-GPT Sol/max routing and custom Codex catalog
 
@@ -1730,7 +1731,7 @@ Candidate QA:
 Public PR refresh:
 
 - All existing public branches were merged normally onto `v0.5.35`; no force-push was used. Every open PR reports `CLEAN`.
-- Heads: #1570 `aa19e8a0`, #1819 `5430052e`, #2343 `38be2f0f`, #2345 `877977a7`, #2364 `9da2ae98`, #2439 `a62a53aa`, #2452 `dfcd956d`, #2453 `bf2da725`, #2454 `b287342f`, #2511 `14b04502`, #2553 `fe6366e7`, #2554 `10a1ba47`, #2647 `7b1f6937`, #2652 `ac0fb073`, #2663 `9504daab`, #2666 `f3e3ac7e`, #2667 `89c9c381`, #2686 `6656f566`, #2709 `535e2727`, and #2710 `1197f435`.
+- Heads: #1570 `aa19e8a0`, #1819 `5430052e`, #2343 `38be2f0f`, #2345 `877977a7`, #2364 `9da2ae98`, #2439 `a62a53aa`, #2452 `dfcd956d`, #2453 `bf2da725`, #2454 `91c4706f`, #2511 `14b04502`, #2553 `fe6366e7`, #2554 `10a1ba47`, #2647 `7b1f6937`, #2652 `ac0fb073`, #2663 `9504daab`, #2666 `f3e3ac7e`, #2667 `89c9c381`, #2686 `6656f566`, #2709 `535e2727`, and #2710 `1197f435`.
 - Conflict PR comments record retained upstream behavior and focused evidence. #2647 shrank from 19 changed files to 11 because upstream absorbed eight pieces; its focused matrix passed 73/73.
 - Fable adaptive-thinking PR <https://github.com/decolua/9router/pull/2652> is rebased at `ac0fb073`; its focused matrix passed 18/18 and GitHub reports `CLEAN`.
 - Pre-update heads remain available as local `backup/v0535-pr-*` refs. Private ledger/runbook/verifier, aliases, pools, credentials, and deployment files were excluded from every public diff.
