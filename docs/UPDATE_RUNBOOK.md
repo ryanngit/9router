@@ -149,6 +149,7 @@ Targeted manual checks by patch:
 - P20 candidate safety: copy the live DB with SQLite `.backup`, remove every `refreshToken`, bind candidate to `127.0.0.1:20129`, start no tunnel, then delete the credential-bearing candidate home after QA.
 - P21 Responses heartbeat: an explicit `stream:true` `/v1/responses` request must return an SSE comment before provider headers, emit comments every 25 seconds only while headers are pending, then preserve provider bytes and downstream backpressure exactly. It must survive at least 130 seconds through a temporary public tunnel and start exactly one provider request. Cancelling the client must close downstream, abort that provider request, leave no timer, and avoid account locks. Repeat `stream:false`, omitted-`stream`, invalid-JSON, and streaming-error controls; synthetic `response.failed` must carry the request model and required Responses fields.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
+- P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 
 Known clean-upstream `0.5.35` baseline:
 

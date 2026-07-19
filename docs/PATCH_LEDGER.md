@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; staged P23 source commit is `cc2cf0f` and live remains on P22.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; staged P23/P24 source head is `0f65bb3` and live remains on P22.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -1542,11 +1542,40 @@ Required invariants:
 Verification/status:
 
 - TDD RED isolated five missing base/core/detail behaviors, two missing GitHub native-route behaviors, and one duplicate-casing header behavior.
-- Focused correlation/GitHub matrix passes 32/32. Broader changed-path matrix passes 77/77.
+- Public focused correlation/GitHub matrix passes 34/34 after adding status/network retry, base-URL fallback, concurrent-attempt, Worker-global UUID, and outbound-header coverage. Local integrated matrix passes 37/37.
 - Changed-file ESLint and `git diff --check` pass.
 - Full differential used identical `CI=1 --update none` settings. Patched source introduced zero candidate-only failures; the clean `ebb7e86` baseline alone failed the two stale `force-stream-config` assertions and two flaky xAI OAuth assertions that patched source passed.
-- Source-only work is staged as commit `cc2cf0f` on `local-v0.5.35-upgrade`. Live 9Router, gateway, Observer, PM2, tunnel, DB, ports, and binaries are unchanged.
-- Public PR and live promotion remain pending. Promotion requires gateway/Observer correlation support, candidate QA, zero-active drain, rollback artifacts, and current OOM/concurrency gates.
+- Initial review found one compatibility defect: Base passed `requestId` into the third `buildHeaders` slot already used as Antigravity `sessionId`. Commit `ff56efb` restores the two-argument Base contract, applies the header afterward, and adds regression coverage; independent re-review is clean.
+- Public PR <https://github.com/decolua/9router/pull/2710>, branch `request-correlation`, head `1197f43`, contains no private routes, aliases, proxy data, credentials, tunnel logic, or deployment files.
+- Local source is staged as `cc2cf0f` plus compatibility commit `ff56efb`. Gateway/Observer correlation source is `3816ee96f`; immutable candidates and hashes live under `/home/home/.openclaw/gateway/deployments/request-correlation-20260719T093355Z`.
+- Live promotion remains pending. Promotion requires isolated cross-layer proof, 20-stream/40-request gates, zero-active drain, rollback artifacts, and current OOM acceptance.
+
+### P24. Request-log credential redaction
+
+Purpose:
+
+- Prevent optional request debug logging from storing reusable API, OAuth, cookie, or proxy credentials.
+- Restrict newly created request-log directories and files to the local user.
+
+Files:
+
+- `open-sse/utils/requestLogger.js`
+- `tests/unit/request-logger-security.test.js`
+
+Required invariants:
+
+- Logging disabled creates no session directory or files.
+- `authorization`, `proxy-authorization`, cookies, API-key variants, and header names containing `token` or `secret` become `[REDACTED]` on client, source, target, and provider-response paths.
+- Correlation and content metadata headers remain visible; caller-owned plain objects and `Headers` instances are not mutated.
+- New log directories use mode `0700`; new JSON, stream, and error files use mode `0600`.
+- Runtime request behavior, bodies, provider payloads, and response streams remain unchanged.
+
+Verification/status:
+
+- Focused security matrix passes 3/3. Changed-path ESLint, syntax, and `git diff --check` pass.
+- Independent security review is clean and includes inherited-object, multi-value `Headers`, case, and Worker-import probes.
+- Public PR <https://github.com/decolua/9router/pull/2709>, branch `request-log-redaction`, head `535e272`, is clean and mergeable.
+- Local source commit is `ffedfbf`; verifier commit `0f65bb3` makes P23/P24 loss fail future source and bundle checks. Live remains unmodified.
 
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
