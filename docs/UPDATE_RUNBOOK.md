@@ -20,6 +20,13 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - P25 native Responses has five terminal invariants: completed/incomplete/failed/error are terminal, terminal state survives pipe wrappers, `[DONE]` appears once, failed or unterminated JSON/SSE is not account success, and incomplete usage is billable.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
+Current verified live deployment (2026-07-19):
+
+- Version `0.5.35`; PM2 PID `638076`; entrypoint `app/custom-server.js`; Sol/max/default policy saved in `/home/home/.pm2/dump.pm2`.
+- Cloudflared PID `638304`; raw URL `https://others-assuming-cooking-tagged.trycloudflare.com`; short URL `https://rkeyra9.abc-tunnel.us`.
+- Rollback app `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0535-p25-oauth-20260719-20260719T193507Z`; DB backup `/home/home/.9router/db/backups/pre-v0535-p25-oauth-20260719-20260719T193507Z/data.sqlite`.
+- Promotion status `/home/home/.openclaw/workspace-keyra/9router-ops/v0535-p25-oauth-20260719.status` is `succeeded`; post-promotion Codex, Fable incomplete/usage, Grok, local/raw/short health, DB integrity, and full-verifier gates passed.
+
 ## 1. Brainstorm / Analyze
 
 Checklist:
@@ -52,11 +59,11 @@ node scripts/verify-local-patches.mjs \
   --model-catalog /home/home/.openclaw/codex-9router-model-catalog.json
 ```
 
-Current pre-candidate live P22 bundle is expected to fail only the pending Kiro generation, P24 redaction, and P25 incomplete/EOF markers. Do not call that bundle green. After building, run the full verifier against the candidate app; after promotion, run it against live and require zero failures.
+Current live `0.5.35` bundle includes P24/P25/OAuth corrections and must pass the full verifier with zero failures/warnings. After building, run it against the candidate app; after promotion, run it against live again.
 
 Stop if:
 
-- Source/config/DB verification has failures, candidate verification has any failure, or pre-candidate live verification has an undocumented failure.
+- Source/config/DB verification has failures, candidate verification has any failure, or live verification has any failure.
 - The source directory has broken git metadata and the task is upstream PR prep.
 - The live app health check fails before any edits.
 - Candidate version differs from npm `latest` or the requested pinned version.
@@ -163,14 +170,14 @@ Targeted manual checks by patch:
 - P20 Grok codec: run minimal text, strict web search, native x-search two-turn replay, typed function/custom history, structured output, malformed/duplicate/orphan/dangling repair, local 400 no-lock, and approximately 1 MB/463-item replay.
 - P20 candidate safety: copy the live DB with SQLite `.backup`, remove every `refreshToken`, bind candidate to `127.0.0.1:20129`, start no tunnel, then delete the credential-bearing candidate home after QA.
 - P21 Responses heartbeat: an explicit `stream:true` `/v1/responses` request must return an SSE comment before provider headers, emit comments every 25 seconds only while headers are pending, then preserve provider bytes and downstream backpressure exactly. It must survive at least 130 seconds through a temporary public tunnel and start exactly one provider request. Cancelling the client must close downstream, abort that provider request, leave no timer, and avoid account locks. Repeat `stream:false`, omitted-`stream`, invalid-JSON, and streaming-error controls; synthetic `response.failed` must carry the request model and required Responses fields.
-- P25 Responses terminal matrix: completed plus reset, incomplete plus usage, failed SSE, failed JSON, top-level `event:error`, and EOF before terminal. Assert fallback-capable 502 for failures and exact cached/reasoning accounting for incomplete.
+- P25 Responses terminal matrix: completed plus reset, incomplete plus usage, failed SSE, failed JSON, top-level `event:error`, and EOF before terminal. Assert fallback-capable 502 for failures and exact cached/reasoning accounting for incomplete. Live Fable incomplete canary must use `stream:false`, `max_output_tokens:1`, and `reasoning.effort=max`; do not use `none`, because Fable rejects `thinking.type.disabled`.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 
 Known clean-upstream `0.5.35` baseline:
 
-- Full suite passes 1,299, fails 46, and leaves 59 pending in this environment.
-- Customized `0.5.35` has the exact same 46 failures and 59 pending; compare failure sets before attributing any full-suite failure to a local patch.
+- Stock `0.5.35` passes 1,311, fails 34, and leaves 59 pending in the latest identical `CI=1` run.
+- Customized `0.5.35` passes 1,588, fails 32, and leaves 59 pending. It fixes two stock `force-stream-config` failures and introduces zero candidate-only failures; compare assertion sets before attributing any future failure to a local patch.
 - Stock and customized trees also share 12 React lint errors and two warnings. Run changed-path lint separately and compare any touched failing UI file against clean `v0.5.35`.
 
 Tunnel checks:

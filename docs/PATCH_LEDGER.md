@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`. Runtime candidate adds reviewed Responses commits `930f502`/`6d6d9a7` and OAuth commits `2cc1b9f`/`8e6499d`/`4839f09` plus local Kiro default `9faa373`; tracker/test follow-ups are `e946e87`/`7cb2ed5`. Live remains on the pre-candidate bundle.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`. Live includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -22,18 +22,18 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://hanging-reward-activities-outlets.trycloudflare.com`.
-- Current cloudflared PID: `2745020`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://others-assuming-cooking-tagged.trycloudflare.com`.
+- Current cloudflared PID: `638304`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
-- The 2026-07-15 controlled promotion applied that policy with `--update-env`; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2`.
+- The 2026-07-19 combined promotion retained that policy; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2` after live canaries.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
 - xAI OAuth profile `songoku200794@gmail.com` uses proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` (`http://127.0.0.1:18888`). Gateway routes `x.ai`/`grok.com` domains through US exits on both listeners.
-- xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
+- xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; that profile requires reauthorization before direct `xai` canaries can pass again.
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
 - Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
-- Current PM2 PID after the P22 promotion: `2744827`.
-- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p22-encrypted-history-20260717-20260717T085151Z`.
-- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-p22-encrypted-history-20260717-20260717T085151Z/data.sqlite`.
+- Current PM2 PID after the combined P25/OAuth promotion: `638076`.
+- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0535-p25-oauth-20260719-20260719T193507Z`.
+- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-v0535-p25-oauth-20260719-20260719T193507Z/data.sqlite`.
 - Active Codex config references `/home/home/.openclaw/codex-9router-model-catalog.json` and currently selects `grok-4.5` with effort `max`. This client selection is independent of the endpoint-wide best-GPT route for incoming `gpt-*` models.
 - Previous live rollback app from Claude pairing: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-claude-pairing-max2-20260717T033932Z-20260717T034004Z`.
 - Previous DB backup from Claude pairing: `/home/home/.9router/db/backups/pre-claude-pairing-max2-20260717T033932Z-20260717T034004Z/data.sqlite`.
@@ -1646,11 +1646,11 @@ Verification/status:
 - Focused security matrix passes 3/3. Changed-path ESLint, syntax, and `git diff --check` pass.
 - Independent security review is clean and includes inherited-object, multi-value `Headers`, case, and Worker-import probes.
 - Public PR <https://github.com/decolua/9router/pull/2709>, branch `request-log-redaction`, head `535e272`, is clean and mergeable.
-- Local source commit is `ffedfbf`; verifier commit `0f65bb3` makes P23/P24 loss fail future source and bundle checks. Standalone candidate bundle passed redaction and file-mode invariants; live remains unmodified.
+- Local source commit is `ffedfbf`; verifier commit `0f65bb3` makes P23/P24 loss fail future source and bundle checks. Standalone candidate bundle passed redaction and file-mode invariants; combined promotion `v0535-p25-oauth-20260719` moved it live.
 
 ### P25. Native Responses transport, terminal, and usage semantics
 
-Deployment state: source/candidate only until the pending combined promotion. Live P22 does not yet contain `response.incomplete`, EOF conversion, failed-JSON handling, or P24 request-log redaction; full live-bundle verification is expected to remain red on those candidate markers before promotion.
+Deployment state: live since combined promotion `v0535-p25-oauth-20260719`. Live contains incomplete/EOF/failed-JSON handling and P24 request-log redaction; full live-bundle verification must remain green.
 
 Purpose:
 
@@ -1750,14 +1750,18 @@ Deployment status:
 
 - `930f502`/`6d6d9a7` complete public Grok/OpenAI Responses transport semantics on top of private cost, routing, and history patches.
 - `2cc1b9f`/`8e6499d`/`4839f09` complete OAuth proxy selection from login through callback and refresh, with state-bound concurrent fixed-port lifecycle and runtime-tested refresh proxy propagation. `9faa373` keeps the active-pool default private.
-- Source, active Codex config/catalog, and live DB verifier checks pass with zero failures/warnings when the pre-candidate live bundle is excluded. The verifier now checks P11, P25, Kiro social, newest OAuth lifecycle, catalog metadata, selected model/effort compatibility, and deployed-bundle markers. Current live P22 intentionally fails exactly four pending P24/P25/OAuth bundle markers; candidate and post-promotion live bundles must pass all of them.
+- Full source, live-bundle, active Codex config/catalog, live DB, and local-health verification passes with zero failures/warnings. The verifier checks P11, P25, Kiro social, newest OAuth lifecycle, catalog metadata, selected model/effort compatibility, and deployed-bundle markers; every live marker is enforced.
 - Identical `CI=1` full-suite runs report stock v0.5.35 at 1,311 passed/34 failed/59 pending and candidate at 1,588 passed/32 failed/59 pending. Failed-assertion sets are identical except candidate fixes both stock `force-stream-config` failures; candidate introduces zero new failures. Twelve missing golden entries for intentionally added local providers are now recorded; the five remaining golden mismatches reproduce on stock.
-- Standalone build completed in 152.6 seconds, generated 130 routes, bundled MITM, measured 58 MB, and remains staged at `/home/home/.openclaw/workspace-keyra/9router-candidate-v0535-final-20260719-app`. Full source/bundle/config/DB verification returned zero failures/warnings.
+- Standalone build completed in 152.6 seconds, generated 130 routes, bundled MITM, measured 58 MB, and was promoted from `/home/home/.openclaw/workspace-keyra/9router-candidate-v0535-final-20260719-app`. Full source/bundle/config/DB verification returned zero failures/warnings.
 - Isolated QA used a SQLite backup with integrity `ok`, zero `refreshToken` keys, tunnel disabled, one active Codex/GitHub/Grok CLI profile each, and bind only `127.0.0.1:20129`.
 - Real candidate wires passed: bare `gpt-5.4-mini` returned `CANDIDATE_CODEX_OK` as `gpt-5.6-sol` with console `THINK:max`; Fable/max returned one billable `response.incomplete` with cache-write usage and then completed `CANDIDATE_FABLE_OK` through GitHub `messages`; private Grok returned `CANDIDATE_GROK_OK` as `grok-4.5-build` with provider effort `xhigh` and no stale tool fields.
-- Candidate process stopped, port `20129` released, and credential-bearing HOME plus response/log artifacts were deleted. Live local/raw/short health remained HTTP 200 with unchanged PIDs `2744827`/`2745020`.
-- No live app, PM2 process, cloudflared process, DB, gateway, or Observer process was changed while preparing these commits.
-- Required remaining gates: independent integration reviews, ledger/runbook commit, standalone build, sanitized-DB candidate on `127.0.0.1:20129`, full base/head differential, private-data scan, rollback rehearsal, then one combined promotion.
+- Candidate process stopped, port `20129` released, and credential-bearing HOME plus response/log artifacts were deleted. Live local/raw/short health remained HTTP 200 with unchanged PIDs `2744827`/`2745020` during preparation.
+- Independent reviews approved the integration, full stock/candidate differential found zero candidate-only failures, Gitleaks found no leaks, and rollback rehearsal passed before promotion.
+- Safe promotion label `v0535-p25-oauth-20260719` exchanged only `cli/app` and restarted PM2 once. PM2 is PID `638076`; guarded tunnel recovery created cloudflared PID `638304`, raw `https://others-assuming-cooking-tagged.trycloudflare.com`, and restored `https://rkeyra9.abc-tunnel.us`.
+- Rollback app is `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0535-p25-oauth-20260719-20260719T193507Z`; DB backup is `/home/home/.9router/db/backups/pre-v0535-p25-oauth-20260719-20260719T193507Z/data.sqlite`. Both live and backup DB integrity checks returned `ok`.
+- Short-domain live canaries passed: Codex returned `LIVE_P25_CODEX_OK` as `gpt-5.6-sol`/`default`; Fable/max non-stream returned billable `status=incomplete` with `max_output_tokens`, 1,278 input, 1 output, and 1,250 cached tokens; Grok returned `LIVE_P25_GROK_OK` as `grok-4.5-build` with `xhigh`, 219 input, 59 output, 128 cached, and 50 reasoning tokens.
+- Since promotion, request details recorded 118 Codex successes, four Fable successes, and one Grok success during the audit window. The only error was a deliberate Fable `none` probe proving that model rejects `thinking.type.disabled`; it emitted one structured `response.failed` and created no account lock.
+- Local/raw/short health, package/version surfaces, PM2 entrypoint/policy, full verifier, and `pm2 save` passed after canaries. Promotion status `/home/home/.openclaw/workspace-keyra/9router-ops/v0535-p25-oauth-20260719.status` is `succeeded`.
 
 ## Not Yet Verified As Local Patch
 
