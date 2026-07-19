@@ -24,7 +24,15 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { applyBestGptRoute } from "../services/bestGptRoute.js";
-import { cloneRequestTiming, measureRequestPhase } from "open-sse/utils/requestTiming.js";
+import {
+  cloneRequestTiming,
+  createAttemptTiming,
+  createRequestTiming,
+  elapsedRequestMilliseconds,
+  measureRequestPhase,
+  requestNow,
+  snapshotRequestTiming,
+} from "open-sse/utils/requestTiming.js";
 
 /**
  * Handle chat completion request
@@ -32,7 +40,8 @@ import { cloneRequestTiming, measureRequestPhase } from "open-sse/utils/requestT
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null, options = {}) {
-  const requestTiming = { startedAt: Date.now(), phases: {} };
+  const requestTiming = createRequestTiming();
+  const correlationId = globalThis.crypto.randomUUID();
   let body = options.body;
   const externalSignal = options.signal || request?.signal;
   if (body === undefined) {
@@ -70,16 +79,16 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   }
 
   // Enforce API key if enabled in settings
-  // db_ms is diagnostic and may overlap auth_ms or routing_ms for DB-backed operations.
-  const settings = await measureRequestPhase(requestTiming.phases, "auth_ms", () =>
-    measureRequestPhase(requestTiming.phases, "db_ms", () => getSettings()));
+  // db_overlap_ms is diagnostic; auth/routing totals already include the same DB wait.
+  const settings = await measureRequestPhase(requestTiming.phases, "auth_total_ms", () =>
+    measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getSettings()));
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await measureRequestPhase(requestTiming.phases, "auth_ms", () =>
-      measureRequestPhase(requestTiming.phases, "db_ms", () => isValidApiKey(apiKey)));
+    const valid = await measureRequestPhase(requestTiming.phases, "auth_total_ms", () =>
+      measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => isValidApiKey(apiKey)));
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -130,8 +139,8 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   }
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await measureRequestPhase(requestTiming.phases, "routing_ms", () =>
-    measureRequestPhase(requestTiming.phases, "db_ms", () => getComboModels(modelStr)));
+  const comboModels = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
+    measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getComboModels(modelStr)));
   if (comboModels) {
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
@@ -149,7 +158,7 @@ export async function handleChat(request, clientRawRequest = null, options = {})
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming));
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId);
         },
         log,
         comboName: modelStr,
@@ -163,7 +172,7 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming)),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -172,23 +181,23 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, externalSignal, requestTiming);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, externalSignal, requestTiming, correlationId);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, externalSignal = null, requestTiming = { startedAt: Date.now(), phases: {} }) {
-  const modelInfo = await measureRequestPhase(requestTiming.phases, "routing_ms", () =>
-    measureRequestPhase(requestTiming.phases, "db_ms", () => getModelInfo(modelStr)));
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, externalSignal = null, requestTiming = createRequestTiming(), correlationId = globalThis.crypto.randomUUID()) {
+  const modelInfo = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
+    measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getModelInfo(modelStr)));
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await measureRequestPhase(requestTiming.phases, "routing_ms", () =>
-      measureRequestPhase(requestTiming.phases, "db_ms", () => getComboModels(modelStr)));
+    const comboModels = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
+      measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getComboModels(modelStr)));
     if (comboModels) {
-      const chatSettings = await measureRequestPhase(requestTiming.phases, "routing_ms", () =>
-        measureRequestPhase(requestTiming.phases, "db_ms", () => getSettings()));
+      const chatSettings = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
+        measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getSettings()));
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -205,7 +214,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming));
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId);
           },
           log,
           comboName: modelStr,
@@ -219,7 +228,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming)),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -241,11 +250,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let fallbackTotalMs = 0;
+  const admissionTiming = snapshotRequestTiming(requestTiming);
 
   while (true) {
     if (externalSignal?.aborted) return errorResponse(499, "Request aborted");
-    const credentials = await measureRequestPhase(requestTiming.phases, "routing_ms", () =>
-      measureRequestPhase(requestTiming.phases, "db_ms", () =>
+    const attemptTiming = createAttemptTiming(
+      admissionTiming,
+      fallbackTotalMs > 0 ? { fallback_total_ms: fallbackTotalMs } : undefined
+    );
+    const attemptId = globalThis.crypto.randomUUID();
+    const credentials = await measureRequestPhase(attemptTiming.phases, "routing_total_ms", () =>
+      measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () =>
         getProviderCredentials(provider, excludeConnectionIds, model)));
 
     // All accounts unavailable
@@ -265,12 +281,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
-    const refreshedCredentials = await measureRequestPhase(requestTiming.phases, "auth_ms", () =>
+    const refreshedCredentials = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
       checkAndRefreshToken(provider, credentials));
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await measureRequestPhase(requestTiming.phases, "auth_ms", () =>
+      const pid = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
         getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken));
       if (pid) {
         refreshedCredentials.projectId = pid;
@@ -280,7 +296,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Use shared chatCore
-    const chatSettings = await measureRequestPhase(requestTiming.phases, "db_ms", () => getSettings());
+    const chatSettings = await measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () => getSettings());
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
       body: { ...structuredClone(body), model: `${provider}/${model}` },
@@ -308,7 +324,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onPxpipeEvent: appendPxpipeEvent,
       externalSignal,
       providerThinking,
-      requestTiming: cloneRequestTiming(requestTiming),
+      requestTiming: cloneRequestTiming(attemptTiming),
+      correlationId,
+      attemptId,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
@@ -327,9 +345,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (externalSignal?.aborted) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await measureRequestPhase(requestTiming.phases, "routing_ms", () =>
-      measureRequestPhase(requestTiming.phases, "db_ms", () =>
-        markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs)));
+    const fallbackStartedAt = requestNow();
+    const { shouldFallback } = await markAccountUnavailable(
+      credentials.connectionId,
+      result.status,
+      result.error,
+      provider,
+      model,
+      result.resetsAtMs
+    );
+    fallbackTotalMs += elapsedRequestMilliseconds(fallbackStartedAt);
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
