@@ -1,13 +1,13 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-17
+Last updated: 2026-07-19
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; P21 runtime commit is `c743708` above Claude pairing base `818ed87`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; staged P23 source commit is `cc2cf0f` and live remains on P22.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -1514,6 +1514,39 @@ Deployment/upstream status:
 - Generic provider-safe patch is open in upstream PR <https://github.com/decolua/9router/pull/2667>, branch `codex-encrypted-history-recovery`, head `bc3162a`, and reports `MERGEABLE`. Public diff contains only `open-sse/executors/codex.js`, `open-sse/services/accountFallback.js`, and its regression test.
 - Stock `v0.5.35` rotates accounts for every unmatched 400, so PR #2667 includes a narrow code/message classifier that suppresses fallback only for `invalid_encrypted_content`. Live already has the stronger P20 deterministic-400 policy; no extra live patch is needed.
 - Upstream focused matrix passes 15/15. Full stock differential passes 1,027 versus 1,023 before P22, with the same 27 failures and 24 skips. ESLint, syntax, diff, and private-data scans pass; private verifier, ledger, aliases, pools, credentials, and deployment artifacts stay local.
+
+### P23. Cross-layer request correlation
+
+Purpose:
+
+- Correlate one 9Router provider attempt with Go gateway selection, connection, provider-header, and stream timing without timestamp guessing.
+- Preserve one identifier across executor retries and request-detail updates.
+
+Files:
+
+- `open-sse/executors/base.js`
+- `open-sse/executors/github.js`
+- `open-sse/handlers/chatCore.js`
+- `open-sse/handlers/chatCore/{requestDetail,nonStreamingHandler,sseToJsonHandler,streamingHandler}.js`
+- `tests/unit/{base-executor-retry,force-stream-config,github-responses-routing,request-correlation}.test.js`
+
+Required invariants:
+
+- `handleChatCore` creates one internal UUID per provider/account attempt. Incoming client request IDs are not trusted or reused.
+- Initial execution, config-driven network/status retries, and the post-refresh retry send that same value as `x-request-id`.
+- GitHub `/chat/completions`, native `/responses`, and Claude `/v1/messages` routes use the supplied value instead of generating an unrelated GitHub request ID.
+- Executor errors, upstream HTTP errors, forced SSE-to-JSON, true JSON, streaming-in-progress, and streaming-complete records preserve the same request-detail ID. Streaming completion updates the initial row instead of creating an unrelated row.
+- Account fallback starts a new provider-attempt ID so failed attempts remain independently observable. Combo/fusion children also remain independent.
+- Correlation adds no DB query, network round trip, retry, dependency, or live-path behavior change beyond one UUID and one bounded header.
+
+Verification/status:
+
+- TDD RED isolated five missing base/core/detail behaviors, two missing GitHub native-route behaviors, and one duplicate-casing header behavior.
+- Focused correlation/GitHub matrix passes 32/32. Broader changed-path matrix passes 77/77.
+- Changed-file ESLint and `git diff --check` pass.
+- Full differential used identical `CI=1 --update none` settings. Patched source introduced zero candidate-only failures; the clean `ebb7e86` baseline alone failed the two stale `force-stream-config` assertions and two flaky xAI OAuth assertions that patched source passed.
+- Source-only work is staged as commit `cc2cf0f` on `local-v0.5.35-upgrade`. Live 9Router, gateway, Observer, PM2, tunnel, DB, ports, and binaries are unchanged.
+- Public PR and live promotion remain pending. Promotion requires gateway/Observer correlation support, candidate QA, zero-active drain, rollback artifacts, and current OOM/concurrency gates.
 
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
