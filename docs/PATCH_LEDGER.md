@@ -1548,7 +1548,14 @@ Verification/status:
 - Initial review found one compatibility defect: Base passed `requestId` into the third `buildHeaders` slot already used as Antigravity `sessionId`. Commit `ff56efb` restores the two-argument Base contract, applies the header afterward, and adds regression coverage; independent re-review is clean.
 - Public PR <https://github.com/decolua/9router/pull/2710>, branch `request-correlation`, head `1197f43`, contains no private routes, aliases, proxy data, credentials, tunnel logic, or deployment files.
 - Local source is staged as `cc2cf0f` plus compatibility commit `ff56efb`. Gateway/Observer correlation source is `3816ee96f`; immutable candidates and hashes live under `/home/home/.openclaw/gateway/deployments/request-correlation-20260719T093355Z`.
-- Live promotion remains pending. Promotion requires isolated cross-layer proof, 20-stream/40-request gates, zero-active drain, rollback artifacts, and current OOM acceptance.
+- Standalone 9Router candidate `/home/home/.openclaw/workspace-keyra/9router-candidate-p23-p24-app` built from staged source `ca6fa26`, measured 58 MB, passed every source/bundle invariant, and bound only `127.0.0.1:20129`. Candidate gateway/Observer bound only `127.0.0.1:28888-28889/28887`; normalized route configuration matched live except alternate binds, disabled warm probing, and a temporary QA host.
+- Normal GitHub canary returned HTTP 200. Request-detail ID `4be24446-e924-4266-9d05-02561668943d` matched gateway request `8` across `request.start`, `request.selected`, and `request.complete` with status 200.
+- Configured BaseExecutor retry made two separate gateway requests `368` and `370`; both carried correlation ID `0aa26504-4426-4afa-9cf5-8c574e38588b`.
+- Candidate-only account fallback deliberately produced GitHub 401 request `382` with ID `a4d98bd7-f9bb-4d36-93e3-e15a22be5b9b`, then success request `387` with distinct ID `b786f7a4-4372-4839-94fb-3f50ab8a1ab2`. SQLite request details and direct gateway SSE agreed.
+- Final resource gate passed 20/20 concurrent streams plus 40/40 burst requests. Gateway PID stayed `253717`; errors, dropped events, evictions, overflows, and OOM counters stayed zero; 180 cache hits shared one entry, and all leases returned to zero. Observer caught up after its cached snapshot lagged final body closure by about one second.
+- Gateway candidate memory peaked at 925,962,240 bytes. Observer candidate peaked at 409,231,360 bytes; its 512 MiB max had zero max/OOM events, while 384 MiB `MemoryHigh` recorded pressure. Fresh gateway and Observer race suites plus `go vet` pass.
+- Sanitized evidence is retained under `/home/home/.openclaw/gateway/deployments/request-correlation-20260719T093355Z`. Credential-bearing candidate HOME and SQLite backup were deleted; temporary QA tunnel/origin and all alternate listeners were stopped. Live local/short health remains HTTP 200 with unchanged PIDs `2744827`/`2745020`/`51362`/`53239`.
+- Live promotion remains pending. Isolated correlation/load gates pass; promotion still requires zero-active drain, rollback artifacts, and the zero-OOM launch window. Current health remains degraded at one OOM in 24 hours and 12 in seven days, last at `2026-07-18T15:53:45.864522Z`.
 
 ### P24. Request-log credential redaction
 
@@ -1575,7 +1582,7 @@ Verification/status:
 - Focused security matrix passes 3/3. Changed-path ESLint, syntax, and `git diff --check` pass.
 - Independent security review is clean and includes inherited-object, multi-value `Headers`, case, and Worker-import probes.
 - Public PR <https://github.com/decolua/9router/pull/2709>, branch `request-log-redaction`, head `535e272`, is clean and mergeable.
-- Local source commit is `ffedfbf`; verifier commit `0f65bb3` makes P23/P24 loss fail future source and bundle checks. Live remains unmodified.
+- Local source commit is `ffedfbf`; verifier commit `0f65bb3` makes P23/P24 loss fail future source and bundle checks. Standalone candidate bundle passed redaction and file-mode invariants; live remains unmodified.
 
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
