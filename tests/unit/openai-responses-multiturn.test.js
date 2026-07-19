@@ -11,6 +11,28 @@ import { GrokCliExecutor, _resetGrokCliTurnStore } from "../../open-sse/executor
 import { translateRequest } from "../../open-sse/translator/index.js";
 
 describe("openai ↔ responses multi-turn reasoning", () => {
+  it("preserves stream:false for an existing Responses body", () => {
+    const out = openaiToOpenAIResponsesRequest(
+      "grok-4.5",
+      { input: "Reply OK only.", stream: false },
+      false,
+      null
+    );
+
+    expect(out.stream).toBe(false);
+  });
+
+  it("preserves stream:false when translating Chat Completions", () => {
+    const out = openaiToOpenAIResponsesRequest(
+      "grok-4.5",
+      { messages: [{ role: "user", content: "Reply OK only." }] },
+      false,
+      null
+    );
+
+    expect(out.stream).toBe(false);
+  });
+
   it("openai→responses re-emits reasoning item with summary + encrypted_content", () => {
     const body = {
       model: "grok-4.5",

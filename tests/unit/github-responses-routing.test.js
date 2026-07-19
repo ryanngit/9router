@@ -1,7 +1,7 @@
 /**
  * Regression test for #1062:
- * GitHub Copilot's /responses endpoint only serves OpenAI (gpt/codex) models.
- * Gemini/Claude models must never be routed/escalated there, otherwise they
+ * GitHub Copilot's /responses endpoint rejects Gemini/Claude models. They
+ * must never be routed/escalated there, otherwise they
  * fail with a misleading 400 "does not support Responses API".
  */
 
@@ -46,6 +46,7 @@ const { handleResponsesCore } = await import("../../open-sse/handlers/responsesH
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  executeMock.mockReset();
   proxyFetchMock.mockReset();
 });
 
@@ -69,10 +70,10 @@ describe("GithubExecutor.supportsResponsesEndpoint", () => {
     expect(exec.supportsResponsesEndpoint("gpt-4.1")).toBe(true);
   });
 
-  it("defaults unknown models to chat completions", () => {
-    expect(exec.supportsResponsesEndpoint(undefined)).toBe(false);
-    expect(exec.supportsResponsesEndpoint("")).toBe(false);
-    expect(exec.supportsResponsesEndpoint("future-model")).toBe(false);
+  it("preserves Responses support for other Copilot models", () => {
+    expect(exec.supportsResponsesEndpoint("grok-code-fast-1")).toBe(true);
+    expect(exec.supportsResponsesEndpoint("oswe-vscode-prime")).toBe(true);
+    expect(exec.supportsResponsesEndpoint("future-model")).toBe(true);
   });
 });
 
@@ -104,6 +105,53 @@ describe("GithubExecutor.execute cached-route guard (#1062)", () => {
     expect(respSpy).not.toHaveBeenCalled();
     expect(baseSpy).toHaveBeenCalled();
     expect(result.via).toBe("chat");
+  });
+});
+
+describe("GithubExecutor native Responses transport", () => {
+  it("posts Responses input directly to /responses and preserves non-stream JSON", async () => {
+    proxyFetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      id: "resp_github",
+      object: "response",
+      model: "gpt-5.4",
+      status: "completed",
+      output: [{
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "OK" }],
+      }],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    const exec = new GithubExecutor();
+    const result = await exec.execute({
+      model: "gpt-5.4",
+      body: { input: "Reply OK only.", stream: false },
+      stream: false,
+      credentials: {
+        copilotToken: "test-token",
+        runtimeTransport: {
+          format: "openai-responses",
+          baseUrl: "https://api.githubcopilot.com/responses",
+        },
+      },
+      requestId: "019f7fa1-0d8d-7000-8000-000000000001",
+      log: { debug: vi.fn() },
+    });
+
+    expect(proxyFetchMock).toHaveBeenCalledTimes(1);
+    expect(proxyFetchMock.mock.calls[0][0]).toBe("https://api.githubcopilot.com/responses");
+    expect(proxyFetchMock.mock.calls[0][1].headers["x-request-id"])
+      .toBe("019f7fa1-0d8d-7000-8000-000000000001");
+    expect(JSON.parse(proxyFetchMock.mock.calls[0][1].body)).toMatchObject({
+      model: "gpt-5.4",
+      input: "Reply OK only.",
+      stream: false,
+    });
+    expect(await result.response.json()).toMatchObject({
+      object: "response",
+      output: [{ content: [{ text: "OK" }] }],
+    });
   });
 });
 

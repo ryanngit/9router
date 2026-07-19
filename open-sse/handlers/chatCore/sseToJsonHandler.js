@@ -34,6 +34,46 @@ function pickAssistantMessageForChatCompletion(output) {
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
 }
 
+export function responsesJsonToOpenAIResponse(jsonResponse, fallbackModel) {
+  const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse?.output);
+  const functionCalls = (jsonResponse?.output || []).filter((item) => item?.type === "function_call");
+  const toolCalls = functionCalls.map((item, index) => ({
+    id: item.call_id || `call_${item.name || "tool"}_${Date.now()}_${index}`,
+    type: "function",
+    function: {
+      name: item.name || "",
+      arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+    },
+  }));
+  const message = {
+    role: "assistant",
+    content: textContent || (toolCalls.length > 0 ? null : ""),
+  };
+  if (toolCalls.length > 0) message.tool_calls = toolCalls;
+
+  const usage = jsonResponse?.usage || {};
+  const inputTokens = usage.input_tokens || 0;
+  const outputTokens = usage.output_tokens || 0;
+  return {
+    id: jsonResponse?.id || `chatcmpl-${Date.now()}`,
+    object: "chat.completion",
+    created: jsonResponse?.created_at || Math.floor(Date.now() / 1000),
+    model: jsonResponse?.model || fallbackModel || "unknown",
+    choices: [{
+      index: 0,
+      message,
+      finish_reason: toolCalls.length > 0
+        ? "tool_calls"
+        : (jsonResponse?.status === "completed" || jsonResponse?.status === "done" ? "stop" : (jsonResponse?.status || "stop")),
+    }],
+    usage: {
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      total_tokens: usage.total_tokens || inputTokens + outputTokens,
+    },
+  };
+}
+
 /**
  * Parse OpenAI-style SSE text into a single chat completion JSON.
  * Used when provider forces streaming but client wants non-streaming.
@@ -159,18 +199,6 @@ export async function handleForcedSSEToJson({ requestId, providerResponse, sourc
       const outTokens = usage.output_tokens || 0;
       let finalResp;
 
-      // Extract tool calls from Responses API output (function_call items)
-      const funcCallItems = (jsonResponse.output || []).filter(item => item.type === "function_call");
-      const toolCalls = funcCallItems.map((item, idx) => ({
-        id: item.call_id || `call_${item.name}_${Date.now()}_${idx}`,
-        type: "function",
-        function: {
-          name: item.name,
-          arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {})
-        }
-      }));
-      const hasToolCalls = toolCalls.length > 0;
-
       if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
         finalResp = {
           response: {
@@ -181,18 +209,7 @@ export async function handleForcedSSEToJson({ requestId, providerResponse, sourc
           }
         };
       } else {
-        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
-        if (hasToolCalls) message.tool_calls = toolCalls;
-        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
-        finalResp = {
-          id: jsonResponse.id || `chatcmpl-${Date.now()}`,
-          object: "chat.completion",
-          created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
-          model: jsonResponse.model || model,
-          choices: [{ index: 0, message, finish_reason: finishReason }],
-          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens }
-        };
+        finalResp = responsesJsonToOpenAIResponse(jsonResponse, model);
       }
 
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };

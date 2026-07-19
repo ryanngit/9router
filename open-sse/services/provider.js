@@ -141,7 +141,7 @@ export function supportsNativeResponses(provider, model) {
   if (!config?.responsesUrl) return false;
   if (provider !== "github") return true;
 
-  return /^(?:gpt-|o[134](?:-|$))/i.test(model || "");
+  return !/(?:gemini|claude)/i.test(model || "");
 }
 
 // Resolve which transport to use for a provider given the client sourceFormat.

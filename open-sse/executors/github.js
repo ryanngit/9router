@@ -111,8 +111,7 @@ export class GithubExecutor extends BaseExecutor {
     return transformed;
   }
 
-  // GitHub Copilot's /responses endpoint only serves OpenAI (gpt/codex) models.
-  // Gemini and Claude models are not available there and reject with a 400
+  // GitHub Copilot's /responses endpoint rejects Gemini and Claude models with a 400
   // "does not support Responses API" (unsupported_api_for_model). They must
   // therefore never be escalated to /responses, even if /chat/completions
   // returned a "not supported" error for an unrelated reason. Fixes #1062.
@@ -121,7 +120,7 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   async execute(options) {
-    const { model, log } = options;
+    const { model, log, credentials } = options;
 
     // Claude models: route to Copilot's Anthropic-native /v1/messages shim — the only
     // Copilot endpoint that surfaces prompt-cache token counts for Claude. Detected by
@@ -130,6 +129,11 @@ export class GithubExecutor extends BaseExecutor {
     if (this.isClaudeModel(model)) {
       log?.debug("GITHUB", `Using /v1/messages route for ${model}`);
       return this.executeWithMessagesEndpoint(options);
+    }
+
+    if (credentials?.runtimeTransport?.format === FORMATS.OPENAI_RESPONSES && this.supportsResponsesEndpoint(model)) {
+      log?.debug("GITHUB", `Using native /responses transport for ${model}`);
+      return this.executeWithResponsesEndpoint(options, true);
     }
 
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
@@ -164,11 +168,12 @@ export class GithubExecutor extends BaseExecutor {
     return result;
   }
 
-  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null, requestId }) {
+  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null, requestId }, nativePassthrough = false) {
     const url = this.config.responsesUrl;
-    const headers = this.buildHeaders(credentials, stream, requestId);
+    const upstreamStream = nativePassthrough ? stream : true;
+    const headers = this.buildHeaders(credentials, upstreamStream, requestId);
 
-    const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
+    const transformedBody = openaiToOpenAIResponsesRequest(model, body, upstreamStream, credentials);
 
     log?.debug("GITHUB", "Sending translated request to /responses");
 
@@ -180,6 +185,10 @@ export class GithubExecutor extends BaseExecutor {
     }, proxyOptions);
 
     if (!response.ok) {
+      return { response, url, headers, transformedBody };
+    }
+
+    if (nativePassthrough) {
       return { response, url, headers, transformedBody };
     }
 
