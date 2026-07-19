@@ -82,6 +82,7 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   }
 
   if (apiKey) {
+    // ponytail: This is a preflight soft cap; add atomic usage reservations before treating it as a concurrent hard limit.
     const limitStatus = await getApiKeyUsageLimitStatus(apiKey);
     if (limitStatus.exceeded) {
       const used = Math.round(limitStatus.usedTokens);
