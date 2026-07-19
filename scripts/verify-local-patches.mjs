@@ -455,11 +455,15 @@ function checkSource() {
   mustContain("src/shared/components/UsageStats.js", "API Key Clients", "API-key clients usage view");
   mustContain("src/app/api/usage/clients/route.js", "getApiKeyClientActivity", "API-key client activity endpoint");
 
-  mustContain("open-sse/handlers/chatCore.js", "const requestId = globalThis.crypto.randomUUID()", "provider-attempt request ID generation");
-  mustContain("open-sse/handlers/chatCore.js", "proxyOptions, requestId });", "provider request ID dispatch");
+  mustContain("src/sse/handlers/chat.js", "const correlationId = globalThis.crypto.randomUUID()", "request-wide correlation ID generation");
+  mustContain("src/sse/handlers/chat.js", "const attemptId = globalThis.crypto.randomUUID()", "provider-attempt request ID generation");
+  mustContain("open-sse/handlers/chatCore.js", "const requestId = attemptId || globalThis.crypto.randomUUID()", "provider-attempt request ID fallback");
+  mustContain("open-sse/handlers/chatCore.js", "proxyOptions, requestId }))", "provider request ID dispatch");
   mustContain("open-sse/executors/base.js", "headers[\"x-request-id\"] = requestId", "request ID propagation across executor retries");
   mustContain("open-sse/executors/github.js", "this.buildHeaders(credentials, stream, requestId)", "GitHub native transport request ID propagation");
   mustContain("open-sse/handlers/chatCore/requestDetail.js", "id: base.id || undefined", "request-detail ID preservation");
+  mustContain("open-sse/handlers/chatCore/requestDetail.js", "correlationId: base.correlationId || undefined", "request-detail correlation ID preservation");
+  mustContain("open-sse/utils/requestTiming.js", "request_before_dispatch_total_ms", "request phase timing contract");
 
   mustContain("open-sse/utils/requestLogger.js", "SENSITIVE_HEADER_NAMES", "request-log sensitive header allowlist");
   mustContain("open-sse/utils/requestLogger.js", "sensitive ? \"[REDACTED]\" : value", "request-log credential redaction");
