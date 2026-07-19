@@ -908,6 +908,7 @@ Files:
 - `src/lib/db/schema.js`
 - `src/lib/localDb.js`
 - `src/sse/handlers/chat.js`
+- `tests/unit/chat-daily-limit-http.test.js`
 - `tests/unit/db-sqlite-vs-lowdb.test.js`
 
 Required invariants:
@@ -922,11 +923,14 @@ Verification:
 
 - Key with no limit continues normally.
 - Key above its daily token limit returns HTTP 429 before provider selection.
+- Route-level test uses real Bearer-key extraction, proves exhausted keys do not reach model/account selection or `handleChatCore`, and proves an unlimited control does reach selection without network access.
 - Unit test covers SQLite and LowDB paths.
+- Fresh 2026-07-19 verification: HTTP route 2/2, DB parity 22/22, changed-test ESLint, and `git diff --check` passed.
 
 Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2454>
+- Public head `b287342`; two test-only follow-ups add and harden handler-level admission proof. PR is `OPEN`/`CLEAN`.
 
 ### P12. Private best-GPT Sol/max routing and custom Codex catalog
 
@@ -1726,9 +1730,9 @@ Candidate QA:
 Public PR refresh:
 
 - All existing public branches were merged normally onto `v0.5.35`; no force-push was used. Every open PR reports `CLEAN`.
-- Heads: #1570 `bd21faaa`, #1819 `2be8bfd2`, #2343 `1901e4b9`, #2345 `ff1a6b6f`, #2364 `f61f8852`, #2439 `0bd3215c`, #2452 `0a509a2e`, #2453 `302a4ba8`, #2454 `1e8b904f`, #2511 `990ff251`, #2553 `2f5927ca`, #2554 `8c5fc3d7`, and #2647 `41f7a38f`.
+- Heads: #1570 `aa19e8a0`, #1819 `5430052e`, #2343 `38be2f0f`, #2345 `877977a7`, #2364 `9da2ae98`, #2439 `a62a53aa`, #2452 `dfcd956d`, #2453 `bf2da725`, #2454 `b287342f`, #2511 `14b04502`, #2553 `fe6366e7`, #2554 `10a1ba47`, #2647 `7b1f6937`, #2652 `ac0fb073`, #2663 `9504daab`, #2666 `f3e3ac7e`, #2667 `89c9c381`, #2686 `6656f566`, #2709 `535e2727`, and #2710 `1197f435`.
 - Conflict PR comments record retained upstream behavior and focused evidence. #2647 shrank from 19 changed files to 11 because upstream absorbed eight pieces; its focused matrix passed 73/73.
-- New Fable adaptive-thinking PR is <https://github.com/decolua/9router/pull/2652> at `cdfcfc7e`; focused matrix passed 18/18 and GitHub reports `CLEAN`.
+- Fable adaptive-thinking PR <https://github.com/decolua/9router/pull/2652> is rebased at `ac0fb073`; its focused matrix passed 18/18 and GitHub reports `CLEAN`.
 - Pre-update heads remain available as local `backup/v0535-pr-*` refs. Private ledger/runbook/verifier, aliases, pools, credentials, and deployment files were excluded from every public diff.
 
 Deployment status:
