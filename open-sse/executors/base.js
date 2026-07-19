@@ -126,7 +126,7 @@ export class BaseExecutor {
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const transformedBody = this.transformRequest(model, body, stream, credentials);
       const url = this.buildUrl(model, stream, urlIndex, credentials);
-      const headers = this.buildHeaders(credentials, stream, requestId);
+      const headers = this.buildHeaders(credentials, stream);
       if (requestId) {
         for (const key of Object.keys(headers)) {
           if (key.toLowerCase() === "x-request-id") delete headers[key];
