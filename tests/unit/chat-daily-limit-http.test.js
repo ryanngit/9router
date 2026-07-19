@@ -22,6 +22,7 @@ vi.mock("@/sse/services/model.js", () => modelMocks);
 vi.mock("open-sse/handlers/chatCore.js", () => dispatchMocks);
 
 const originalDataDir = process.env.DATA_DIR;
+const originalBestGptEnabled = process.env.NINE_ROUTER_BEST_GPT_ENABLED;
 let tempDir;
 let apiKey;
 let unlimitedApiKey;
@@ -30,6 +31,7 @@ let postChat;
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-chat-limit-"));
   process.env.DATA_DIR = tempDir;
+  process.env.NINE_ROUTER_BEST_GPT_ENABLED = "false";
   vi.resetModules();
 
   const db = await import("@/lib/db/index.js");
@@ -50,6 +52,8 @@ afterAll(() => {
   fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
+  if (originalBestGptEnabled === undefined) delete process.env.NINE_ROUTER_BEST_GPT_ENABLED;
+  else process.env.NINE_ROUTER_BEST_GPT_ENABLED = originalBestGptEnabled;
 });
 
 beforeEach(() => vi.clearAllMocks());
