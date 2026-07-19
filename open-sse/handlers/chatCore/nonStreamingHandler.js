@@ -228,7 +228,10 @@ export async function handleNonStreamingResponse({ requestId, providerResponse, 
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-  if (targetFormat === FORMATS.OPENAI_RESPONSES && (responseBody?.status === "failed" || responseBody?.error)) {
+  const isResponsesBody = targetFormat === FORMATS.OPENAI_RESPONSES ||
+    responseBody?.object === "response" ||
+    Array.isArray(responseBody?.output);
+  if (isResponsesBody && (responseBody?.status === "failed" || responseBody?.error)) {
     const message = typeof responseBody.error === "string"
       ? responseBody.error
       : responseBody.error?.message || "Responses request failed";
@@ -266,14 +269,14 @@ export async function handleNonStreamingResponse({ requestId, providerResponse, 
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   const outputsResponses = sourceFormat === FORMATS.OPENAI_RESPONSES;
-  const translatesResponsesToChat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI;
+  const translatesChatToResponses = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI;
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
   if (translatedResponse?.choices?.[0]) {
     const choice = translatedResponse.choices[0];
     const msg = choice.message;
     const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (!translatesResponsesToChat && hasToolCalls && choice.finish_reason !== "tool_calls") {
+    if (!translatesChatToResponses && hasToolCalls && choice.finish_reason !== "tool_calls") {
       choice.finish_reason = "tool_calls";
     }
   }
@@ -299,7 +302,7 @@ export async function handleNonStreamingResponse({ requestId, providerResponse, 
   // Strip reasoning_content only when content is non-empty.
   // When content is empty (e.g. thinking models that used all tokens for reasoning),
   // reasoning_content is the only useful output and must be preserved.
-  if (!isClaudeMessageResponse && !outputsResponses && !translatesResponsesToChat && translatedResponse?.choices) {
+  if (!isClaudeMessageResponse && !outputsResponses && !translatesChatToResponses && translatedResponse?.choices) {
     for (const choice of translatedResponse.choices) {
       if (choice?.message?.reasoning_content && choice.message.content) {
         delete choice.message.reasoning_content;

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { executeMock } = vi.hoisted(() => ({
+const { executeMock, saveRequestDetailMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
+  saveRequestDetailMock: vi.fn(async () => {}),
 }));
 
 vi.mock("../../open-sse/executors/index.js", () => ({
@@ -24,7 +25,7 @@ vi.mock("../../open-sse/utils/requestLogger.js", () => ({
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
-  saveRequestDetail: vi.fn(async () => {}),
+  saveRequestDetail: saveRequestDetailMock,
   saveRequestUsage: vi.fn(async () => {}),
 }));
 
@@ -39,6 +40,7 @@ const { FORMATS } = await import("../../open-sse/translator/formats.js");
 describe("xAI native Responses routing", () => {
   beforeEach(() => {
     executeMock.mockReset();
+    saveRequestDetailMock.mockClear();
   });
 
   it("preserves native Responses requests and non-stream JSON", async () => {
@@ -95,7 +97,9 @@ describe("xAI native Responses routing", () => {
     expect(json).toEqual(upstreamJson);
   });
 
-  it("returns failed native Responses JSON as an upstream error", async () => {
+  it.each([FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI])(
+    "returns failed native Responses JSON as an upstream error for %s target",
+    async (targetFormat) => {
     const onRequestSuccess = vi.fn();
     const appendLog = vi.fn();
     const result = await handleNonStreamingResponse({
@@ -108,7 +112,7 @@ describe("xAI native Responses routing", () => {
       provider: "xai",
       model: "grok-4.5",
       sourceFormat: FORMATS.OPENAI_RESPONSES,
-      targetFormat: FORMATS.OPENAI_RESPONSES,
+      targetFormat,
       body: { model: "grok-4.5", input: "hi" },
       stream: false,
       requestStartTime: Date.now(),
@@ -124,7 +128,8 @@ describe("xAI native Responses routing", () => {
     expect(result.error).toContain("Selected model is at capacity.");
     expect(onRequestSuccess).not.toHaveBeenCalled();
     expect(appendLog).toHaveBeenCalledWith({ status: "FAILED 502" });
-  });
+    },
+  );
 
   it("returns Chat Completion JSON for a non-stream Responses-only model", async () => {
     const executor = new DefaultExecutor("xai");
@@ -310,6 +315,85 @@ describe("xAI native Responses routing", () => {
     expect(result.success).toBe(false);
     expect(result.status).toBe(502);
     expect(result.error).toContain("Argument not supported: external_web_access");
+  });
+
+  it("fails a forced non-stream conversion that ends before a terminal event", async () => {
+    const upstream = [
+      "event: response.created",
+      `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_partial", status: "in_progress" } })}`,
+      "",
+      "event: response.output_text.delta",
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "partial" })}`,
+      "",
+    ].join("\n");
+    const onRequestSuccess = vi.fn();
+
+    const result = await handleForcedSSEToJson({
+      providerResponse: new Response(upstream, { headers: { "content-type": "text/event-stream" } }),
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "xai",
+      model: "grok-4.5",
+      body: { model: "grok-4.5", input: "hi" },
+      stream: false,
+      requestStartTime: Date.now(),
+      connectionId: "xai-truncated-stream",
+      onRequestSuccess,
+      trackDone: vi.fn(),
+      appendLog: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toContain("closed before a terminal event");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps Responses usage details in forced-conversion request detail", async () => {
+    const upstream = [
+      "event: response.completed",
+      `data: ${JSON.stringify({
+        type: "response.completed",
+        response: {
+          id: "resp_usage",
+          status: "completed",
+          service_tier: "priority",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20,
+            total_tokens: 120,
+            input_tokens_details: { cached_tokens: 80, cache_creation_tokens: 5 },
+            output_tokens_details: { reasoning_tokens: 7 },
+            cost_in_usd_ticks: 123,
+          },
+        },
+      })}`,
+      "",
+    ].join("\n");
+
+    const result = await handleForcedSSEToJson({
+      providerResponse: new Response(upstream, { headers: { "content-type": "text/event-stream" } }),
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "xai",
+      model: "grok-4.5",
+      body: { model: "grok-4.5", input: "hi" },
+      stream: false,
+      requestStartTime: Date.now(),
+      connectionId: "xai-usage-detail",
+      trackDone: vi.fn(),
+      appendLog: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(saveRequestDetailMock).toHaveBeenCalledOnce();
+    expect(saveRequestDetailMock.mock.calls[0][0].tokens).toMatchObject({
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      cached_tokens: 80,
+      cache_creation_input_tokens: 5,
+      reasoning_tokens: 7,
+      service_tier: "priority",
+      cost_in_usd_ticks: 123,
+    });
   });
 });
 

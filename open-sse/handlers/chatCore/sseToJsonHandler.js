@@ -5,7 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { OPENAI_FINISH, RESPONSES_ITEM, ROLE } from "../../translator/schema/index.js";
 import { extractReasoningText } from "../../translator/concerns/reasoning.js";
 import { PROVIDERS } from "../../config/providers.js";
-import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -257,8 +257,12 @@ export async function handleForcedSSEToJson({ requestId, providerResponse, sourc
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
-      if (jsonResponse.status === "failed" || jsonResponse.error) {
-        const message = jsonResponse.error?.message || "Responses stream failed";
+      const hasSuccessfulTerminal = jsonResponse.status === "completed" || jsonResponse.status === "incomplete";
+      if (!hasSuccessfulTerminal || jsonResponse.error) {
+        const message = jsonResponse.error?.message ||
+          (jsonResponse.status === "in_progress"
+            ? "Responses stream closed before a terminal event"
+            : "Responses stream failed");
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, message);
       }
@@ -285,7 +289,10 @@ export async function handleForcedSSEToJson({ requestId, providerResponse, sourc
       saveRequestDetail(buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
-        tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
+        tokens: extractUsageFromResponse(jsonResponse) || {
+          prompt_tokens: usage.input_tokens || 0,
+          completion_tokens: usage.output_tokens || 0,
+        },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
