@@ -328,6 +328,17 @@ function checkSource() {
   mustContain("open-sse/handlers/chatCore/requestDetail.js", "apiKeyClientFingerprint", "API-key client usage attribution");
   mustContain("src/shared/components/UsageStats.js", "API Key Clients", "API-key clients usage view");
   mustContain("src/app/api/usage/clients/route.js", "getApiKeyClientActivity", "API-key client activity endpoint");
+
+  mustContain("open-sse/handlers/chatCore.js", "const requestId = globalThis.crypto.randomUUID()", "provider-attempt request ID generation");
+  mustContain("open-sse/handlers/chatCore.js", "proxyOptions, requestId });", "provider request ID dispatch");
+  mustContain("open-sse/executors/base.js", "headers[\"x-request-id\"] = requestId", "request ID propagation across executor retries");
+  mustContain("open-sse/executors/github.js", "this.buildHeaders(credentials, stream, requestId)", "GitHub native transport request ID propagation");
+  mustContain("open-sse/handlers/chatCore/requestDetail.js", "id: base.id || undefined", "request-detail ID preservation");
+
+  mustContain("open-sse/utils/requestLogger.js", "SENSITIVE_HEADER_NAMES", "request-log sensitive header allowlist");
+  mustContain("open-sse/utils/requestLogger.js", "sensitive ? \"[REDACTED]\" : value", "request-log credential redaction");
+  mustContain("open-sse/utils/requestLogger.js", "mode: 0o700", "request-log private directory mode");
+  mustContain("open-sse/utils/requestLogger.js", "mode: 0o600", "request-log private file mode");
 }
 
 function collectBundleText(bundleRoot) {
@@ -444,6 +455,10 @@ function checkBundle() {
   contains("CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
   contains("apiKeyClients", "API-key client activity storage");
   contains("API Key Clients", "API-key clients usage view");
+  contains("globalThis.crypto.randomUUID()", "provider-attempt request ID generation");
+  contains("x-request-id", "provider request ID propagation");
+  contains("[REDACTED]", "request-log credential redaction");
+  contains("proxy-authorization", "request-log proxy credential classification");
 }
 
 function runSqlite(query) {
