@@ -257,6 +257,7 @@ Upstream status:
 - Open PR: <https://github.com/decolua/9router/pull/2343>
 - Scope in PR: OAuth proxy selection during authorize/exchange/poll/callback, no-proxy env bypass, proxy pool selector readiness, manual auth URL visibility.
 - Reviewed public branch head is `38be2f0`; independent review returned APPROVED after a runtime regression caught and fixed dropped `effectiveProxy` scope. Candidate integration ends at `9faa373` and preserves the private active-pool defaults.
+- Fresh public matrix passes 94/94. Changed-path lint reproduces only upstream's two `page.js` React effect errors and anonymous registry-export warning; no new diagnostic appears. `git diff --check` and Gitleaks pass.
 - Still split/re-cut Codex token URL behavior separately if upstream requests narrower scope.
 
 ### P2. Codex fast tier, long-context guard, and reasoning preservation
@@ -853,7 +854,7 @@ Upstream status:
   - xAI/Grok catalog, bare `grok-*` routing, Responses transport, `grok-4.5`, and reasoning options: <https://github.com/decolua/9router/pull/2439>
   - xAI local quota rows from `usageHistory` and provider cost preservation: <https://github.com/decolua/9router/pull/2453>
 - PR #2439 local branch now ends at reviewed head `a62a53a`; remote update remains pending the final integration/differential gate.
-- Clean PR branch passes 77 focused Vitest cases, six xAI node checks, focused ESLint, and `git diff --check`.
+- Clean PR branch passes 69 focused Vitest cases plus six xAI node checks. Changed-path lint has zero errors and the upstream anonymous registry-export warning; `git diff --check` and Gitleaks pass.
 - Bare `grok-*` routing is generic enough for upstream, but keep it in the catalog/Responses PR so it remains reviewable.
 
 ### P10. Staged CLI bundle builds for live-safe deploy (absorbed upstream)
@@ -1693,7 +1694,7 @@ Required invariants:
 
 Verification/status:
 
-- Public branch `/home/home/.openclaw/workspace-keyra/9router-grok-build-pr` is reviewed APPROVED at `a62a53a`; 77/77 focused Vitest cases, 6/6 xAI node checks, ESLint, and `git diff --check` pass.
+- Public branch `/home/home/.openclaw/workspace-keyra/9router-grok-build-pr` is reviewed APPROVED at `a62a53a`; 69/69 focused Vitest cases, 6/6 xAI node checks, zero new lint diagnostics, `git diff --check`, and Gitleaks pass.
 - Integrated candidate commits are `3bb47d7`, `930f502`, and `6d6d9a7`; focused candidate matrix passes 87/87 Vitest cases plus 6/6 xAI node checks.
 - Regression matrix covers completed plus reset, incomplete plus detailed usage, failed SSE, failed JSON, top-level error, EOF without terminal, and non-stream conversion EOF.
 - Public scope is carried in open PR <https://github.com/decolua/9router/pull/2439>. Remote update remains gated on clean-base differential and private-data scan.
