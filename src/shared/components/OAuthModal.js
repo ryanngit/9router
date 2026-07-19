@@ -26,6 +26,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const proxyStopPromiseRef = useRef(Promise.resolve());
   const poolChangePromiseRef = useRef(Promise.resolve());
   const fixedProxyStateRef = useRef(null);
+  const devicePollFlowRef = useRef(null);
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -46,6 +47,22 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     proxyStopPromiseRef.current = pending;
     return pending;
   }, [authData?.state, provider]);
+
+  const cancelDevicePoll = useCallback(() => {
+    const flowId = devicePollFlowRef.current;
+    if (!flowId) return Promise.resolve();
+    return fetch(`/api/oauth/${provider}/cancel-poll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ flowId }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to cancel device authorization");
+      }
+      if (devicePollFlowRef.current === flowId) devicePollFlowRef.current = null;
+    });
+  }, [provider]);
 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
@@ -109,7 +126,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   }, [authData, onSuccess, selectedProxyPoolId]);
 
   // Poll for device code token
-  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs, proxyPoolId, generation) => {
+  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs, proxyPoolId, generation, flowId) => {
     if (generation !== flowGenerationRef.current) return;
     setPolling(true);
     // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
@@ -129,13 +146,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData, proxyPoolId }),
+          body: JSON.stringify({ deviceCode, codeVerifier, extraData, proxyPoolId, flowId }),
         });
 
         const data = await res.json();
         if (generation !== flowGenerationRef.current) return;
 
         if (data.success) {
+          if (devicePollFlowRef.current === flowId) devicePollFlowRef.current = null;
           setStep("success");
           setPolling(false);
           onSuccess?.();
@@ -151,6 +169,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
       } catch (err) {
         if (generation !== flowGenerationRef.current) return;
+        if (devicePollFlowRef.current === flowId) devicePollFlowRef.current = null;
         setError(err.message);
         setStep("error");
         setPolling(false);
@@ -159,6 +178,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
 
     if (generation !== flowGenerationRef.current) return;
+    if (devicePollFlowRef.current === flowId) devicePollFlowRef.current = null;
     setError("Authorization timeout");
     setStep("error");
     setPolling(false);
@@ -228,6 +248,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _qoderVerifier: data.codeVerifier,
             }
           : null;
+        const flowId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        devicePollFlowRef.current = flowId;
         startPolling(
           data.device_code,
           data.codeVerifier,
@@ -240,6 +262,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             : undefined,
           proxyPoolId,
           generation,
+          flowId,
         );
         return;
       }
@@ -385,9 +408,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Abort polling and cleanup proxy when modal closes
       flowGenerationRef.current += 1;
       openedRef.current = false;
+      cancelDevicePoll().catch(() => {});
       stopFixedProxy();
     }
-  }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady, stopFixedProxy]);
+  }, [isOpen, provider, startOAuthFlow, proxyPools, proxyPoolsReady, cancelDevicePoll, stopFixedProxy]);
 
   const handleProxyPoolChange = (event) => {
     const proxyPoolId = event.target.value;
@@ -398,14 +422,22 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     const transition = poolChangePromiseRef.current
       .catch(() => {})
       .then(async () => {
-        await stopFixedProxy();
-        if (generation !== flowGenerationRef.current) return;
-        setAuthData(null);
-        setCallbackUrl("");
-        setError(null);
-        setIsDeviceCode(false);
-        setDeviceData(null);
-        await startOAuthFlow(proxyPoolId, generation);
+        try {
+          await cancelDevicePoll();
+          await stopFixedProxy();
+          if (generation !== flowGenerationRef.current) return;
+          setAuthData(null);
+          setCallbackUrl("");
+          setError(null);
+          setIsDeviceCode(false);
+          setDeviceData(null);
+          await startOAuthFlow(proxyPoolId, generation);
+        } catch (err) {
+          if (generation !== flowGenerationRef.current) return;
+          setPolling(false);
+          setError(err.message);
+          setStep("error");
+        }
       });
     poolChangePromiseRef.current = transition;
     return transition;
@@ -465,6 +497,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (callbackProcessedRef.current) return; // Already processed
 
       const { code, token, state, error: callbackError, errorDescription } = data;
+
+      const stateRequired = !["cline", "clinepass", "kimchi"].includes(provider);
+      if (stateRequired && (!state || state !== authData.state)) {
+        callbackProcessedRef.current = true;
+        setError("OAuth state mismatch; restart sign-in");
+        setStep("error");
+        return;
+      }
 
       if (callbackError) {
         callbackProcessedRef.current = true;
@@ -534,7 +574,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       window.removeEventListener("storage", handleStorage);
       if (channel) channel.close();
     };
-  }, [authData, exchangeTokens]);
+  }, [authData, exchangeTokens, provider]);
 
   // Handle manual URL input
   const handleManualSubmit = async () => {
@@ -565,6 +605,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
 
+      const stateRequired = !["cline", "clinepass", "kimchi"].includes(provider);
+      if (stateRequired && (!state || state !== authData?.state)) {
+        throw new Error("OAuth state mismatch; restart sign-in");
+      }
+
       if (errorParam) {
         throw new Error(url.searchParams.get("error_description") || errorParam);
       }
@@ -589,9 +634,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
     flowGenerationRef.current += 1;
+    cancelDevicePoll().catch(() => {});
     stopFixedProxy();
     onClose();
-  }, [onClose, stopFixedProxy]);
+  }, [cancelDevicePoll, onClose, stopFixedProxy]);
 
   if (!provider || !providerInfo) return null;
   const isXaiProvider = provider === "xai";

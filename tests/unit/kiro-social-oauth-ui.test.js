@@ -91,4 +91,10 @@ describe("Kiro social OAuth proxy UI wiring", () => {
     const authorizeUrl = new URL(globalThis.fetch.mock.calls[0][0]);
     expect(authorizeUrl.searchParams.get("proxyPoolId")).toBe("active");
   });
+
+  it("rejects missing or mismatched callback state before exchange", () => {
+    expect(modalSource).toContain("!state || state !== authData.state");
+    expect(modalSource.indexOf("!state || state !== authData.state"))
+      .toBeLessThan(modalSource.indexOf('fetch("/api/oauth/kiro/social-exchange"'));
+  });
 });

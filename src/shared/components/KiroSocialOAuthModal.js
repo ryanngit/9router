@@ -108,6 +108,10 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
 
+      if (!state || state !== authData.state) {
+        throw new Error("OAuth state mismatch; restart sign-in");
+      }
+
       if (errorParam) {
         throw new Error(url.searchParams.get("error_description") || errorParam);
       }
@@ -123,6 +127,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         body: JSON.stringify({
           code,
           codeVerifier: authData.codeVerifier,
+          state,
           provider,
           proxyPoolId: selectedProxyPoolId,
         }),
