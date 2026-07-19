@@ -369,6 +369,38 @@ function computeFinishReason(state) {
     : OPENAI_FINISH.STOP;
 }
 
+function incompleteFinishReason(reason) {
+  if (reason === "max_output_tokens") return OPENAI_FINISH.LENGTH;
+  if (reason === "content_filter") return OPENAI_FINISH.CONTENT_FILTER;
+  return OPENAI_FINISH.STOP;
+}
+
+function captureResponsesUsage(state, response) {
+  const responseUsage = response?.usage;
+  if (!responseUsage || typeof responseUsage !== "object") return;
+  const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
+  const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
+  const cacheReadTokens = responseUsage.input_tokens_details?.cached_tokens || responseUsage.cache_read_input_tokens || 0;
+  const cacheWriteTokens = responseUsage.input_tokens_details?.cache_write_tokens ??
+    responseUsage.input_tokens_details?.cache_creation_tokens ??
+    responseUsage.cache_creation_input_tokens ??
+    0;
+
+  state.usage = buildUsage({
+    promptTokens: inputTokens,
+    completionTokens: outputTokens,
+    totalTokens: responseUsage.total_tokens || inputTokens + outputTokens,
+    cachedTokens: cacheReadTokens,
+    cacheCreationTokens: cacheWriteTokens,
+    reasoningTokens: responseUsage.output_tokens_details?.reasoning_tokens || 0,
+  });
+  const serviceTier = response.service_tier || responseUsage.service_tier;
+  if (serviceTier) state.usage.service_tier = serviceTier;
+  for (const field of ["cost_usd", "cost_in_usd", "cost_in_usd_ticks"]) {
+    if (responseUsage[field] !== undefined) state.usage[field] = responseUsage[field];
+  }
+}
+
 /**
  * Translate OpenAI Responses API chunk to OpenAI Chat Completions format
  * This is for when Codex returns data and we need to send it to an OpenAI-compatible client
@@ -460,36 +492,27 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
+  // Response incomplete is a valid terminal state, not a transport failure.
+  if (eventType === "response.incomplete") {
+    const response = data.response || data;
+    captureResponsesUsage(state, response);
+    if (state.finishReasonSent) return null;
+
+    const finishReason = incompleteFinishReason(response.incomplete_details?.reason);
+    state.finishReasonSent = true;
+    state.finishReason = finishReason;
+    const finalChunk = buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      {},
+      finishReason
+    );
+    if (state.usage) finalChunk.usage = state.usage;
+    return finalChunk;
+  }
+
   // Response completed
   if (eventType === "response.completed" || eventType === "response.done") {
-    // Extract usage from response.completed event
-    const responseUsage = data.response?.usage;
-    if (responseUsage && typeof responseUsage === "object") {
-      const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
-      const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
-      // OpenAI Responses API: input_tokens already includes cached_tokens
-      // Cache info is in input_tokens_details.cached_tokens
-      const cacheReadTokens = responseUsage.input_tokens_details?.cached_tokens || responseUsage.cache_read_input_tokens || 0;
-      const cacheWriteTokens = responseUsage.input_tokens_details?.cache_write_tokens ??
-        responseUsage.input_tokens_details?.cache_creation_tokens ??
-        responseUsage.cache_creation_input_tokens ??
-        0;
-      const reasoningTokens = responseUsage.output_tokens_details?.reasoning_tokens || 0;
-
-      state.usage = buildUsage({
-        promptTokens: inputTokens,
-        completionTokens: outputTokens,
-        totalTokens: responseUsage.total_tokens || inputTokens + outputTokens,
-        cachedTokens: cacheReadTokens,
-        cacheCreationTokens: cacheWriteTokens,
-        reasoningTokens,
-      });
-      const serviceTier = data.response?.service_tier || responseUsage.service_tier;
-      if (serviceTier) state.usage.service_tier = serviceTier;
-      for (const field of ["cost_usd", "cost_in_usd", "cost_in_usd_ticks"]) {
-        if (responseUsage[field] !== undefined) state.usage[field] = responseUsage[field];
-      }
-    }
+    captureResponsesUsage(state, data.response);
     
     if (!state.finishReasonSent) {
       const finishReason = computeFinishReason(state);

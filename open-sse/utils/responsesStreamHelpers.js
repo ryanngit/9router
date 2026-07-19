@@ -6,6 +6,7 @@ import { formatSSE } from "./streamHelpers.js";
 const OPENAI_RESPONSES_TERMINAL_EVENTS = new Set([
   "response.completed",
   "response.done",
+  "response.incomplete",
   "response.failed",
   "error"
 ]);
@@ -20,17 +21,16 @@ export function isOpenAIResponsesTerminalEvent(eventName, chunk) {
   const type = getOpenAIResponsesEventName(eventName, chunk);
   if (OPENAI_RESPONSES_TERMINAL_EVENTS.has(type)) return true;
   const status = chunk?.response?.status;
-  return status === "completed" || status === "failed";
+  return status === "completed" || status === "incomplete" || status === "failed";
 }
 
 const sharedEncoder = new TextEncoder();
 
 // Encoded response.failed + [DONE] payload for aborted/stalled Responses passthrough streams
-export function buildAbortedResponsesTerminalBytes({ model } = {}) {
-  return buildResponsesFailureTerminalBytes(
-    "stream closed before response.completed",
-    { code: "stream_disconnected", model },
-  );
+export function buildAbortedResponsesTerminalBytes({ terminalSeen = false, doneSeen = false, model } = {}) {
+  if (doneSeen) return null;
+  const failed = terminalSeen ? "" : formatIncompleteOpenAIResponsesStreamFailure({ model });
+  return sharedEncoder.encode(`${failed}data: [DONE]\n\n`);
 }
 
 export function buildResponsesFailureTerminalBytes(message, options = {}) {

@@ -12,6 +12,7 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 // Responses API enforces max 64 chars on call_id (#393)
 const MAX_CALL_ID_LEN = 64;
 const clampCallId = (id) => (typeof id === "string" && id.length > MAX_CALL_ID_LEN ? id.substring(0, MAX_CALL_ID_LEN) : id);
+const RESPONSES_TOOL_CHOICE_STRINGS = new Set(["auto", "none", "required"]);
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -215,6 +216,18 @@ function normalizeToolParameters(params) {
   return params;
 }
 
+function normalizeResponsesToolChoice(choice, tools) {
+  if (typeof choice === "string") return RESPONSES_TOOL_CHOICE_STRINGS.has(choice) ? choice : undefined;
+  if (!choice || typeof choice !== "object" || Array.isArray(choice)) return undefined;
+  const type = choice.type;
+  if (type === OPENAI_BLOCK.FUNCTION) {
+    const name = choice.name || choice.function?.name;
+    const valid = typeof name === "string" && tools?.some((tool) => tool.type === OPENAI_BLOCK.FUNCTION && tool.name === name);
+    return valid ? { type: OPENAI_BLOCK.FUNCTION, name } : undefined;
+  }
+  return tools?.some((tool) => tool.type === type) ? choice : undefined;
+}
+
 /**
  * Build a Responses `reasoning` input item from Chat Completions assistant fields.
  * Preserves encrypted blobs needed by store=false multi-turn (Grok CLI / Codex).
@@ -370,6 +383,10 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       return tool;
     });
   }
+
+  const toolChoice = normalizeResponsesToolChoice(body.tool_choice, result.tools);
+  if (toolChoice !== undefined) result.tool_choice = toolChoice;
+  if (typeof body.parallel_tool_calls === "boolean") result.parallel_tool_calls = body.parallel_tool_calls;
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;

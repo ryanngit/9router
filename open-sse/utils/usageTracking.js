@@ -263,8 +263,8 @@ export function extractUsage(chunk) {
     });
   }
 
-  // OpenAI Responses API format (response.completed or response.done)
-  if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage && typeof chunk.response.usage === "object") {
+  // OpenAI Responses API terminal events
+  if ((chunk.type === "response.completed" || chunk.type === "response.done" || chunk.type === "response.incomplete") && chunk.response?.usage && typeof chunk.response.usage === "object") {
     const usage = chunk.response.usage;
     const cachedTokens = usage.input_tokens_details?.cached_tokens;
     const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens ??

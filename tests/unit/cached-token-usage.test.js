@@ -37,6 +37,19 @@ describe("canonicalizeUsage", () => {
     expect(out.cache_creation_input_tokens).toBe(0);
   });
 
+  it("reads cache and reasoning details from raw Responses usage", () => {
+    const out = canonicalizeUsage({
+      input_tokens: 100,
+      output_tokens: 20,
+      input_tokens_details: { cached_tokens: 80 },
+      output_tokens_details: { reasoning_tokens: 7 },
+    });
+    expect(out.prompt_tokens).toBe(100);
+    expect(out.completion_tokens).toBe(20);
+    expect(out.cached_tokens).toBe(80);
+    expect(out.reasoning_tokens).toBe(7);
+  });
+
   it("passes through Gemini inclusive prompt (cachedContent already counted)", () => {
     const out = canonicalizeUsage({
       prompt_tokens: 500,

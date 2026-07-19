@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { createDisconnectAwareStream } from "../../open-sse/utils/streamHandler.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
+import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
+import { createDisconnectAwareStream, pipeWithDisconnect } from "../../open-sse/utils/streamHandler.js";
 import { buildAbortedResponsesTerminalBytes } from "../../open-sse/utils/responsesStreamHelpers.js";
 
 // Minimal stream controller stub
@@ -68,5 +70,71 @@ describe("Responses abort terminal synthesis", () => {
     const text = await readAll(out);
     expect(text).not.toContain("response.failed");
     expect(text).not.toContain("[DONE]");
+  });
+
+  it("does not emit response.failed after a valid terminal event", async () => {
+    let sentTerminal = false;
+    const upstream = new ReadableStream({
+      pull(controller) {
+        if (!sentTerminal) {
+          sentTerminal = true;
+          controller.enqueue(new TextEncoder().encode(
+            'event: response.completed\ndata: {"type":"response.completed"}\n\n'
+          ));
+          return;
+        }
+        controller.error(new Error("ECONNRESET"));
+      },
+    });
+    const transform = {
+      readable: upstream,
+      writable: { getWriter: () => ({ abort: () => Promise.resolve() }) },
+      getOpenAIResponsesTerminationState: () => ({ terminalSeen: true, doneSeen: false }),
+    };
+
+    const out = createDisconnectAwareStream(
+      transform,
+      makeController(),
+      buildAbortedResponsesTerminalBytes
+    );
+
+    const text = await readAll(out);
+    expect(text).toContain("event: response.completed");
+    expect(text).not.toContain("event: response.failed");
+    expect(text.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("preserves terminal state through the production pipe wrapper", async () => {
+    let sentTerminal = false;
+    const upstream = new ReadableStream({
+      pull(controller) {
+        if (!sentTerminal) {
+          sentTerminal = true;
+          controller.enqueue(new TextEncoder().encode(
+            'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n'
+          ));
+          return;
+        }
+        controller.error(new Error("ECONNRESET"));
+      },
+    });
+    const transform = createSSETransformStreamWithLogger(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      "xai",
+    );
+
+    const out = pipeWithDisconnect(
+      new Response(upstream, { headers: { "content-type": "text/event-stream" } }),
+      transform,
+      makeController(),
+      buildAbortedResponsesTerminalBytes,
+      60_000,
+    );
+    const text = await readAll(out);
+
+    expect(text).toContain("event: response.completed");
+    expect(text).not.toContain("event: response.failed");
+    expect(text.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
 });

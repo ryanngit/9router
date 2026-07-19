@@ -36,8 +36,16 @@ function processSSEMessage(msg, state) {
         state.usage = { ...state.usage, ...parsed.response.usage };
       }
     }
+  } else if (eventType === "response.incomplete") {
+    state.status = "incomplete";
+    state.incompleteDetails = parsed.response?.incomplete_details || parsed.incomplete_details || null;
+    if (parsed.response?.usage) state.usage = { ...state.usage, ...parsed.response.usage };
   } else if (eventType === "response.failed") {
     state.status = "failed";
+    state.error = parsed.response?.error || parsed.error || null;
+  } else if (eventType === "error") {
+    state.status = "failed";
+    state.error = parsed.error || parsed.response?.error || parsed;
   }
 }
 
@@ -64,7 +72,9 @@ export async function convertResponsesStreamToJson(stream) {
     usage: { ...EMPTY_RESPONSE },
     model: null,
     serviceTier: null,
-    items: new Map()
+    items: new Map(),
+    error: null,
+    incompleteDetails: null,
   };
 
   try {
@@ -96,7 +106,7 @@ export async function convertResponsesStreamToJson(stream) {
     output.push(state.items.get(i) || { type: "message", content: [], role: "assistant" });
   }
 
-  return {
+  const response = {
     id: state.responseId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     object: "response",
     created_at: state.created,
@@ -106,4 +116,7 @@ export async function convertResponsesStreamToJson(stream) {
     output,
     usage: state.usage
   };
+  if (state.error) response.error = state.error;
+  if (state.incompleteDetails) response.incomplete_details = state.incompleteDetails;
+  return response;
 }

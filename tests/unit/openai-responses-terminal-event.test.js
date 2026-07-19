@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
 
-async function runTransform(input) {
+async function runTransform(input, sourceFormat = FORMATS.OPENAI_RESPONSES, onStreamComplete = null) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
@@ -15,11 +15,14 @@ async function runTransform(input) {
   const output = stream.pipeThrough(
     createSSETransformStreamWithLogger(
       FORMATS.OPENAI_RESPONSES,
-      FORMATS.OPENAI_RESPONSES,
+      sourceFormat,
       "codex",
       null,
       null,
       "gpt-5.5",
+      null,
+      null,
+      onStreamComplete,
     ),
   );
 
@@ -78,6 +81,74 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("event: response.failed");
     expect(output).not.toContain("data: null");
     expect(output).toContain("data: [DONE]");
+  });
+
+  it("treats response.incomplete as a valid terminal event", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({
+        type: "response.incomplete",
+        response: {
+          id: "resp_test",
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+        },
+      })}`,
+      "",
+    ].join("\n"));
+
+    expect(output).toContain("event: response.incomplete");
+    expect(output).not.toContain("event: response.failed");
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("tracks usage from a same-wire response.incomplete terminal", async () => {
+    const onStreamComplete = vi.fn();
+    const usage = {
+      input_tokens: 120,
+      output_tokens: 30,
+      input_tokens_details: { cached_tokens: 80 },
+      output_tokens_details: { reasoning_tokens: 7 },
+    };
+
+    await runTransform([
+      "event: response.incomplete",
+      `data: ${JSON.stringify({
+        type: "response.incomplete",
+        response: {
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+          usage,
+        },
+      })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI_RESPONSES, onStreamComplete);
+
+    expect(onStreamComplete).toHaveBeenCalledOnce();
+    expect(onStreamComplete.mock.calls[0][1]).toMatchObject({
+      prompt_tokens: 120,
+      completion_tokens: 30,
+      cached_tokens: 80,
+      reasoning_tokens: 7,
+      prompt_tokens_details: { cached_tokens: 80 },
+    });
+  });
+
+  it("maps response.incomplete to a Chat length finish reason", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({
+        type: "response.incomplete",
+        response: {
+          id: "resp_test",
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+        },
+      })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI);
+
+    expect(output).toContain('"finish_reason":"length"');
   });
 
   it("emits response.failed before DONE when a Responses stream sends DONE without a terminal event", async () => {

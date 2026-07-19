@@ -2,6 +2,8 @@ import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConv
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
+import { OPENAI_FINISH, RESPONSES_ITEM, ROLE } from "../../translator/schema/index.js";
+import { extractReasoningText } from "../../translator/concerns/reasoning.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 
@@ -34,6 +36,27 @@ function pickAssistantMessageForChatCompletion(output) {
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
 }
 
+function reasoningFromResponsesOutput(output) {
+  const items = Array.isArray(output) ? output.filter((item) => item?.type === RESPONSES_ITEM.REASONING) : [];
+  const text = items.flatMap((item) => [...(item.summary || []), ...(item.content || [])])
+    .map((part) => part?.text)
+    .filter((part) => typeof part === "string" && part.length > 0)
+    .join("\n");
+  const encrypted = items.findLast((item) => typeof item.encrypted_content === "string" && item.encrypted_content)?.encrypted_content;
+  return { text, encrypted };
+}
+
+function finishReasonFromResponses(jsonResponse, hasToolCalls) {
+  if (jsonResponse?.status === "incomplete") {
+    switch (jsonResponse?.incomplete_details?.reason) {
+      case "max_output_tokens": return OPENAI_FINISH.LENGTH;
+      case "content_filter": return OPENAI_FINISH.CONTENT_FILTER;
+      default: return OPENAI_FINISH.STOP;
+    }
+  }
+  return hasToolCalls ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP;
+}
+
 export function responsesJsonToOpenAIResponse(jsonResponse, fallbackModel) {
   const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse?.output);
   const functionCalls = (jsonResponse?.output || []).filter((item) => item?.type === "function_call");
@@ -46,15 +69,18 @@ export function responsesJsonToOpenAIResponse(jsonResponse, fallbackModel) {
     },
   }));
   const message = {
-    role: "assistant",
+    role: ROLE.ASSISTANT,
     content: textContent || (toolCalls.length > 0 ? null : ""),
   };
   if (toolCalls.length > 0) message.tool_calls = toolCalls;
+  const reasoning = reasoningFromResponsesOutput(jsonResponse?.output);
+  if (reasoning.text) message.reasoning_content = reasoning.text;
+  if (reasoning.encrypted) message.encrypted_content = reasoning.encrypted;
 
   const usage = jsonResponse?.usage || {};
   const inputTokens = usage.input_tokens || 0;
   const outputTokens = usage.output_tokens || 0;
-  return {
+  const response = {
     id: jsonResponse?.id || `chatcmpl-${Date.now()}`,
     object: "chat.completion",
     created: jsonResponse?.created_at || Math.floor(Date.now() / 1000),
@@ -62,9 +88,7 @@ export function responsesJsonToOpenAIResponse(jsonResponse, fallbackModel) {
     choices: [{
       index: 0,
       message,
-      finish_reason: toolCalls.length > 0
-        ? "tool_calls"
-        : (jsonResponse?.status === "completed" || jsonResponse?.status === "done" ? "stop" : (jsonResponse?.status || "stop")),
+      finish_reason: finishReasonFromResponses(jsonResponse, toolCalls.length > 0),
     }],
     usage: {
       prompt_tokens: inputTokens,
@@ -72,6 +96,78 @@ export function responsesJsonToOpenAIResponse(jsonResponse, fallbackModel) {
       total_tokens: usage.total_tokens || inputTokens + outputTokens,
     },
   };
+  if (usage.input_tokens_details) response.usage.prompt_tokens_details = usage.input_tokens_details;
+  if (usage.output_tokens_details) response.usage.completion_tokens_details = usage.output_tokens_details;
+  return response;
+}
+
+export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel) {
+  const choice = jsonResponse?.choices?.[0] || {};
+  const message = choice.message || {};
+  const responseId = String(jsonResponse?.id || `resp_${Date.now()}`);
+  const output = [];
+  const reasoningText = message.provider_specific_fields?.reasoning_content || extractReasoningText(message);
+  const encryptedContent = message.encrypted_content || message.reasoning_encrypted_content || message.reasoning?.encrypted_content;
+
+  if (reasoningText || encryptedContent) {
+    const reasoning = { id: `rs_${responseId}`, type: RESPONSES_ITEM.REASONING, summary: [] };
+    if (reasoningText) reasoning.summary.push({ type: RESPONSES_ITEM.SUMMARY_TEXT, text: reasoningText });
+    if (encryptedContent) reasoning.encrypted_content = encryptedContent;
+    output.push(reasoning);
+  }
+
+  const toolCalls = Array.isArray(message.tool_calls)
+    ? message.tool_calls.filter((toolCall) => toolCall?.function?.name)
+    : [];
+  const textContent = typeof message.content === "string"
+    ? message.content
+    : Array.isArray(message.content)
+      ? message.content.map((part) => part?.text || "").join("")
+      : "";
+  if (textContent || toolCalls.length === 0) {
+    output.push({
+      id: `msg_${responseId}`,
+      type: RESPONSES_ITEM.MESSAGE,
+      role: ROLE.ASSISTANT,
+      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, text: textContent, annotations: [] }],
+    });
+  }
+  for (const toolCall of toolCalls) {
+    output.push({
+      id: `fc_${toolCall.id || toolCall.function.name}`,
+      type: RESPONSES_ITEM.FUNCTION_CALL,
+      call_id: toolCall.id || `call_${toolCall.function.name}`,
+      name: toolCall.function.name,
+      arguments: typeof toolCall.function.arguments === "string"
+        ? toolCall.function.arguments
+        : JSON.stringify(toolCall.function.arguments || {}),
+    });
+  }
+
+  const finishReason = choice.finish_reason;
+  const incompleteReason = finishReason === OPENAI_FINISH.LENGTH
+    ? "max_output_tokens"
+    : finishReason === OPENAI_FINISH.CONTENT_FILTER ? "content_filter" : null;
+  const usage = jsonResponse?.usage || {};
+  const inputTokens = usage.prompt_tokens ?? usage.input_tokens ?? 0;
+  const outputTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
+  const response = {
+    id: responseId.startsWith("resp_") ? responseId : `resp_${responseId}`,
+    object: "response",
+    created_at: jsonResponse?.created || Math.floor(Date.now() / 1000),
+    status: incompleteReason ? "incomplete" : "completed",
+    model: jsonResponse?.model || fallbackModel || "unknown",
+    output,
+    usage: {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: usage.total_tokens ?? inputTokens + outputTokens,
+    },
+  };
+  if (usage.prompt_tokens_details) response.usage.input_tokens_details = usage.prompt_tokens_details;
+  if (usage.completion_tokens_details) response.usage.output_tokens_details = usage.completion_tokens_details;
+  if (incompleteReason) response.incomplete_details = { reason: incompleteReason };
+  return response;
 }
 
 /**
@@ -161,6 +257,11 @@ export async function handleForcedSSEToJson({ requestId, providerResponse, sourc
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      if (jsonResponse.status === "failed" || jsonResponse.error) {
+        const message = jsonResponse.error?.message || "Responses stream failed";
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, message);
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};

@@ -30,7 +30,7 @@ test("xAI Responses tool normalization converts unsupported Codex tools", () => 
   ]);
 });
 
-test("xAI Responses tool normalization removes tool choice without usable tools", () => {
+test("xAI Responses tool normalization validates choices against usable tools", () => {
   assert.deepEqual(
     normalizeXaiResponsesTools({ input: "hi", tool_choice: "auto" }),
     { input: "hi" },
@@ -46,9 +46,37 @@ test("xAI Responses tool normalization removes tool choice without usable tools"
     }).tool_choice,
     "auto",
   );
+  assert.deepEqual(
+    normalizeXaiResponsesTools({
+      tools: [{ type: "custom", name: "apply_patch" }],
+      tool_choice: { type: "custom", name: "apply_patch" },
+    }).tool_choice,
+    { type: "function", name: "apply_patch" },
+  );
+  assert.equal(
+    normalizeXaiResponsesTools({
+      tools: [{ type: "local_shell" }, { type: "web_search" }],
+      tool_choice: { type: "local_shell" },
+    }).tool_choice,
+    undefined,
+  );
+  assert.deepEqual(
+    normalizeXaiResponsesTools({
+      tools: [{ type: "function", name: "shell_command", parameters: { type: "object", properties: {} } }],
+      tool_choice: { type: "function", name: "shell_command" },
+    }).tool_choice,
+    { type: "function", name: "shell_command" },
+  );
+  assert.equal(
+    normalizeXaiResponsesTools({
+      tools: [{ type: "function", name: "shell_command", parameters: { type: "object", properties: {} } }],
+      tool_choice: "none",
+    }).tool_choice,
+    "none",
+  );
 });
 
-test("xAI Responses payload normalization strips unsupported reasoning blobs", () => {
+test("xAI Responses payload normalization strips only unsupported reasoning blobs", () => {
   const body = normalizeXaiResponsesPayload({
     include: ["reasoning.encrypted_content"],
     input: [
@@ -64,6 +92,24 @@ test("xAI Responses payload normalization strips unsupported reasoning blobs", (
         content: [{ type: "input_text", text: "hi", encrypted_content: "nested" }],
       },
     ],
+    tools: [{
+      type: "function",
+      name: "save_record",
+      parameters: {
+        type: "object",
+        properties: { encrypted_content: { type: "string" } },
+      },
+    }],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "record",
+        schema: {
+          type: "object",
+          properties: { encrypted_content: { type: "string" } },
+        },
+      },
+    },
   });
 
   assert.deepEqual(body, {
@@ -74,6 +120,55 @@ test("xAI Responses payload normalization strips unsupported reasoning blobs", (
         content: [{ type: "input_text", text: "hi" }],
       },
     ],
+    tools: [{
+      type: "function",
+      name: "save_record",
+      parameters: {
+        type: "object",
+        properties: { encrypted_content: { type: "string" } },
+      },
+    }],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "record",
+        schema: {
+          type: "object",
+          properties: { encrypted_content: { type: "string" } },
+        },
+      },
+    },
+  });
+});
+
+test("xAI executor preserves encrypted reasoning on Chat Completions transport", () => {
+  const executor = new DefaultExecutor("xai");
+  const body = executor.transformRequest(
+    "grok-4.5",
+    {
+      model: "grok-4.5",
+      include: ["reasoning.encrypted_content"],
+      messages: [
+        {
+          role: "assistant",
+          content: "answer",
+          encrypted_content: "chat-ciphertext",
+          reasoning: "chat reasoning",
+          reasoning_content: "chat reasoning",
+        },
+      ],
+    },
+    false,
+    { runtimeTransport: { format: "openai" } },
+  );
+
+  assert.deepEqual(body.include, ["reasoning.encrypted_content"]);
+  assert.deepEqual(body.messages[0], {
+    role: "assistant",
+    content: "answer",
+    encrypted_content: "chat-ciphertext",
+    reasoning: "chat reasoning",
+    reasoning_content: "chat reasoning",
   });
 });
 

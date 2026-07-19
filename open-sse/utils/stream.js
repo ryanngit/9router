@@ -73,7 +73,7 @@ export function createSSEStream(options = {}) {
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
 
-  return new TransformStream({
+  const transformStream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -462,6 +462,12 @@ export function createSSEStream(options = {}) {
       }
     }
   });
+
+  transformStream.getOpenAIResponsesTerminationState = () => ({
+    terminalSeen: openAIResponsesTerminalSeen,
+    doneSeen: openAIResponsesDoneSent || streamDoneSent,
+  });
+  return transformStream;
 }
 
 export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {

@@ -87,6 +87,7 @@ const XAI_RESPONSES_TOOL_TYPES = new Set([
   "mcp",
   "shell",
 ]);
+const XAI_RESPONSES_TOOL_CHOICE_STRINGS = new Set(["auto", "none", "required"]);
 
 const XAI_FREEFORM_TOOL_PARAMETERS = {
   type: "object",
@@ -134,9 +135,22 @@ function normalizeXaiResponsesTool(tool) {
   return normalizeXaiHostedTool(tool);
 }
 
+function normalizeXaiResponsesToolChoice(choice, tools) {
+  if (typeof choice === "string") return XAI_RESPONSES_TOOL_CHOICE_STRINGS.has(choice) ? choice : undefined;
+  if (!choice || typeof choice !== "object" || Array.isArray(choice)) return undefined;
+  const type = typeof choice.type === "string" ? choice.type : "";
+  if (type === "function" || type === "custom") {
+    const name = getToolName(choice);
+    const valid = name && tools.some((tool) => tool.type === "function" && tool.name === name);
+    if (!valid) return undefined;
+    return type === "function" && choice.name === name ? choice : { type: "function", name };
+  }
+  return tools.some((tool) => tool.type === type) ? choice : undefined;
+}
+
 export function normalizeXaiResponsesTools(body) {
   if (!Array.isArray(body?.tools)) {
-    if (body?.tools !== undefined || body?.tool_choice === undefined) return body;
+    if (body?.tool_choice === undefined) return body;
     const next = { ...body };
     delete next.tool_choice;
     return next;
@@ -154,9 +168,15 @@ export function normalizeXaiResponsesTools(body) {
     tools.push(normalized);
   }
 
-  if (!changed && tools.length > 0) return body;
+  const toolChoice = normalizeXaiResponsesToolChoice(body.tool_choice, tools);
+  const choiceChanged = toolChoice !== body.tool_choice;
+  if (!changed && !choiceChanged && tools.length > 0) return body;
   const next = { ...body };
-  if (tools.length > 0) next.tools = tools;
+  if (tools.length > 0) {
+    next.tools = tools;
+    if (toolChoice === undefined) delete next.tool_choice;
+    else next.tool_choice = toolChoice;
+  }
   else {
     delete next.tools;
     delete next.tool_choice;
@@ -165,29 +185,17 @@ export function normalizeXaiResponsesTools(body) {
 }
 
 function stripEncryptedContent(value) {
-  if (Array.isArray(value)) {
-    let changed = false;
-    const items = value.map((item) => {
-      const next = stripEncryptedContent(item);
-      if (next !== item) changed = true;
-      return next;
-    });
-    return changed ? items : value;
-  }
-  if (!value || typeof value !== "object") return value;
+  if (!value || typeof value !== "object" || !("encrypted_content" in value)) return value;
+  const next = { ...value };
+  delete next.encrypted_content;
+  return next;
+}
 
-  let changed = false;
-  const next = {};
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "encrypted_content") {
-      changed = true;
-      continue;
-    }
-    const stripped = stripEncryptedContent(child);
-    if (stripped !== child) changed = true;
-    next[key] = stripped;
-  }
-  return changed ? next : value;
+function stripEncryptedHistoryMetadata(item) {
+  const next = stripEncryptedContent(item);
+  if (!Array.isArray(item?.content)) return next;
+  const content = item.content.map(stripEncryptedContent);
+  return content.some((part, index) => part !== item.content[index]) ? { ...next, content } : next;
 }
 
 function stringifyXaiToolOutput(output) {
@@ -207,9 +215,10 @@ function stringifyXaiToolOutput(output) {
 function normalizeXaiResponsesInputItem(item) {
   if (!item || typeof item !== "object") return item;
   if (item.type === "reasoning") return null;
+  const normalizedItem = stripEncryptedHistoryMetadata(item);
 
   if (item.type === "function_call_output") {
-    return { ...item, output: stringifyXaiToolOutput(item.output) };
+    return { ...normalizedItem, output: stringifyXaiToolOutput(item.output) };
   }
 
   if (item.type === "custom_tool_call") {
@@ -234,11 +243,11 @@ function normalizeXaiResponsesInputItem(item) {
     };
   }
 
-  return item;
+  return normalizedItem;
 }
 
 export function normalizeXaiResponsesPayload(body) {
-  let transformed = stripEncryptedContent(body);
+  let transformed = body;
 
   if (Array.isArray(transformed?.include) && transformed.include.includes("reasoning.encrypted_content")) {
     transformed = {
@@ -288,7 +297,9 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     transformed = injectReasoningContent({ provider: this.provider, model, body: transformed });
-    return this.provider === "xai" ? normalizeXaiResponsesPayload(transformed) : transformed;
+    return this.provider === "xai" && credentials?.runtimeTransport?.format === "openai-responses"
+      ? normalizeXaiResponsesPayload(transformed)
+      : transformed;
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.

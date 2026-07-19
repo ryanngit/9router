@@ -195,7 +195,7 @@ describe("GitHub request correlation", () => {
 });
 
 describe("GitHub Claude Responses bridge", () => {
-  it("converts Fable Responses input to non-empty chat messages", async () => {
+  it("uses Chat upstream and returns Responses JSON to the caller", async () => {
     executeMock.mockImplementationOnce(async (args) => ({
       response: new Response(JSON.stringify({
         id: "chatcmpl_test",
@@ -232,5 +232,20 @@ describe("GitHub Claude Responses bridge", () => {
     expect(call.body.messages).toHaveLength(1);
     expect(call.body.messages[0]).toMatchObject({ role: "user" });
     expect(call.credentials.runtimeTransport).toBeUndefined();
+
+    const json = await result.response.json();
+    expect(json).toMatchObject({
+      object: "response",
+      status: "completed",
+      model: "claude-fable-5",
+      output: [{
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "OK" }],
+      }],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    });
+    expect(json.choices).toBeUndefined();
+    expect(json.created).toBeUndefined();
   });
 });

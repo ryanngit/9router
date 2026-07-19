@@ -201,3 +201,24 @@ describe("GrokCliExecutor multi-turn input", () => {
     expect(executor._currentTurnIdx).toBe(2);
   });
 });
+
+describe("Chat to Responses request controls", () => {
+  it("carries valid tool choice and parallel calls", () => {
+    const out = openaiToOpenAIResponsesRequest("grok-4.20-multi-agent-0309", {
+      messages: [{ role: "user", content: "Use the shell." }],
+      tools: [{
+        type: "function",
+        function: {
+          name: "shell_command",
+          description: "Run a command",
+          parameters: { type: "object", properties: {} },
+        },
+      }],
+      tool_choice: { type: "function", function: { name: "shell_command" } },
+      parallel_tool_calls: false,
+    }, false, null);
+
+    expect(out.tool_choice).toEqual({ type: "function", name: "shell_command" });
+    expect(out.parallel_tool_calls).toBe(false);
+  });
+});

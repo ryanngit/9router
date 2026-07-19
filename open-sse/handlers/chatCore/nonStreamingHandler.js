@@ -5,7 +5,7 @@ import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.j
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
-import { parseSSEToOpenAIResponse, responsesJsonToOpenAIResponse } from "./sseToJsonHandler.js";
+import { openAIJsonToResponsesResponse, parseSSEToOpenAIResponse, responsesJsonToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
@@ -67,6 +67,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   if (targetFormat === sourceFormat) return responseBody;
   if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI) {
     return responsesJsonToOpenAIResponse(responseBody);
+  }
+  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    return openAIJsonToResponsesResponse(responseBody);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
@@ -225,6 +228,13 @@ export async function handleNonStreamingResponse({ requestId, providerResponse, 
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && (responseBody?.status === "failed" || responseBody?.error)) {
+    const message = typeof responseBody.error === "string"
+      ? responseBody.error
+      : responseBody.error?.message || "Responses request failed";
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, message);
+  }
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -255,40 +265,41 @@ export async function handleNonStreamingResponse({ requestId, providerResponse, 
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
-  const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
+  const outputsResponses = sourceFormat === FORMATS.OPENAI_RESPONSES;
+  const translatesResponsesToChat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI;
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
   if (translatedResponse?.choices?.[0]) {
     const choice = translatedResponse.choices[0];
     const msg = choice.message;
     const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+    if (!translatesResponsesToChat && hasToolCalls && choice.finish_reason !== "tool_calls") {
       choice.finish_reason = "tool_calls";
     }
   }
 
   // Ensure OpenAI-required fields
-  if (!isClaudeMessageResponse && !isResponsesPassthrough) {
+  if (!isClaudeMessageResponse && !outputsResponses) {
     if (!translatedResponse.object) translatedResponse.object = "chat.completion";
     if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
   }
 
   // Strip Azure-specific fields
-  if (!isClaudeMessageResponse && !isResponsesPassthrough) {
+  if (!isClaudeMessageResponse && !outputsResponses) {
     delete translatedResponse.prompt_filter_results;
     if (translatedResponse?.choices) {
       for (const choice of translatedResponse.choices) delete choice.content_filter_results;
     }
   }
 
-  if (translatedResponse?.usage) {
+  if (sourceFormat !== FORMATS.OPENAI_RESPONSES && translatedResponse?.usage) {
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
 
   // Strip reasoning_content only when content is non-empty.
   // When content is empty (e.g. thinking models that used all tokens for reasoning),
   // reasoning_content is the only useful output and must be preserved.
-  if (!isClaudeMessageResponse && !isResponsesPassthrough && translatedResponse?.choices) {
+  if (!isClaudeMessageResponse && !outputsResponses && !translatesResponsesToChat && translatedResponse?.choices) {
     for (const choice of translatedResponse.choices) {
       if (choice?.message?.reasoning_content && choice.message.content) {
         delete choice.message.reasoning_content;

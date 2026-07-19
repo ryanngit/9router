@@ -133,7 +133,8 @@ export function createDisconnectAwareStream(transformStream, streamController, o
     if (terminalEmitted || !onAbortTerminal) return;
     terminalEmitted = true;
     try {
-      const bytes = onAbortTerminal();
+      const terminationState = transformStream.getOpenAIResponsesTerminationState?.() || {};
+      const bytes = onAbortTerminal(terminationState);
       if (bytes) controller.enqueue(bytes);
     } catch { /* best-effort terminal */ }
   };
@@ -274,7 +275,11 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     .pipeThrough(transformStream);
 
   return createDisconnectAwareStream(
-    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
+    {
+      readable: transformedBody,
+      writable: { getWriter: () => ({ abort: () => Promise.resolve() }) },
+      getOpenAIResponsesTerminationState: () => transformStream.getOpenAIResponsesTerminationState?.(),
+    },
     wrappedController,
     onAbortTerminal
   );
