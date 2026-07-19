@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`, head `9faa373`. Candidate adds reviewed Responses commits `930f502`/`6d6d9a7` and OAuth commits `2cc1b9f`/`8e6499d`/`4839f09` plus local Kiro default `9faa373`. Live remains on the pre-candidate bundle.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`. Runtime candidate adds reviewed Responses commits `930f502`/`6d6d9a7` and OAuth commits `2cc1b9f`/`8e6499d`/`4839f09` plus local Kiro default `9faa373`; tracker/test follow-ups are `e946e87`/`7cb2ed5`. Live remains on the pre-candidate bundle.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -1750,6 +1750,10 @@ Deployment status:
 - `2cc1b9f`/`8e6499d`/`4839f09` complete OAuth proxy selection from login through callback and refresh, with state-bound concurrent fixed-port lifecycle and runtime-tested refresh proxy propagation. `9faa373` keeps the active-pool default private.
 - Source, active Codex config/catalog, and live DB verifier checks pass with zero failures/warnings when the pre-candidate live bundle is excluded. The verifier now checks P11, P25, Kiro social, newest OAuth lifecycle, catalog metadata, selected model/effort compatibility, and deployed-bundle markers. Current live P22 intentionally fails exactly four pending P24/P25/OAuth bundle markers; candidate and post-promotion live bundles must pass all of them.
 - Identical `CI=1` full-suite runs report stock v0.5.35 at 1,311 passed/34 failed/59 pending and candidate at 1,588 passed/32 failed/59 pending. Failed-assertion sets are identical except candidate fixes both stock `force-stream-config` failures; candidate introduces zero new failures. Twelve missing golden entries for intentionally added local providers are now recorded; the five remaining golden mismatches reproduce on stock.
+- Standalone build completed in 152.6 seconds, generated 130 routes, bundled MITM, measured 58 MB, and remains staged at `/home/home/.openclaw/workspace-keyra/9router-candidate-v0535-final-20260719-app`. Full source/bundle/config/DB verification returned zero failures/warnings.
+- Isolated QA used a SQLite backup with integrity `ok`, zero `refreshToken` keys, tunnel disabled, one active Codex/GitHub/Grok CLI profile each, and bind only `127.0.0.1:20129`.
+- Real candidate wires passed: bare `gpt-5.4-mini` returned `CANDIDATE_CODEX_OK` as `gpt-5.6-sol` with console `THINK:max`; Fable/max returned one billable `response.incomplete` with cache-write usage and then completed `CANDIDATE_FABLE_OK` through GitHub `messages`; private Grok returned `CANDIDATE_GROK_OK` as `grok-4.5-build` with provider effort `xhigh` and no stale tool fields.
+- Candidate process stopped, port `20129` released, and credential-bearing HOME plus response/log artifacts were deleted. Live local/raw/short health remained HTTP 200 with unchanged PIDs `2744827`/`2745020`.
 - No live app, PM2 process, cloudflared process, DB, gateway, or Observer process was changed while preparing these commits.
 - Required remaining gates: independent integration reviews, ledger/runbook commit, standalone build, sanitized-DB candidate on `127.0.0.1:20129`, full base/head differential, private-data scan, rollback rehearsal, then one combined promotion.
 
