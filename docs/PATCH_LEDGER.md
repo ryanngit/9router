@@ -1589,7 +1589,8 @@ Deployment/upstream status:
 Purpose:
 
 - Correlate one 9Router provider attempt with Go gateway selection, connection, provider-header, and stream timing without timestamp guessing.
-- Preserve one identifier across executor retries and request-detail updates.
+- Preserve one request-wide correlation ID across account/combo attempts while keeping one distinct attempt ID across each attempt's executor retries and request-detail updates.
+- Record bounded monotonic local phases so provider wait is separable from 9Router ingress, auth, routing, overlapping DB work, translation, compression, response transfer, and fallback work.
 
 Files:
 
@@ -1597,15 +1598,21 @@ Files:
 - `open-sse/executors/github.js`
 - `open-sse/handlers/chatCore.js`
 - `open-sse/handlers/chatCore/{requestDetail,nonStreamingHandler,sseToJsonHandler,streamingHandler}.js`
-- `tests/unit/{base-executor-retry,force-stream-config,github-responses-routing,request-correlation}.test.js`
+- `open-sse/utils/{requestTiming,stream,streamHandler}.js`
+- `src/lib/db/repos/requestDetailsRepo.js`
+- `src/sse/handlers/chat.js`
+- `tests/unit/{base-executor-retry,chat-request-timing,force-stream-config,github-responses-routing,request-correlation,request-details-tab,request-timing}.test.js`
 
 Required invariants:
 
-- `handleChatCore` creates one internal UUID per provider/account attempt. Incoming client request IDs are not trusted or reused.
-- Initial execution, config-driven network/status retries, and the post-refresh retry send that same value as `x-request-id`.
+- `handleChat` creates one internal request-wide correlation UUID. Incoming client request IDs are not trusted or reused.
+- Each provider/account/combo attempt creates a distinct internal attempt UUID. Initial execution, config-driven network/status retries, and the post-refresh retry send that attempt value as `x-request-id`.
 - GitHub `/chat/completions`, native `/responses`, and Claude `/v1/messages` routes use the supplied value instead of generating an unrelated GitHub request ID.
 - Executor errors, upstream HTTP errors, forced SSE-to-JSON, true JSON, streaming-in-progress, and streaming-complete records preserve the same request-detail ID. Streaming completion updates the initial row instead of creating an unrelated row.
-- Account fallback starts a new provider-attempt ID so failed attempts remain independently observable. Combo/fusion children also remain independent.
+- Account fallback and combo/fusion children share the parent correlation ID but keep independent attempt IDs and immutable timing state.
+- Duration math uses `performance.now()`. Non-finite or negative phases are omitted.
+- `*_total_ms` fields are cumulative by name. `db_overlap_ms` is diagnostic overlap inside auth/routing totals and is not additive.
+- `latency.total` is attempt-local; `latency.request_total` is inbound-request-wide. Response timing begins when upstream headers are available.
 - Correlation adds no DB query, network round trip, retry, dependency, or live-path behavior change beyond one UUID and one bounded header.
 
 Verification/status:
@@ -1615,7 +1622,8 @@ Verification/status:
 - Changed-file ESLint and `git diff --check` pass.
 - Full differential used identical `CI=1 --update none` settings. Patched source introduced zero candidate-only failures; the clean `ebb7e86` baseline alone failed the two stale `force-stream-config` assertions and two flaky xAI OAuth assertions that patched source passed.
 - Initial review found one compatibility defect: Base passed `requestId` into the third `buildHeaders` slot already used as Antigravity `sessionId`. Commit `ff56efb` restores the two-argument Base contract, applies the header afterward, and adds regression coverage; independent re-review is clean.
-- Public PR <https://github.com/decolua/9router/pull/2710>, branch `request-correlation`, head `1197f43`, contains no private routes, aliases, proxy data, credentials, tunnel logic, or deployment files.
+- Public PR <https://github.com/decolua/9router/pull/2710>, branch `request-correlation`, head `46d18ce`, contains no private routes, aliases, proxy data, credentials, tunnel logic, or deployment files.
+- Fresh timing/correlation/fallback matrix passes 72/72; combo/persistence compatibility passes 32/32; changed-path ESLint and `git diff --check` pass. Review found and fixed cumulative-label, attempt-identity, combo-race, monotonic-clock, retry-boundary, and terminal-persistence gaps.
 - Local source is staged as `cc2cf0f` plus compatibility commit `ff56efb`. Gateway/Observer correlation source is `3816ee96f`; immutable candidates and hashes live under `/home/home/.openclaw/gateway/deployments/request-correlation-20260719T093355Z`.
 - Standalone 9Router candidate `/home/home/.openclaw/workspace-keyra/9router-candidate-p23-p24-app` built from staged source `ca6fa26`, measured 58 MB, passed every source/bundle invariant, and bound only `127.0.0.1:20129`. Candidate gateway/Observer bound only `127.0.0.1:28888-28889/28887`; normalized route configuration matched live except alternate binds, disabled warm probing, and a temporary QA host.
 - Normal GitHub canary returned HTTP 200. Request-detail ID `4be24446-e924-4266-9d05-02561668943d` matched gateway request `8` across `request.start`, `request.selected`, and `request.complete` with status 200.
@@ -1624,6 +1632,7 @@ Verification/status:
 - Final resource gate passed 20/20 concurrent streams plus 40/40 burst requests. Gateway PID stayed `253717`; errors, dropped events, evictions, overflows, and OOM counters stayed zero; 180 cache hits shared one entry, and all leases returned to zero. Observer caught up after its cached snapshot lagged final body closure by about one second.
 - Gateway candidate memory peaked at 925,962,240 bytes. Observer candidate peaked at 409,231,360 bytes; its 512 MiB max had zero max/OOM events, while 384 MiB `MemoryHigh` recorded pressure. Fresh gateway and Observer race suites plus `go vet` pass.
 - Sanitized evidence is retained under `/home/home/.openclaw/gateway/deployments/request-correlation-20260719T093355Z`. Credential-bearing candidate HOME and SQLite backup were deleted; temporary QA tunnel/origin and all alternate listeners were stopped. Live local/short health remains HTTP 200 with unchanged PIDs `2744827`/`2745020`/`51362`/`53239`.
+- Existing candidate evidence predates the phase-timing extension. Rebuild both candidates and repeat correlation plus settled-memory load gates before any promotion.
 - Live promotion remains pending. Isolated correlation/load gates pass; promotion still requires zero-active drain, rollback artifacts, and the zero-OOM launch window. Current health remains degraded at one OOM in 24 hours and 12 in seven days, last at `2026-07-18T15:53:45.864522Z`.
 
 ### P24. Request-log credential redaction
@@ -1731,7 +1740,7 @@ Candidate QA:
 Public PR refresh:
 
 - All existing public branches were merged normally onto `v0.5.35`; no force-push was used. Every open PR reports `CLEAN`.
-- Heads: #1570 `aa19e8a0`, #1819 `5430052e`, #2343 `38be2f0f`, #2345 `877977a7`, #2364 `9da2ae98`, #2439 `a62a53aa`, #2452 `dfcd956d`, #2453 `bf2da725`, #2454 `91c4706f`, #2511 `14b04502`, #2553 `fe6366e7`, #2554 `10a1ba47`, #2647 `7b1f6937`, #2652 `ac0fb073`, #2663 `9504daab`, #2666 `f3e3ac7e`, #2667 `89c9c381`, #2686 `6656f566`, #2709 `535e2727`, and #2710 `1197f435`.
+- Heads: #1570 `aa19e8a0`, #1819 `5430052e`, #2343 `38be2f0f`, #2345 `877977a7`, #2364 `9da2ae98`, #2439 `a62a53aa`, #2452 `dfcd956d`, #2453 `bf2da725`, #2454 `91c4706f`, #2511 `14b04502`, #2553 `fe6366e7`, #2554 `10a1ba47`, #2647 `7b1f6937`, #2652 `ac0fb073`, #2663 `9504daab`, #2666 `f3e3ac7e`, #2667 `89c9c381`, #2686 `6656f566`, #2709 `535e2727`, and #2710 `46d18cee`.
 - Conflict PR comments record retained upstream behavior and focused evidence. #2647 shrank from 19 changed files to 11 because upstream absorbed eight pieces; its focused matrix passed 73/73.
 - Fable adaptive-thinking PR <https://github.com/decolua/9router/pull/2652> is rebased at `ac0fb073`; its focused matrix passed 18/18 and GitHub reports `CLEAN`.
 - Pre-update heads remain available as local `backup/v0535-pr-*` refs. Private ledger/runbook/verifier, aliases, pools, credentials, and deployment files were excluded from every public diff.
