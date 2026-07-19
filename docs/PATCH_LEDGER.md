@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`; staged P23/P24 source head is `0f65bb3` and live remains on P22.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`, head `9faa373`. Candidate adds reviewed Responses commits `930f502`/`6d6d9a7` and OAuth commits `2cc1b9f`/`8e6499d`/`4839f09` plus local Kiro default `9faa373`. Live remains on the pre-candidate bundle.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -22,8 +22,8 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://holidays-heating-revenues-cathedral.trycloudflare.com`.
-- Current cloudflared PID: `2694503`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://hanging-reward-activities-outlets.trycloudflare.com`.
+- Current cloudflared PID: `2745020`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
 - The 2026-07-15 controlled promotion applied that policy with `--update-env`; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2`.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
@@ -31,9 +31,10 @@ Current live facts:
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; the profile requires reauthorization before live Grok canaries can pass again.
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
 - Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
-- Current PM2 PID after the P21 promotion: `2694238`.
-- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p21-responses-heartbeat-20260717-20260717T072141Z`.
-- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-p21-responses-heartbeat-20260717-20260717T072141Z/data.sqlite`.
+- Current PM2 PID after the P22 promotion: `2744827`.
+- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p22-encrypted-history-20260717-20260717T085151Z`.
+- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-p22-encrypted-history-20260717-20260717T085151Z/data.sqlite`.
+- Active Codex config references `/home/home/.openclaw/codex-9router-model-catalog.json` and currently selects `grok-4.5` with effort `max`. This client selection is independent of the endpoint-wide best-GPT route for incoming `gpt-*` models.
 - Previous live rollback app from Claude pairing: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-claude-pairing-max2-20260717T033932Z-20260717T034004Z`.
 - Previous DB backup from Claude pairing: `/home/home/.9router/db/backups/pre-claude-pairing-max2-20260717T033932Z-20260717T034004Z/data.sqlite`.
 - Previous `0.5.35` live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`.
@@ -195,6 +196,8 @@ These branches were pushed before the current ledger existed. Current status was
 
 ## Current Local Patch Set
 
+P5M and P10 are retained below as absorbed-upstream records; P13 is a historical data operation. They are not repatch requirements for v0.5.35 or later.
+
 ### P1. Codex OAuth endpoint and proxy-safe exchange
 
 Purpose:
@@ -205,11 +208,28 @@ Purpose:
 
 Files:
 
+- `open-sse/executors/codex.js`
 - `open-sse/providers/registry/codex.js`
 - `open-sse/utils/proxyFetch.js`
 - `src/app/api/oauth/[provider]/[action]/route.js`
+- `src/app/api/oauth/kiro/social-authorize/route.js`
+- `src/app/api/oauth/kiro/social-exchange/route.js`
+- `src/app/api/providers/[id]/test/testUtils.js`
+- `src/lib/oauth/proxyOptions.js`
+- `src/lib/oauth/services/kiro.js`
+- `src/lib/oauth/utils/server.js`
 - `src/lib/oauth/providers.js`
+- `src/shared/components/KiroOAuthWrapper.js`
+- `src/shared/components/KiroSocialOAuthModal.js`
+- `src/shared/components/OAuthModal.js`
+- `src/shared/components/OAuthProxyPoolSelector.js`
+- `open-sse/services/oauthCredentialManager.js`
+- `open-sse/services/tokenRefresh.js`
 - `open-sse/services/tokenRefresh/providers.js`
+- `src/sse/services/tokenRefresh.js`
+- `tests/unit/manual-oauth-refresh-proxy.test.js`
+- `tests/unit/oauth-modal-behavior.test.js`
+- `tests/unit/oauth-refresh-routing.test.js`
 
 Required invariants:
 
@@ -217,18 +237,26 @@ Required invariants:
 - Stale Codex token URL `https://auth.openai.com/oauth/token` is absent from Codex registry/bundle.
 - OAuth route imports `open-sse/utils/proxyFetch.js` so global fetch is patched.
 - `proxyPoolId` missing or `__none__` returns `{ disableEnvProxy: true }`.
+- A selected but unavailable pool fails closed; it never silently goes direct.
 - `proxyFetch` honors `disableEnvProxy`.
-- Codex refresh disables env proxy until refresh can receive per-connection proxy context.
+- Authorize, exchange, device-code, poll, fixed-port callback, manual xAI code, Kiro social login, and proactive/reactive refresh all use the same selected pool context.
+- Fixed-port Codex/xAI PKCE sessions start with POST JSON. Verifier, state, redirect URI, and pool never appear in a GET URL.
+- Fixed-port status exposes only allowlisted public fields. Stop requests carry OAuth state and cannot close another active session.
+- Modal flow generations cancel stale device polls. Pool changes serialize stop then start, and only the latest selection may launch authorization.
+- Main and Kiro social OAuth initialize from the active pool; users can still explicitly select Direct after initialization. Kiro's default is local-only.
+- No-pool refresh disables env proxy; explicit per-connection proxy and relay settings remain intact.
 
 Verification:
 
 - `node scripts/verify-local-patches.mjs --root . --bundle /home/home/.npm-global/lib/node_modules/9router/app`
 - Fake or expired Codex code exchange should return OpenAI JSON, not Cloudflare HTML.
+- Candidate OAuth matrix: 11 files, 94/94 tests. Changed-path ESLint and `git diff --check` pass.
 
 Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2343>
 - Scope in PR: OAuth proxy selection during authorize/exchange/poll/callback, no-proxy env bypass, proxy pool selector readiness, manual auth URL visibility.
+- Reviewed public branch head is `38be2f0`; independent review returned APPROVED after a runtime regression caught and fixed dropped `effectiveProxy` scope. Candidate integration ends at `9faa373` and preserves the private active-pool defaults.
 - Still split/re-cut Codex token URL behavior separately if upstream requests narrower scope.
 
 ### P2. Codex fast tier, long-context guard, and reasoning preservation
@@ -310,10 +338,18 @@ Purpose:
 Files:
 
 - `open-sse/executors/codex.js`
+- `open-sse/handlers/imageProviders/codex.js`
+- `open-sse/services/codexAccount.js`
+- `open-sse/services/usage.js`
 - `open-sse/services/usage/codex.js`
 - `src/lib/oauth/providers.js`
 - `src/app/api/oauth/codex/bulk-import/route.js`
+- `src/app/api/oauth/codex/import-token/route.js`
 - `src/app/api/oauth/[provider]/[action]/route.js`
+- `src/app/api/usage/[connectionId]/codex-reset-credits/route.js`
+- `src/lib/oauth/providerHelpers.js`
+- `src/shared/services/quotaAutoPing.js`
+- `tests/unit/codex-usage-account.test.js`
 
 Required invariants:
 
@@ -375,10 +411,14 @@ Purpose:
 Files:
 
 - `open-sse/providers/registry/github.js`
+- `open-sse/providers/capabilities.js`
 - `open-sse/services/copilotModels.js`
 - `open-sse/services/copilotStatus.js`
 - `open-sse/services/model.js`
+- `src/app/api/providers/[id]/test/testUtils.js`
+- `src/sse/services/tokenRefresh.js`
 - `tests/unit/copilot-status.test.mjs`
+- `tests/unit/capabilities.test.js`
 - `tests/unit/model-routing.test.js`
 
 Live DB aliases:
@@ -446,7 +486,7 @@ Upstream status:
 
 - Local-only. Do not upstream. Re-apply after updates if `open-sse/services/model.js` loses `BUILTIN_MODEL_ALIASES` or live DB aliases disappear.
 
-### P5M. GitHub Copilot profile identity labels
+### P5M. GitHub Copilot profile identity labels (absorbed upstream)
 
 Purpose:
 
@@ -472,8 +512,9 @@ Verification:
 
 Upstream status:
 
-- Open PR: <https://github.com/decolua/9router/pull/2498>
-- Verification: `./node_modules/.bin/vitest run --config tests/vitest.config.js --testTimeout 20000 tests/unit/db-sqlite-vs-lowdb.test.js`
+- Absorbed by published v0.5.35. No local source delta or repatch remains.
+- Historical PR: <https://github.com/decolua/9router/pull/2498>
+- Keep the DB backfill verification only when importing older profile rows.
 
 ### P5T. Claude tool-result pairing repair
 
@@ -532,6 +573,10 @@ Purpose:
 Files:
 
 - `open-sse/providers/pricing.js`
+- `open-sse/providers/registry/xai.js`
+- `open-sse/services/usage.js`
+- `open-sse/services/usage/misc.js`
+- `open-sse/services/usage/xai.js`
 - `src/lib/db/repos/usageRepo.js`
 - `open-sse/utils/usageTracking.js`
 - `open-sse/handlers/chatCore/requestDetail.js`
@@ -542,11 +587,14 @@ Files:
 - `open-sse/translator/response/openai-responses.js`
 - `src/app/(dashboard)/dashboard/usage/components/UsageTable.js`
 - `src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js`
+- `src/shared/components/PricingModal.js`
+- `src/shared/components/UsageStats.js`
+- `tests/unit/cached-token-e2e.test.js`
+- `tests/unit/cached-token-usage.test.js`
 - `tests/unit/current-model-pricing.test.js`
 - `tests/unit/responses-stream-to-json-usage.test.js`
 - `tests/unit/xai-usage.test.js`
-- `tests/unit/usage-api-key-stats.test.js`
-- `scripts/recalculate-current-model-costs.mjs` (local maintenance only; do not upstream)
+- `tests/unit/usage-dispatch.test.js`
 
 Required invariants:
 
@@ -570,14 +618,13 @@ Required invariants:
 
 Verification:
 
-- `./node_modules/.bin/vitest run --config tests/vitest.config.js --testTimeout 20000 tests/unit/current-model-pricing.test.js tests/unit/responses-stream-to-json-usage.test.js tests/unit/xai-usage.test.js tests/unit/usage-api-key-stats.test.js tests/unit/db-sqlite-vs-lowdb.test.js tests/unit/usage-dispatch.test.js tests/unit/usage-concern.test.js tests/unit/openai-responses-terminal-event.test.js`
+- `./node_modules/.bin/vitest run --config tests/vitest.config.js --testTimeout 20000 tests/unit/cached-token-e2e.test.js tests/unit/cached-token-usage.test.js tests/unit/current-model-pricing.test.js tests/unit/responses-stream-to-json-usage.test.js tests/unit/xai-usage.test.js tests/unit/db-sqlite-vs-lowdb.test.js tests/unit/usage-dispatch.test.js tests/unit/usage-concern.test.js tests/unit/openai-responses-terminal-event.test.js`
 - Unit matrix covers all three GPT-5.6 models across Standard, Batch, Flex, Priority/fast, and long-context rates.
 - Unit calculation covers cache read, cache write, and reasoning-within-output.
 - Unit xAI calculation proves `22,940,000` ticks equals `$0.002294`.
 - Dashboard stats for different API keys must remain separated.
 - Live post-deploy probes must store cache-write tokens and effective tier when provider returns them.
-- `node scripts/recalculate-current-model-costs.mjs` must be a no-write dry run.
-- Before historical repair, use SQLite's `.backup`; then run `node scripts/recalculate-current-model-costs.mjs --apply`.
+- Historical repair tooling was intentionally not retained in this source tree. Any future recalculation needs a fresh reviewed script, SQLite `.backup`, dry run, and aggregate reconciliation before write mode.
 
 Published rates checked 2026-07-09:
 
@@ -635,7 +682,7 @@ Upstream status:
   - API-key stats identity: <https://github.com/decolua/9router/pull/2364>
   - Provider cost preservation, xAI local usage rows, current-model pricing, service tiers, and cache-write accounting: <https://github.com/decolua/9router/pull/2453>
 - Latest pricing/accounting commit: `96115e3 fix(usage): restore exact cost breakdowns`
-- Historical repair script remains local-only and must not be upstreamed.
+- Historical repair procedure remains local-only; no repair script is currently tracked.
 
 ### P7. Codex reset bank display and guarded consume
 
@@ -712,7 +759,7 @@ Purpose:
 
 - Add `grok-4.5` from xAI/Grok Build to model picker and routing.
 - Support xAI Responses endpoint for Codex-style `/v1/responses` clients.
-- Keep GitHub Claude, Gemini, Grok, and unknown models on Chat Completions even when clients use `/v1/responses`.
+- Route GitHub Claude through Anthropic `/v1/messages` and GitHub Gemini through Chat Completions when clients use `/v1/responses`; current policy sends other GitHub models, including unknown names, through native Responses.
 - Route bare `grok-*` model names to xAI, so clients can use `grok-4.5` without `xai/` prefix.
 - Show xAI rows in quota tracker from local `usageHistory`, since no account-quota endpoint is known.
 - Normalize unsupported Codex Responses tools before xAI `/v1/responses`, because xAI rejects `custom` and `local_shell` tool variants.
@@ -738,8 +785,8 @@ Required invariants:
 
 - Registry includes `grok-4.5`.
 - xAI has both OpenAI chat and OpenAI Responses transports.
-- Native Responses selection is provider- and model-aware. GitHub uses `/responses` only for `gpt-*`, `o1-*`, `o3-*`, and `o4-*`; unknown models fail closed to Chat Completions.
-- GitHub Claude Responses clients are bridged to non-empty Chat `messages`; they never send native `input` to `/chat/completions`.
+- Native Responses selection is provider- and model-aware. GitHub Claude uses `/v1/messages`, Gemini uses Chat Completions, and every other GitHub model currently uses native Responses for Responses clients. Changing unknown-model behavior requires an explicit policy test.
+- GitHub Claude Responses clients are translated to non-empty Claude `messages` for `/v1/messages`; they never send native OpenAI `input`. Gemini Responses clients bridge to non-empty Chat `messages` for `/chat/completions`.
 - GitHub executor fallback and initial transport selection share one native Responses capability helper.
 - xAI reasoning options exposed by 9Router are `auto`, `low`, `medium`, `high`.
 - Bare `grok-*` routes to provider `xai`.
@@ -748,7 +795,9 @@ Required invariants:
 - xAI Responses requests convert `custom` tools to freeform `function` tools, drop `local_shell` plus unsupported nameless hosted tools, strip OpenAI-only hosted tool fields like `external_web_access`, and strip OpenAI encrypted reasoning blobs that xAI cannot decode.
 - xAI Responses requests remove `tool_choice` when `tools` is absent, empty, or fully removed by normalization; valid non-empty tool lists preserve `tool_choice`.
 - Final xAI executor return must run `normalizeXaiResponsesPayload(transformed)` after `injectReasoningContent(...)`. The first helper-only patch existed in source but live outgoing payloads still retained `encrypted_content`; this final-return strip is the regression guard.
+- The final xAI sanitizer is gated by `runtimeTransport.format === "openai-responses"`; OpenAI Chat transport preserves Chat reasoning/history fields.
 - xAI request input sanitizer must drop `reasoning` items, convert `custom_tool_call` / `custom_tool_call_output` to normal function call variants, and stringify `function_call_output.output` arrays/objects. Live xAI rejects these with `data did not match any variant of untagged enum ModelInput`.
+- Generic native Responses terminal, failure, and usage rules are owned by P25.
 
 Verification:
 
@@ -766,7 +815,7 @@ Verification:
   - `grok-4` via xAI returned HTTP 200; provider request used `input` and had no `encrypted_content`; xAI response reported model `grok-4.3`.
   - `grok-4.5` via xAI returned HTTP 403 `permission-denied` / region unavailable in this run; provider request still had no `encrypted_content`, so failure was not compaction-related.
 - Regression found 2026-07-12 after the generic xAI native-Responses patch: `claude-fable-5` requests arrived from Codex as native Responses `input`, but GitHub executor correctly selected `/chat/completions`, producing `messages must be non-empty` on both accounts.
-- Model-aware transport regression tests passed 16/16 on 2026-07-12. They prove Fable becomes one non-empty Chat message, GitHub GPT keeps `/responses`, unknown GitHub models default to Chat, and xAI remains native Responses.
+- Model-aware transport regression tests passed 16/16 on 2026-07-12. They prove Fable becomes one non-empty Chat message, GitHub GPT keeps `/responses`, and xAI remains native Responses. The old claim that unknown GitHub models default to Chat is superseded by the current `!/(?:gemini|claude)/i` policy.
 - Broader Responses regression run passed 33 tests with three expected failures; focused ESLint, `git diff --check`, source checks, and staged bundle checks passed.
 - Persistent staged bundle: `/home/home/.openclaw/workspace-keyra/9router-app-stage-github-responses-20260712-0931`; production build completed Next.js, TypeScript, 126 static pages, and MITM bundling at 57 MB.
 - Isolated candidate on `127.0.0.1:20129` returned HTTP 200 for Fable non-streaming through GitHub account `emileytoneyth` and Fable streaming through `browndav123731`. Logs showed `FMT: openai-responses→openai`, one input message, and `/chat/completions`; stored provider request had two final messages and no `input`.
@@ -778,6 +827,8 @@ Verification:
 - Windows restart interrupted the first staged build before any live exchange. Second build used a persistent workspace path so restart could not erase completed output.
 - PM2 restart killed post-reboot cloudflared PID `122779` because it was a child of the old Next PID. Tunnel was restored without another 9Router restart at raw URL `https://fighting-documentation-wedding-continues.trycloudflare.com`; `keyra9` was registered again and local/raw/short health passed.
 - Final source/live/DB/local/raw/short verifier passed with zero failures and zero warnings. Credential-bearing isolated candidate data was removed.
+- 2026-07-19 reviewed PR branch `a62a53a` closes duplicate-terminal, missing-terminal, failed-JSON, incomplete-usage, and top-level-error gaps. Independent review returned APPROVED with no findings.
+- Candidate commits `930f502`/`6d6d9a7` preserve local cache-write, service-tier, exact-cost, encrypted-history, and private-routing behavior. Focused candidate matrix passes 87/87 Vitest cases plus 6/6 xAI node checks; changed-path ESLint and diff checks pass.
 - After PM2 restart, `rkeyra9` short worker still pointed at an older raw tunnel. Manual worker registration fixed it: `POST https://abc-tunnel.us/api/tunnel/register` with `shortId=keyra9` and the current raw tunnel URL.
 - `getModelInfoCore("grok-4.5", {})` returns `{ provider: "xai", model: "grok-4.5" }`.
 - `/v1/responses` request with model `grok-4.5` succeeds and latest request details row shows provider `xai`.
@@ -801,11 +852,11 @@ Upstream status:
 - Open PRs:
   - xAI/Grok catalog, bare `grok-*` routing, Responses transport, `grok-4.5`, and reasoning options: <https://github.com/decolua/9router/pull/2439>
   - xAI local quota rows from `usageHistory` and provider cost preservation: <https://github.com/decolua/9router/pull/2453>
-- PR #2439 now includes model-aware GitHub native-Responses routing plus stale `tool_choice` cleanup at head `76bc3ee`; GitHub merge state is `CLEAN` after push on 2026-07-13.
-- Clean PR branch passed 15 focused Vitest cases, five xAI node self-checks, focused ESLint, and `git diff --check` before push.
+- PR #2439 local branch now ends at reviewed head `a62a53a`; remote update remains pending the final integration/differential gate.
+- Clean PR branch passes 77 focused Vitest cases, six xAI node checks, focused ESLint, and `git diff --check`.
 - Bare `grok-*` routing is generic enough for upstream, but keep it in the catalog/Responses PR so it remains reviewable.
 
-### P10. Staged CLI bundle builds for live-safe deploy
+### P10. Staged CLI bundle builds for live-safe deploy (absorbed upstream)
 
 Purpose:
 
@@ -831,8 +882,9 @@ Verification:
 
 Upstream status:
 
-- Open PR: <https://github.com/decolua/9router/pull/2479>
-- Scope in PR: `NINEROUTER_CLI_APP_DIR` for staged CLI app and MITM bundle output. Default output remains `cli/app`.
+- Absorbed by published v0.5.35. No local source delta or repatch remains.
+- Historical PR: <https://github.com/decolua/9router/pull/2479>
+- Keep using the environment variable during candidate builds; verifier coverage remains because deployment depends on the upstream feature.
 
 ### P11. API-key daily token limits
 
@@ -874,11 +926,11 @@ Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2454>
 
-### P12. Private Codex GPT-5.6 Sol default and Ultra reasoning
+### P12. Private best-GPT Sol/max routing and custom Codex catalog
 
 Purpose:
 
-- Keep existing Codex clients on one endpoint while moving the local default from GPT-5.5/xhigh to GPT-5.6 Sol/Ultra.
+- Keep existing Codex clients on one endpoint while routing incoming `gpt-*` requests to GPT-5.6 Sol/max by default.
 - Route every chat/Responses model whose model portion starts with `gpt-`, including provider-prefixed names, through one configurable endpoint layer to `cx/gpt-5.6-sol`.
 - Use Codex Ultra for maximum model reasoning plus proactive multi-agent delegation.
 - Let Codex translate local `ultra` to upstream `reasoning.effort: max`; 9Router must never downgrade it.
@@ -930,7 +982,8 @@ Required invariants:
 - Sol and Terra expose 372,000 context, `multi_agent_version: v2`, and `low,medium,high,xhigh,max,ultra`.
 - Luna exposes 372,000 context, `multi_agent_version: v1`, and `low,medium,high,xhigh,max`; Luna must not advertise Ultra.
 - Sol, Terra, and Luna set `use_responses_lite: true`; P14 must pass before preserving that setting after future updates.
-- `/home/home/.codex/config.toml` sets `model_reasoning_effort = "ultra"`.
+- `/home/home/.codex/config.toml` references the tracked custom catalog. Its interactive model selection may change independently from 9Router's best-GPT route; the current selection is `grok-4.5` with effort `max`.
+- The selected Codex model and effort must exist as a supported pair in the catalog. Selecting Sol or Terra with client-side Ultra remains valid and reaches upstream effort `max`; Luna must not advertise Ultra.
 - Codex model-visible prompt contains the proactive multi-agent policy and four total concurrency slots.
 - Upstream request reasoning is `max`; literal `ultra` must not reach 9Router or the Codex backend.
 - GPT-5.6 with omitted effort sends `max`.
@@ -971,8 +1024,9 @@ Upstream status:
 - Generic `max` preservation and long-context Priority removal are included in PR #2452.
 - On future target changes, update `DEFAULT_TARGET`, PM2 `NINE_ROUTER_BEST_GPT_TARGET`, tests, verifier, and this ledger together.
 - On future Codex updates, rebuild from the new bundled catalog, append the four custom Claude/Grok entries, and verify P14 before preserving `use_responses_lite: true`.
+- Do not rewrite the user's active `model` or `model_reasoning_effort` while repairing the catalog or route policy unless that selected pair becomes invalid.
 
-### P13. Grok probe usage cleanup
+### P13. Grok probe usage cleanup (historical operation; no patch)
 
 Purpose:
 
@@ -1166,9 +1220,17 @@ Files:
 - `src/app/(dashboard)/dashboard/usage/components/ApiKeyClientsTable.js`
 - `src/app/api/usage/clients/route.js`
 - `src/lib/apiKeyClientIdentity.js`
+- `src/lib/db/index.js`
 - `src/lib/db/migrations/002-api-key-clients.js`
+- `src/lib/db/migrations/index.js`
 - `src/lib/db/repos/apiKeyClientsRepo.js`
+- `src/lib/db/repos/apiKeysRepo.js`
+- `src/lib/db/repos/usageRepo.js`
 - `src/lib/db/schema.js`
+- `src/lib/localDb.js`
+- `src/lib/usageDb.js`
+- `src/shared/components/UsageStats.js`
+- `src/shared/utils/machineId.js`
 - `src/sse/handlers/chat.js`
 - `tests/unit/api-key-client-activity.test.js`
 - `tests/unit/api-key-client-identity.test.js`
@@ -1584,6 +1646,58 @@ Verification/status:
 - Public PR <https://github.com/decolua/9router/pull/2709>, branch `request-log-redaction`, head `535e272`, is clean and mergeable.
 - Local source commit is `ffedfbf`; verifier commit `0f65bb3` makes P23/P24 loss fail future source and bundle checks. Standalone candidate bundle passed redaction and file-mode invariants; live remains unmodified.
 
+### P25. Native Responses transport, terminal, and usage semantics
+
+Deployment state: source/candidate only until the pending combined promotion. Live P22 does not yet contain `response.incomplete`, EOF conversion, failed-JSON handling, or P24 request-log redaction; full live-bundle verification is expected to remain red on those candidate markers before promotion.
+
+Purpose:
+
+- Preserve provider-native Responses behavior across streaming, forced SSE-to-JSON, and non-streaming paths.
+- Treat provider failure or premature EOF as failure before account-success callbacks and usage writes.
+- Preserve complete usage details for completed and incomplete responses.
+
+Files:
+
+- `open-sse/executors/default.js`
+- `open-sse/executors/github.js`
+- `open-sse/handlers/chatCore.js`
+- `open-sse/handlers/chatCore/nonStreamingHandler.js`
+- `open-sse/handlers/chatCore/sseToJsonHandler.js`
+- `open-sse/handlers/chatCore/streamingHandler.js`
+- `open-sse/handlers/responsesHandler.js`
+- `open-sse/services/provider.js`
+- `open-sse/transformer/streamToJsonConverter.js`
+- `open-sse/translator/request/openai-responses.js`
+- `open-sse/translator/response/openai-responses.js`
+- `open-sse/utils/responsesStreamHelpers.js`
+- `open-sse/utils/stream.js`
+- `open-sse/utils/streamHandler.js`
+- `open-sse/utils/usageTracking.js`
+- `tests/unit/cached-token-usage.test.js`
+- `tests/unit/github-responses-routing.test.js`
+- `tests/unit/openai-responses-multiturn.test.js`
+- `tests/unit/openai-responses-terminal-event.test.js`
+- `tests/unit/responses-abort-terminal.test.js`
+- `tests/unit/xai-native-responses-routing.test.js`
+
+Required invariants:
+
+- GitHub Claude uses Anthropic `/v1/messages`, Gemini uses Chat Completions, and every other GitHub model currently selects native Responses for Responses clients. Initial and fallback transport use the same helper.
+- `response.completed`, `response.incomplete`, `response.failed`, and top-level Responses errors are terminal. Terminal state survives `pipeWithDisconnect()` wrappers.
+- A valid terminal followed by `ECONNRESET` emits no synthetic failure and exactly one `[DONE]`.
+- SSE or JSON `status:"failed"` returns fallback-capable HTTP 502 before account-success callbacks, request-success state, or usage-success writes.
+- Stream EOF before any terminal becomes `response.failed` for streaming clients and HTTP 502 for forced non-stream conversion.
+- `response.incomplete` maps `max_output_tokens` to Chat finish reason `length` and remains a billable successful terminal.
+- Completed/incomplete usage preserves input, output, cache-read, cache-write, reasoning, effective service tier, and provider cost fields.
+- Top-level `event:error` retains provider diagnostics instead of collapsing into a generic parse error.
+
+Verification/status:
+
+- Public branch `/home/home/.openclaw/workspace-keyra/9router-grok-build-pr` is reviewed APPROVED at `a62a53a`; 77/77 focused Vitest cases, 6/6 xAI node checks, ESLint, and `git diff --check` pass.
+- Integrated candidate commits are `3bb47d7`, `930f502`, and `6d6d9a7`; focused candidate matrix passes 87/87 Vitest cases plus 6/6 xAI node checks.
+- Regression matrix covers completed plus reset, incomplete plus detailed usage, failed SSE, failed JSON, top-level error, EOF without terminal, and non-stream conversion EOF.
+- Public scope is carried in open PR <https://github.com/decolua/9router/pull/2439>. Remote update remains gated on clean-base differential and private-data scan.
+
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
 Baseline and merge:
@@ -1629,6 +1743,15 @@ Deployment status:
 - Console REST returned HTTP 200 through local/raw/short paths, immediate conditional fetch returned HTTP 304, and local SSE emitted `init`. Short usage/provider APIs listed `codex`, `github`, and `grok-cli`; API-client usage returned nine tracked clients.
 - Final source/live-bundle/DB/local/raw/short verifier returned zero failures and zero warnings. Live and backup SQLite integrity checks returned `ok`.
 - Rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`; DB backup: `/home/home/.9router/db/backups/pre-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z/data.sqlite`.
+
+### Post-audit candidate corrections on 2026-07-19
+
+- `930f502`/`6d6d9a7` complete public Grok/OpenAI Responses transport semantics on top of private cost, routing, and history patches.
+- `2cc1b9f`/`8e6499d`/`4839f09` complete OAuth proxy selection from login through callback and refresh, with state-bound concurrent fixed-port lifecycle and runtime-tested refresh proxy propagation. `9faa373` keeps the active-pool default private.
+- Source, active Codex config/catalog, and live DB verifier checks pass with zero failures/warnings when the pre-candidate live bundle is excluded. The verifier now checks P11, P25, Kiro social, newest OAuth lifecycle, catalog metadata, selected model/effort compatibility, and deployed-bundle markers. Current live P22 intentionally fails exactly four pending P24/P25/OAuth bundle markers; candidate and post-promotion live bundles must pass all of them.
+- Identical `CI=1` full-suite runs report stock v0.5.35 at 1,311 passed/34 failed/59 pending and candidate at 1,588 passed/32 failed/59 pending. Failed-assertion sets are identical except candidate fixes both stock `force-stream-config` failures; candidate introduces zero new failures. Twelve missing golden entries for intentionally added local providers are now recorded; the five remaining golden mismatches reproduce on stock.
+- No live app, PM2 process, cloudflared process, DB, gateway, or Observer process was changed while preparing these commits.
+- Required remaining gates: independent integration reviews, ledger/runbook commit, standalone build, sanitized-DB candidate on `127.0.0.1:20129`, full base/head differential, private-data scan, rollback rehearsal, then one combined promotion.
 
 ## Not Yet Verified As Local Patch
 

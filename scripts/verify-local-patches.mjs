@@ -5,14 +5,19 @@ import { spawnSync } from "node:child_process";
 
 const DEFAULT_BUNDLE = "/home/home/.npm-global/lib/node_modules/9router/app";
 const DEFAULT_DB = "/home/home/.9router/db/data.sqlite";
+const DEFAULT_CODEX_CONFIG = "/home/home/.codex/config.toml";
+const DEFAULT_MODEL_CATALOG = "/home/home/.openclaw/codex-9router-model-catalog.json";
 
 const opts = {
   root: process.cwd(),
   bundle: DEFAULT_BUNDLE,
   db: DEFAULT_DB,
+  codexConfig: DEFAULT_CODEX_CONFIG,
+  modelCatalog: DEFAULT_MODEL_CATALOG,
   health: [],
   checkBundle: true,
   checkDb: true,
+  checkExternal: true,
 };
 
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -24,23 +29,31 @@ Options:
   --root PATH       Source tree to verify (default: cwd)
   --bundle PATH     Deployed bundle to scan (default: ${DEFAULT_BUNDLE})
   --db PATH         9Router sqlite DB to inspect (default: ${DEFAULT_DB})
+  --codex-config PATH  Codex config to inspect (default: ${DEFAULT_CODEX_CONFIG})
+  --model-catalog PATH Custom model catalog to inspect (default: ${DEFAULT_MODEL_CATALOG})
   --health URL      Health URL to fetch; may be repeated
   --no-bundle       Skip deployed bundle scan
-  --no-db           Skip sqlite DB alias checks`);
+  --no-db           Skip sqlite DB alias checks
+  --no-external     Skip Codex config and model catalog checks`);
     process.exit(0);
   }
   if (arg === "--root") opts.root = process.argv[++i];
   else if (arg === "--bundle") opts.bundle = process.argv[++i];
   else if (arg === "--db") opts.db = process.argv[++i];
+  else if (arg === "--codex-config") opts.codexConfig = process.argv[++i];
+  else if (arg === "--model-catalog") opts.modelCatalog = process.argv[++i];
   else if (arg === "--health") opts.health.push(process.argv[++i]);
   else if (arg === "--no-bundle") opts.checkBundle = false;
   else if (arg === "--no-db") opts.checkDb = false;
+  else if (arg === "--no-external") opts.checkExternal = false;
   else die(`Unknown argument: ${arg}`);
 }
 
 opts.root = path.resolve(opts.root);
 opts.bundle = opts.bundle ? path.resolve(opts.bundle) : null;
 opts.db = opts.db ? path.resolve(opts.db) : null;
+opts.codexConfig = opts.codexConfig ? path.resolve(opts.codexConfig) : null;
+opts.modelCatalog = opts.modelCatalog ? path.resolve(opts.modelCatalog) : null;
 
 let failures = 0;
 let warnings = 0;
@@ -117,6 +130,78 @@ function checkGitMetadata() {
   else warn(`source gitdir is broken: ${target}`);
 }
 
+function parseTopLevelTomlString(text, key) {
+  // ponytail: Local config uses top-level quoted strings; add a TOML parser if nested values become required.
+  const line = text.split(/\r?\n/).find((value) => new RegExp(`^\\s*${key}\\s*=`).test(value));
+  return line?.match(/^\s*[A-Za-z0-9_]+\s*=\s*(["'])(.*?)\1\s*(?:#.*)?$/)?.[2] ?? null;
+}
+
+function checkExternalConfig() {
+  if (!opts.checkExternal) return;
+  console.log(`\nCodex config/catalog checks: ${opts.codexConfig}`);
+  if (!opts.codexConfig || !fs.existsSync(opts.codexConfig)) {
+    fail(`Codex config missing: ${opts.codexConfig || "<unset>"}`);
+    return;
+  }
+  if (!opts.modelCatalog || !fs.existsSync(opts.modelCatalog)) {
+    fail(`Codex model catalog missing: ${opts.modelCatalog || "<unset>"}`);
+    return;
+  }
+
+  const config = readFile(opts.codexConfig);
+  const provider = parseTopLevelTomlString(config, "model_provider");
+  const selectedModel = parseTopLevelTomlString(config, "model");
+  const selectedEffort = parseTopLevelTomlString(config, "model_reasoning_effort");
+  const configuredCatalog = parseTopLevelTomlString(config, "model_catalog_json");
+
+  if (provider === "9router") pass("Codex model provider: 9router");
+  else fail(`Codex model provider expected 9router, got ${provider ?? "<missing>"}`);
+  if (configuredCatalog && path.resolve(configuredCatalog) === opts.modelCatalog) pass("Codex model catalog path");
+  else fail(`Codex model catalog path mismatch: ${configuredCatalog ?? "<missing>"}`);
+
+  let catalog;
+  try {
+    catalog = JSON.parse(readFile(opts.modelCatalog));
+  } catch (error) {
+    fail(`Codex model catalog JSON: ${error.message}`);
+    return;
+  }
+  const models = Array.isArray(catalog?.models) ? catalog.models : [];
+  const bySlug = new Map(models.map((model) => [model?.slug, model]));
+  if (models.length === 12 && bySlug.size === models.length) pass("Codex catalog: 12 unique models");
+  else fail(`Codex catalog expected 12 unique models, got ${models.length} rows/${bySlug.size} slugs`);
+
+  for (const slug of ["claude-opus-4.8", "claude-fable-5", "grok-build-0.1", "grok-4.5"]) {
+    if (bySlug.has(slug)) pass(`Codex catalog custom model: ${slug}`);
+    else fail(`Codex catalog missing custom model: ${slug}`);
+  }
+
+  const expectedGpt = {
+    "gpt-5.6-sol": { agent: "v2", ultra: true },
+    "gpt-5.6-terra": { agent: "v2", ultra: true },
+    "gpt-5.6-luna": { agent: "v1", ultra: false },
+  };
+  for (const [slug, expected] of Object.entries(expectedGpt)) {
+    const model = bySlug.get(slug);
+    const efforts = new Set(model?.supported_reasoning_levels?.map((level) => level.effort));
+    const valid = model?.context_window === 372000
+      && model?.max_context_window === 372000
+      && model?.use_responses_lite === true
+      && model?.multi_agent_version === expected.agent
+      && efforts.has("max")
+      && efforts.has("ultra") === expected.ultra;
+    if (valid) pass(`Codex catalog GPT metadata: ${slug}`);
+    else fail(`Codex catalog GPT metadata mismatch: ${slug}`);
+  }
+
+  const active = bySlug.get(selectedModel);
+  if (active) pass(`Codex selected model exists in catalog: ${selectedModel}`);
+  else fail(`Codex selected model missing from catalog: ${selectedModel ?? "<missing>"}`);
+  const activeEfforts = new Set(active?.supported_reasoning_levels?.map((level) => level.effort));
+  if (selectedEffort && activeEfforts.has(selectedEffort)) pass(`Codex selected effort supported: ${selectedEffort}`);
+  else fail(`Codex selected effort unsupported: ${selectedEffort ?? "<missing>"}`);
+}
+
 function checkSource() {
   console.log(`\nSource checks: ${opts.root}`);
   if (!fs.existsSync(sourcePath("package.json"))) {
@@ -133,12 +218,27 @@ function checkSource() {
   mustContain("open-sse/utils/proxyFetch.js", "disableEnvProxy", "env proxy bypass support");
   mustContain("open-sse/utils/proxyFetch.js", "ProxyAgent", "explicit proxy dispatcher support");
   mustContain("src/app/api/oauth/[provider]/[action]/route.js", "import \"open-sse/utils/proxyFetch.js\"", "OAuth route patches global fetch");
-  mustContain("src/app/api/oauth/[provider]/[action]/route.js", "return { disableEnvProxy: true }", "OAuth no-pool disables env proxy");
-  mustContain("src/app/api/oauth/[provider]/[action]/route.js", "Proxy pool ${proxyPoolId} is unavailable", "OAuth explicit proxy pool fail-closed");
+  mustContain("src/lib/oauth/proxyOptions.js", "return { disableEnvProxy: true }", "OAuth no-pool disables env proxy");
+  mustContain("src/lib/oauth/proxyOptions.js", "Proxy pool ${proxyPoolId} is unavailable", "OAuth explicit proxy pool fail-closed");
+  mustContain("src/app/api/oauth/[provider]/[action]/route.js", "proxyOptionsForPool", "OAuth actions share proxy resolution");
   mustContain("src/shared/components/OAuthModal.js", "proxyPoolsReady", "OAuth waits for proxy pool list");
+  mustContain("src/shared/components/OAuthModal.js", "flowGenerationRef", "OAuth stale-flow generation fence");
+  mustContain("src/shared/components/OAuthModal.js", "proxyStopPromiseRef.current = pending", "OAuth serialized fixed-port shutdown");
+  mustContain("src/shared/components/OAuthModal.js", "state=${encodeURIComponent(state)}", "OAuth state-bound fixed-port shutdown");
+  mustContain("src/shared/components/OAuthModal.js", "method: \"POST\"", "OAuth fixed-port sessions use POST bodies");
+  mustContain("src/shared/components/OAuthModal.js", "proxyPools.find((pool) => pool.isActive === true)?.id", "OAuth active-pool default");
+  mustContain("src/lib/oauth/utils/server.js", "publicSessionStatus", "OAuth status response redaction");
+  mustContain("src/lib/oauth/utils/server.js", "hasPendingSessions", "OAuth shared callback server pending-session hold");
+  mustContain("src/shared/components/KiroSocialOAuthModal.js", "proxyPools.find((pool) => pool.isActive === true)?.id", "Kiro social active-pool default");
+  mustContain("src/shared/components/KiroSocialOAuthModal.js", "authGenerationRef", "Kiro social exchange generation fence");
+  mustContain("src/app/api/providers/[id]/test/testUtils.js", "refreshOAuthToken(connection, effectiveProxy = null)", "manual OAuth refresh proxy parameter");
+  mustContain("tests/unit/manual-oauth-refresh-proxy.test.js", "passes selected proxy to refreshProviderCredentials", "manual OAuth refresh runtime regression test");
   mustContain("src/lib/oauth/providers.js", "isCloudflareHtmlBadRequest", "Cloudflare HTML 400 detector");
   mustContain("src/lib/oauth/providers.js", "buildRequest({ disableEnvProxy: true })", "Codex exchange direct retry");
-  mustContain("open-sse/services/tokenRefresh/providers.js", "proxyOptions: { disableEnvProxy: true }", "Codex refresh env proxy bypass");
+  mustContain("open-sse/services/tokenRefresh/providers.js", "oauthRefreshProxyOptions", "OAuth refresh proxy normalization");
+  mustContain("open-sse/services/tokenRefresh/providers.js", "return hasConnectionProxy || proxyOptions?.vercelRelayUrl", "OAuth refresh explicit proxy preservation");
+  mustContain("tests/unit/oauth-refresh-routing.test.js", "disableEnvProxy", "OAuth refresh no-proxy regression test");
+  mustContain("tests/unit/oauth-modal-behavior.test.js", "serializes rapid pool changes", "OAuth modal concurrency regression test");
 
   mustContain("open-sse/executors/codex.js", "body.service_tier === \"fast\"", "Codex fast tier detection");
   mustContain("open-sse/executors/codex.js", "body.service_tier = \"priority\"", "Codex fast tier maps to priority");
@@ -211,8 +311,9 @@ function checkSource() {
   mustContain("open-sse/services/copilotStatus.js", "free_limited_copilot", "Copilot free profile classification");
   mustContain("open-sse/services/provider.js", "supportsNativeResponses(provider, model)", "model-aware native Responses capability");
   mustContain("open-sse/services/provider.js", "if (provider !== \"github\") return true", "GitHub-specific native Responses guard");
+  mustContain("open-sse/services/provider.js", "return !/(?:gemini|claude)/i.test(model || \"\")", "GitHub Claude/Gemini Chat bridge policy");
   mustContain("open-sse/handlers/responsesHandler.js", "supportsNativeResponses(modelInfo?.provider, modelInfo?.model)", "Responses bridge uses model-aware capability");
-  mustContain("open-sse/handlers/chatCore.js", "resolveTransport(provider, sourceFormat, model)", "transport resolution includes model");
+  mustContain("open-sse/handlers/chatCore.js", "resolveTransport(provider, modelTargetFormat || sourceFormat, model)", "transport resolution includes model");
   mustContain("open-sse/executors/github.js", "supportsNativeResponses(\"github\", model)", "GitHub executor shares Responses policy");
   mustContain("src/app/api/v1/responses/route.js", "createDeferredResponsesResponse(", "Responses route returns deferred SSE");
   mustContain("src/app/api/v1/responses/route.js", "body?.stream !== true", "Responses explicit-stream gate");
@@ -223,6 +324,17 @@ function checkSource() {
   mustContain("open-sse/utils/responsesStreamBridge.js", "cancelWork(parentSignal?.reason || \"client closed\", true)", "Responses parent abort closes downstream");
   mustContain("open-sse/utils/responsesStreamHelpers.js", "sequence_number: sequenceNumber", "Responses failure sequence number");
   mustContain("open-sse/utils/responsesStreamHelpers.js", "object: \"response\"", "Responses failure object shape");
+  mustContain("open-sse/utils/responsesStreamHelpers.js", "\"response.incomplete\"", "Responses incomplete terminal state");
+  mustContain("open-sse/utils/streamHandler.js", "getOpenAIResponsesTerminationState: () =>", "Responses terminal state survives pipe wrapper");
+  mustContain("open-sse/handlers/chatCore/nonStreamingHandler.js", "responseBody?.status === \"failed\"", "Responses failed JSON classification");
+  mustContain("open-sse/handlers/chatCore/sseToJsonHandler.js", "Responses stream closed before a terminal event", "Responses missing-terminal conversion failure");
+  mustContain("open-sse/utils/stream.js", "formatIncompleteOpenAIResponsesStreamFailure", "Responses streaming missing-terminal formatter");
+  mustContain("open-sse/utils/stream.js", "!openAIResponsesTerminalSeen", "Responses streaming EOF terminal guard");
+  mustContain("open-sse/utils/usageTracking.js", "chunk.type === \"response.incomplete\"", "Responses incomplete usage extraction");
+  mustContain("open-sse/transformer/streamToJsonConverter.js", "parsed.error || parsed.response?.error || parsed", "Responses top-level error preservation");
+  mustContain("tests/unit/responses-abort-terminal.test.js", "preserves terminal state through the production pipe wrapper", "Responses pipe terminal regression test");
+  mustContain("tests/unit/xai-native-responses-routing.test.js", "returns failed native Responses JSON as an upstream error", "Responses failed JSON regression test");
+  mustContain("tests/unit/xai-native-responses-routing.test.js", "ends before a terminal event", "Responses missing-terminal regression test");
   mustContain("open-sse/utils/streamHandler.js", "externalSignal.addEventListener(\"abort\", externalAbort", "provider external abort propagation");
   mustContain("src/sse/handlers/chat.js", "if (externalSignal?.aborted) return result.response", "client abort skips account cooldown");
   mustContain("tests/unit/responses-early-stream.test.js", "sends an immediate comment and keepalives before provider headers", "Responses heartbeat regression test");
@@ -257,6 +369,11 @@ function checkSource() {
   mustContain("src/app/(dashboard)/dashboard/usage/components/UsageTable.js", "Cache Write Cost", "usage cache-write cost column");
   mustContain("src/app/(dashboard)/dashboard/usage/components/UsageTable.js", "Uncached Input Cost", "usage uncached-input cost column");
 
+  mustContain("src/lib/db/schema.js", "dailyLimitTokens: \"INTEGER\"", "API-key daily token limit schema");
+  mustContain("src/lib/db/repos/apiKeysRepo.js", "getApiKeyUsageLimitStatus", "API-key daily token limit query");
+  mustContain("src/sse/handlers/chat.js", "API key daily token limit exceeded", "API-key daily token limit enforcement");
+  mustContain("tests/unit/db-sqlite-vs-lowdb.test.js", "daily usage limit status uses today's API-key tokens", "API-key daily token limit regression test");
+
   mustContain("open-sse/services/usage/codex.js", "parseCodexResetCredits", "Codex reset credit parser");
   mustContain("open-sse/services/usage/codex.js", "RESET_CREDIT_EXPIRY_KEYS", "Codex reset credit expiry parser");
   mustContain("src/app/api/usage/[connectionId]/codex-reset-credits/route.js", "crypto.randomUUID()", "server-generated reset redeem ID");
@@ -275,7 +392,9 @@ function checkSource() {
   mustContain("open-sse/executors/default.js", "tool.type === \"local_shell\") return null", "xAI local_shell drop");
   mustContain("open-sse/executors/default.js", "external_web_access", "xAI hosted tool field strip");
   mustContain("open-sse/executors/default.js", "reasoning.encrypted_content", "xAI encrypted reasoning strip");
-  mustContain("open-sse/executors/default.js", "normalizeXaiResponsesPayload(transformed) : transformed", "xAI final payload strip");
+  mustContain("open-sse/executors/default.js", "credentials?.runtimeTransport?.format === \"openai-responses\"", "xAI sanitizer transport gate");
+  mustContain("open-sse/executors/default.js", "? normalizeXaiResponsesPayload(transformed)", "xAI final Responses payload strip");
+  mustContain("tests/unit/xai-tool-normalization.test.mjs", "preserves encrypted reasoning on Chat Completions transport", "xAI Chat history preservation test");
   mustContain("open-sse/executors/default.js", "item.type === \"reasoning\") return null", "xAI reasoning input drop");
   mustContain("open-sse/executors/default.js", "custom_tool_call", "xAI custom tool history conversion");
   mustContain("open-sse/executors/default.js", "stringifyXaiToolOutput(item.output)", "xAI tool output stringification");
@@ -405,6 +524,8 @@ function checkBundle() {
   contains("https://auth.openai.com/api/accounts/oauth/token", "Codex account token endpoint");
   notContains("https://auth.openai.com/oauth/token", "stale Codex token endpoint");
   contains("disableEnvProxy", "env proxy bypass support");
+  contains("Proxy pool ", "OAuth selected-pool fail-closed error");
+  contains("Authorization flow changed; restart sign-in", "Kiro social stale-flow fence");
   contains("Selected model is at capacity. Please try a different model.", "Codex capacity message");
   contains("invalid_encrypted_content", "Codex encrypted-content recovery");
   contains("retrying same account without", "Codex same-account encrypted-content retry");
@@ -417,6 +538,9 @@ function checkBundle() {
   contains("upstream_error", "Responses delayed error framing");
   contains("sequence_number", "Responses failure sequence number");
   contains("stream_disconnected", "Responses structured disconnect error");
+  contains("Responses stream closed before a terminal event", "Responses missing-terminal conversion");
+  contains("stream closed before response.completed", "Responses streaming EOF failure");
+  contains("response.incomplete", "Responses incomplete terminal handling");
   contains("grok-4.5", "Grok 4.5");
   contains("gpt-5.5", "GPT-5.5 exact pricing/model");
   contains("gpt-5.6-sol", "GPT-5.6 Sol pricing/model");
@@ -427,6 +551,8 @@ function checkBundle() {
   contains("Uncached Input Cost", "usage uncached-input cost column");
   contains("cost_breakdown", "stored usage cost breakdown");
   contains("cost_in_usd_ticks", "provider-reported cost");
+  contains("dailyLimitTokens", "API-key daily token limit storage");
+  contains("API key daily token limit exceeded", "API-key daily token limit enforcement");
   contains("https://api.x.ai/v1/responses", "xAI Responses endpoint");
   contains("tool_choice===void 0", "xAI stale tool choice guard");
   contains("Freeform tool input.", "xAI custom tool freeform wrapper");
@@ -532,6 +658,18 @@ function checkDb() {
   `);
   if (clientTable?.length === 1) pass("db table: apiKeyClients");
   else fail("db table missing: apiKeyClients");
+
+  const apiKeyColumns = runSqlite("pragma table_info(apiKeys);");
+  if (apiKeyColumns?.some((column) => column.name === "dailyLimitTokens")) pass("db column: apiKeys.dailyLimitTokens");
+  else fail("db column missing: apiKeys.dailyLimitTokens");
+
+  const invalidLimits = runSqlite(`
+    select count(*) as count from apiKeys
+    where dailyLimitTokens is not null
+      and (typeof(dailyLimitTokens) != 'integer' or dailyLimitTokens < 0);
+  `);
+  if (invalidLimits?.[0]?.count === 0) pass("db API-key daily token limits are valid");
+  else fail(`db invalid API-key daily token limits: ${invalidLimits?.[0]?.count ?? "query failed"}`);
 }
 
 async function checkHealth() {
@@ -554,6 +692,7 @@ async function checkHealth() {
 }
 
 checkSource();
+checkExternalConfig();
 checkBundle();
 checkDb();
 await checkHealth();

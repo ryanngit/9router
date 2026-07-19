@@ -1,6 +1,6 @@
 # 9Router Update Runbook
 
-Last updated: 2026-07-16
+Last updated: 2026-07-19
 
 Use this before updating, patching, deploying, or preparing upstream PRs. The goal is minimal downtime and no rediscovery of fragile behavior.
 
@@ -13,9 +13,11 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - User traffic may be connected through 9Router; avoid restarts until the final deploy step.
 - Do not rely on `git status` in `9router-patch` until broken worktree metadata is fixed.
 - Do not push upstream branches from a dirty/broken worktree.
-- Never restart or replace cloudflared during an app upgrade.
+- Never proactively restart or replace cloudflared during an app upgrade. If local app health passes but the recorded raw tunnel remains down, one guarded recovery is allowed after app rollback gates pass; record the old/new PID and raw URL, then re-register the existing short ID.
 - P17 deployments must run `app/custom-server.js`; `app/server.js` loses trusted tunnel client identity.
 - P19/P20 Grok subscription inference is a strict Responses compatibility boundary. Never restore the old incremental mutators in `grok-cli.js`; request semantics live in `grok-cli-compat.js`.
+- P1 OAuth proxy context must remain selected from authorize/device-code through callback, token exchange, and refresh. Fixed-port PKCE secrets belong in POST bodies, never query strings.
+- P25 native Responses has five terminal invariants: completed/incomplete/failed/error are terminal, terminal state survives pipe wrappers, `[DONE]` appears once, failed or unterminated JSON/SSE is not account success, and incomplete usage is billable.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
 ## 1. Brainstorm / Analyze
@@ -38,19 +40,23 @@ curl -fsS http://127.0.0.1:20128/api/health
 cat /home/home/.9router/tunnel/state.json 2>/dev/null || true
 ```
 
-- Check source/live invariants:
+- Check source/config/DB invariants before building:
 
 ```bash
 cd /home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35
 node scripts/verify-local-patches.mjs \
   --root . \
-  --bundle /home/home/.npm-global/lib/node_modules/9router/app \
-  --db /home/home/.9router/db/data.sqlite
+  --no-bundle \
+  --db /home/home/.9router/db/data.sqlite \
+  --codex-config /home/home/.codex/config.toml \
+  --model-catalog /home/home/.openclaw/codex-9router-model-catalog.json
 ```
+
+Current pre-candidate live P22 bundle is expected to fail only the pending Kiro generation, P24 redaction, and P25 incomplete/EOF markers. Do not call that bundle green. After building, run the full verifier against the candidate app; after promotion, run it against live and require zero failures.
 
 Stop if:
 
-- The verifier has failures.
+- Source/config/DB verification has failures, candidate verification has any failure, or pre-candidate live verification has an undocumented failure.
 - The source directory has broken git metadata and the task is upstream PR prep.
 - The live app health check fails before any edits.
 - Candidate version differs from npm `latest` or the requested pinned version.
@@ -100,6 +106,8 @@ Review the diff against the patch ledger:
 - Did it preserve P12 endpoint-wide routing for both bare and provider-prefixed `gpt-*` models?
 - Does `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'` show target `cx/gpt-5.6-sol`, effort `max`, and service tier `default`?
 - Did it preserve explicit proxy pools and `__none__` no-proxy behavior?
+- Do unavailable selected pools fail closed, and do rapid modal pool changes start only the newest generation after the prior fixed proxy stops?
+- Are Codex/xAI fixed-port starts POST-only, state-bound on stop/status, and free of verifier/redirect/proxy secrets in URLs?
 - Did it preserve local route access on `127.0.0.1:20128`?
 - Does Console Log still work through both raw and short tunnel URLs when SSE is buffered?
 - Does quota refresh have one scheduler and one real-time countdown?
@@ -107,6 +115,9 @@ Review the diff against the patch ledger:
 - Does Grok inference still use `X-XAI-Token-Auth`, `x-authenticateresponse`, `x-grok-client-mode`, and `x-grok-user-id`, while model/usage resource calls retain `x-userid`/`x-email`?
 - Does Grok preserve native `rs_<UUID>`, self-identifying `tco_*`, `ctc_*` plus `xs_call-*`, web-search, and code-interpreter history while removing foreign OpenAI reasoning?
 - Are unmatched HTTP 400/422 errors returned without account lock/fallback, while capacity/rate/quota text still rotates accounts?
+- Does xAI sanitize only OpenAI Responses transport while leaving Chat history untouched?
+- Does a completed/incomplete terminal followed by `ECONNRESET` avoid a second `response.failed` and emit one `[DONE]`?
+- Does EOF without any terminal become `response.failed` or fallback-capable HTTP 502 before usage/account success?
 
 Do not mark upstream-ready until:
 
@@ -123,14 +134,16 @@ cd /path/to/clean/version-worktree
 node --check scripts/verify-local-patches.mjs
 node scripts/verify-local-patches.mjs \
   --root . \
-  --bundle /home/home/.npm-global/lib/node_modules/9router/app \
+  --bundle /path/to/verified/candidate/app \
   --db /home/home/.9router/db/data.sqlite \
+  --codex-config /home/home/.codex/config.toml \
+  --model-catalog /home/home/.openclaw/codex-9router-model-catalog.json \
   --health http://127.0.0.1:20128/api/health
 ```
 
 Targeted manual checks by patch:
 
-- P1 OAuth: expired/fake Codex exchange returns OpenAI JSON, not Cloudflare HTML.
+- P1 OAuth: expired/fake Codex exchange returns OpenAI JSON, not Cloudflare HTML. Run callback, modal race, device, Kiro social, and refresh-routing tests; verify direct mode emits no gateway traffic and selected mode keeps one pool through refresh.
 - P2 Codex fast/max: GPT-5.4/GPT-5.5 `fast` maps to `priority`; GPT-5.6 `fast`/`priority` is removed; Codex `max` does not produce invalid `max`.
 - P3 workspace: same email with different workspace/account IDs remains distinct.
 - P4 capacity: capacity text triggers account retry, not client failure.
@@ -138,7 +151,9 @@ Targeted manual checks by patch:
 - P5 Copilot thinking: Opus 4.8 and Fable 5 with `max` must both reach native `/v1/messages`; Fable wire must use adaptive thinking plus `output_config.effort`.
 - P6 usage: cached tokens lower cost; API-key grouping remains separated.
 - P7 reset bank: confirmation appears before reset consume; cancel does not POST.
+- P11 key limits: unlimited key proceeds; exhausted key returns HTTP 429 before provider/account selection; DB contains only null or non-negative integer limits.
 - P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol` with effort `max`, no provider service tier, and effective response tier `default`.
+- P12 Codex catalog: active model exists in the catalog, active effort is supported, Sol/Terra retain Ultra/V2, Luna remains max-only/V1, and all GPT-5.6 entries retain Responses Lite plus 372,000 context.
 - P14 Responses Lite: omit `reasoning.context` and `parallel_tool_calls`; provider request must contain `reasoning.context="all_turns"` and `parallel_tool_calls=false`. Repeat with incoming `parallel_tool_calls=true`.
 - P15 console: local SSE emits `init`; raw and short tunnels fall back to ETag polling after silent SSE.
 - P16 quota: countdown advances once per real second and one refresh occurs at the deadline.
@@ -148,6 +163,7 @@ Targeted manual checks by patch:
 - P20 Grok codec: run minimal text, strict web search, native x-search two-turn replay, typed function/custom history, structured output, malformed/duplicate/orphan/dangling repair, local 400 no-lock, and approximately 1 MB/463-item replay.
 - P20 candidate safety: copy the live DB with SQLite `.backup`, remove every `refreshToken`, bind candidate to `127.0.0.1:20129`, start no tunnel, then delete the credential-bearing candidate home after QA.
 - P21 Responses heartbeat: an explicit `stream:true` `/v1/responses` request must return an SSE comment before provider headers, emit comments every 25 seconds only while headers are pending, then preserve provider bytes and downstream backpressure exactly. It must survive at least 130 seconds through a temporary public tunnel and start exactly one provider request. Cancelling the client must close downstream, abort that provider request, leave no timer, and avoid account locks. Repeat `stream:false`, omitted-`stream`, invalid-JSON, and streaming-error controls; synthetic `response.failed` must carry the request model and required Responses fields.
+- P25 Responses terminal matrix: completed plus reset, incomplete plus usage, failed SSE, failed JSON, top-level `event:error`, and EOF before terminal. Assert fallback-capable 502 for failures and exact cached/reasoning accounting for incomplete.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 
@@ -177,9 +193,11 @@ For runtime source changes:
 5. Exchange candidate and live app directories.
 6. Start/reload PM2 once with `app/custom-server.js` as `pm_exec_path`.
 7. Poll local health for up to 90 seconds before deciding rollback.
-8. Verify short and raw tunnel health without restarting cloudflared.
-9. Confirm cloudflared PID is unchanged.
+8. Verify short and recorded raw tunnel health without restarting cloudflared.
+9. Confirm cloudflared PID is unchanged. If guarded recovery was required because recorded raw health failed, record the PID/URL change and verify raw plus short mapping instead.
 10. Update only `cli/package.json` version after successful app health if retaining the local wrapper.
+
+When this control conversation uses the same 9Router path, keep live untouched through source review, build, isolated QA, differential, and rollback rehearsal. Promote all runtime commits together with one PM2 restart; never use feature-by-feature live restarts.
 
 Canonical promotion helper for current verified source:
 
@@ -295,6 +313,7 @@ After every patch/update:
 
 - Update `docs/PATCH_LEDGER.md` with changed files, live backup path, tunnel URL, and verification results.
 - Add or update a verifier invariant when the issue was rediscovered manually.
+- Record feature commit, upstream branch head, reviewer verdict, focused counts, clean-baseline differential, candidate path, and live backup path separately; one green unit count is not a deployment record.
 - Copy the updated ledger, runbook, and verifier into the clean current local branch and commit them there.
 - If a pushed upstream branch was affected, mark it stale until re-cut.
 - Record anything that was skipped and the trigger for adding it.
