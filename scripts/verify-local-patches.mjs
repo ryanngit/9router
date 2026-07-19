@@ -188,9 +188,16 @@ function checkSource() {
   mustContain("src/sse/handlers/chat.js", "structuredClone(body)", "model fallback deep request clone");
 
   mustContain("open-sse/executors/codex.js", "\"ChatGPT-Account-ID\"", "Codex request account header");
-  mustContain("open-sse/executors/codex.js", "credentials?.providerSpecificData?.workspaceId ||", "Codex workspace binding");
-  mustContain("open-sse/executors/codex.js", "credentials?.providerSpecificData?.chatgptAccountId ||", "Codex account fallback binding");
-  mustContain("open-sse/services/usage/codex.js", "providerSpecificData?.workspaceId || providerSpecificData?.chatgptAccountId", "Codex usage workspace/account binding");
+  mustContain("open-sse/services/codexAccount.js", "providerSpecificData?.workspaceId", "Codex workspace binding");
+  mustContain("open-sse/services/codexAccount.js", "providerSpecificData?.chatgptAccountId", "Codex account fallback binding");
+  mustContain("open-sse/services/codexAccount.js", "chatgpt_account_id", "Codex ID-token account fallback");
+  mustContain("open-sse/executors/codex.js", "resolveCodexAccountId(credentials?.providerSpecificData, credentials?.idToken)", "Codex request shared account resolver");
+  mustContain("open-sse/handlers/imageProviders/codex.js", "resolveCodexAccountId(creds?.providerSpecificData, creds?.idToken)", "Codex image shared account resolver");
+  mustContain("open-sse/services/usage/codex.js", "resolveCodexAccountId(providerSpecificData, idToken)", "Codex usage workspace/account binding");
+  mustContain("open-sse/services/usage/codex.js", "? [providerSpecificData, providerSpecificData]", "Codex mixed proxy/account preservation");
+  mustContain("open-sse/services/usage/codex.js", "A ChatGPT account ID is required to consume", "Codex reset consume fails closed");
+  mustContain("src/shared/services/quotaAutoPing.js", "idToken: connection.idToken", "Codex auto-ping account fallback");
+  mustContain("src/app/api/usage/[connectionId]/codex-reset-credits/route.js", "connection.idToken", "Codex reset route ID-token binding");
   mustContain("src/lib/oauth/providers.js", "chatgptAccountId: info.chatgptAccountId", "Codex OAuth stores account ID");
   mustContain("src/app/api/oauth/codex/bulk-import/route.js", "psd.chatgptAccountId = info.chatgptAccountId", "Codex bulk import backfills account ID");
 

@@ -11,6 +11,13 @@ function streamFromText(text) {
   });
 }
 
+function idTokenFor(accountId) {
+  const payload = Buffer.from(JSON.stringify({
+    "https://api.openai.com/auth": { chatgpt_account_id: accountId },
+  })).toString("base64url");
+  return `header.${payload}.signature`;
+}
+
 describe("Codex fast tier and capacity handling", () => {
   it("maps Codex fast tier to priority and preserves max reasoning", () => {
     const executor = new CodexExecutor();
@@ -133,6 +140,18 @@ describe("Codex fast tier and capacity handling", () => {
     expect(legacy.reasoning.effort).toBe("max");
     expect(suffix).toMatchObject({ model: "gpt-5.6-luna", reasoning: { effort: "max" } });
     expect(previousModel.reasoning.effort).toBe("xhigh");
+  });
+
+  it("uses the id token account when provider data is missing", () => {
+    const executor = new CodexExecutor();
+    const headers = executor.buildHeaders({
+      accessToken: "token",
+      connectionId: "conn_1",
+      providerSpecificData: {},
+      idToken: idTokenFor("legacy_ws"),
+    });
+
+    expect(headers["ChatGPT-Account-ID"]).toBe("legacy_ws");
   });
 
   it("classifies 200-SSE model capacity as account fallback", async () => {
