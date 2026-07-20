@@ -302,6 +302,11 @@ export async function getActiveRequests() {
 export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
+    const usageReservationId = entry.usageReservationId;
+    if (usageReservationId) {
+      entry = { ...entry };
+      delete entry.usageReservationId;
+    }
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
     const costBreakdown = await calculateCostBreakdown(entry.provider, entry.model, entry.tokens);
@@ -322,6 +327,10 @@ export async function saveRequestUsage(entry) {
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
+      if (usageReservationId) {
+        db.run(`DELETE FROM apiKeyUsageReservations WHERE id = ?`, [usageReservationId]);
+      }
+
       const existing = db.get(
         `SELECT id, endpoint FROM usageHistory
          WHERE timestamp = ?

@@ -239,7 +239,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ requestId, correlationId, providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ requestId, correlationId, providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -289,6 +289,7 @@ export async function handleForcedSSEToJson({ requestId, correlationId, provider
         tokens: usage,
         connectionId,
         apiKey,
+        usageReservationId,
         apiKeyClient: clientRawRequest?.apiKeyClient,
         endpoint: clientRawRequest?.endpoint,
         serviceTier: finalBody?.service_tier ?? translatedBody?.service_tier ?? body?.service_tier,
@@ -361,6 +362,7 @@ export async function handleForcedSSEToJson({ requestId, correlationId, provider
       tokens: usage,
       connectionId,
       apiKey,
+      usageReservationId,
       apiKeyClient: clientRawRequest?.apiKeyClient,
       endpoint: clientRawRequest?.endpoint,
       serviceTier: finalBody?.service_tier ?? translatedBody?.service_tier ?? body?.service_tier,

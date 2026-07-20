@@ -8,10 +8,12 @@ import {
   resolveApiKeyId,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getApiKeyUsageLimitStatus, getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/localDb";
+import { releaseApiKeyUsageReservation, reserveApiKeyUsage } from "@/lib/db/index.js";
 import { getSafeRequestHeaders } from "@/lib/requestOrigin";
 import { trackApiKeyClientActivity } from "../services/apiKeyClientActivity.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { estimateChatUsageReservation } from "../services/usageReservation.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -100,17 +102,6 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     if (!apiKeyId) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
-  }
-
-  if (apiKey) {
-    // ponytail: This is a preflight soft cap; add atomic usage reservations before treating it as a concurrent hard limit.
-    const limitStatus = await getApiKeyUsageLimitStatus(apiKey);
-    if (limitStatus.exceeded) {
-      const used = Math.round(limitStatus.usedTokens);
-      const limit = Math.round(limitStatus.limitTokens);
-      log.warn("AUTH", `API key daily token limit exceeded (${used}/${limit})`);
-      return errorResponse(HTTP_STATUS.RATE_LIMITED, `API key daily token limit exceeded (${used}/${limit} tokens)`);
     }
   }
 
@@ -275,6 +266,26 @@ async function handleSingleModelChat(
   }
 
   const { provider, model } = modelInfo;
+  let usageReservationId = null;
+  if (apiKey) {
+    let requestedTokens;
+    try {
+      requestedTokens = estimateChatUsageReservation(body);
+    } catch (error) {
+      log.warn("AUTH", error.message);
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
+    }
+
+    const limitStatus = await reserveApiKeyUsage(apiKey, requestedTokens);
+    if (!limitStatus.accepted) {
+      const consumed = Math.min(Number.MAX_SAFE_INTEGER, limitStatus.usedTokens + limitStatus.reservedTokens);
+      const used = Math.round(consumed);
+      const limit = Math.round(limitStatus.limitTokens);
+      log.warn("AUTH", `API key daily token limit exceeded (${used}/${limit})`);
+      return errorResponse(HTTP_STATUS.RATE_LIMITED, `API key daily token limit exceeded (${used}/${limit} tokens)`);
+    }
+    usageReservationId = limitStatus.reservationId;
+  }
   await admitRequest?.();
 
   // Routing shown in the unified "▶" line (client model → provider/model)
@@ -289,32 +300,34 @@ async function handleSingleModelChat(
   let fallbackTotalMs = 0;
   const admissionTiming = snapshotRequestTiming(requestTiming);
 
-  while (true) {
-    if (externalSignal?.aborted) return errorResponse(499, "Request aborted");
-    const attemptTiming = createAttemptTiming(
-      admissionTiming,
-      fallbackTotalMs > 0 ? { fallback_total_ms: fallbackTotalMs } : undefined
-    );
-    const attemptId = globalThis.crypto.randomUUID();
-    const credentials = await measureRequestPhase(attemptTiming.phases, "routing_total_ms", () =>
-      measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () =>
-        getProviderCredentials(provider, excludeConnectionIds, model)));
+  let preserveUsageReservation = false;
+  try {
+    while (true) {
+      if (externalSignal?.aborted) return errorResponse(499, "Request aborted");
+      const attemptTiming = createAttemptTiming(
+        admissionTiming,
+        fallbackTotalMs > 0 ? { fallback_total_ms: fallbackTotalMs } : undefined
+      );
+      const attemptId = globalThis.crypto.randomUUID();
+      const credentials = await measureRequestPhase(attemptTiming.phases, "routing_total_ms", () =>
+        measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () =>
+          getProviderCredentials(provider, excludeConnectionIds, model)));
 
-    // All accounts unavailable
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+      // All accounts unavailable
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.allRateLimited) {
+          const errorMsg = lastError || credentials.lastError || "Unavailable";
+          const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        }
+        if (excludeConnectionIds.size === 0) {
+          log.warn("AUTH", `No active credentials for provider: ${provider}`);
+          return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        }
+        log.warn("CHAT", "No more accounts available", { provider });
+        return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
       }
-      if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
-      }
-      log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
-    }
 
     // Account selection shown in the unified "▶" line (acc:...)
     const proxyOptions = resolveRefreshProxyOptions(credentials);
@@ -348,6 +361,7 @@ async function handleSingleModelChat(
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      usageReservationId,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
@@ -382,7 +396,10 @@ async function handleSingleModelChat(
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      preserveUsageReservation = true;
+      return result.response;
+    }
     if (externalSignal?.aborted) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
@@ -405,6 +422,11 @@ async function handleSingleModelChat(
       continue;
     }
 
-    return result.response;
+      return result.response;
+    }
+  } finally {
+    if (usageReservationId && !preserveUsageReservation) {
+      await releaseApiKeyUsageReservation(usageReservationId);
+    }
   }
 }

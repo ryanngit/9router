@@ -205,7 +205,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ requestId, correlationId, providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ requestId, correlationId, providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -276,6 +276,7 @@ export async function handleNonStreamingResponse({ requestId, correlationId, pro
     tokens: usage,
     connectionId,
     apiKey,
+    usageReservationId,
     apiKeyClient: clientRawRequest?.apiKeyClient,
     endpoint: clientRawRequest?.endpoint,
     serviceTier: finalBody?.service_tier ?? translatedBody?.service_tier ?? body?.service_tier,

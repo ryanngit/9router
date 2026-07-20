@@ -13,6 +13,7 @@ export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
   validateApiKey, getActiveApiKeyId, getApiKeyUsageLimitStatus,
   recordApiKeyClientRequest,
+  reserveApiKeyUsage, releaseApiKeyUsageReservation,
   getCombos, getComboById, getComboByName,
   createCombo, updateCombo, deleteCombo,
   getModelAliases, setModelAlias, deleteModelAlias,

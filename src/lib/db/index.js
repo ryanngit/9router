@@ -32,6 +32,7 @@ export {
 export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
   validateApiKey, getActiveApiKeyId, getApiKeyUsageLimitStatus,
+  reserveApiKeyUsage, releaseApiKeyUsageReservation,
 } from "./repos/apiKeysRepo.js";
 
 export {
