@@ -5,6 +5,7 @@ import { createStreamController } from "../../open-sse/utils/streamHandler.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const CODEX_KEEPALIVE = 'event: 9router.keepalive\ndata: {"type":"9router.keepalive"}\n\n';
 
 function deferred() {
   let resolve;
@@ -98,11 +99,34 @@ describe("deferred Responses streaming", () => {
     expect(failed.response.created_at).toEqual(expect.any(Number));
   });
 
+  it("sends Codex event keepalives after provider headers while SSE is idle", async () => {
+    let upstreamController;
+    const upstream = new ReadableStream({
+      start(controller) {
+        upstreamController = controller;
+        controller.enqueue(encoder.encode('event: response.created\ndata: {"type":"response.created"}\n\n'));
+      },
+    });
+    const response = createDeferredResponsesResponse(
+      async () => new Response(upstream, { headers: { "Content-Type": "text/event-stream" } }),
+      { keepaliveMs: 20, eventKeepalive: true },
+    );
+    const reader = response.body.getReader();
+
+    expect(decoder.decode((await readWithTimeout(reader)).value)).toBe(": connected\n\n");
+    expect(decoder.decode((await readWithTimeout(reader)).value)).toContain("response.created");
+    expect(decoder.decode((await readWithTimeout(reader)).value)).toBe(CODEX_KEEPALIVE);
+
+    upstreamController.enqueue(encoder.encode('event: response.completed\ndata: {"type":"response.completed"}\n\ndata: [DONE]\n\n'));
+    upstreamController.close();
+    expect(await readReaderAll(reader)).toContain("response.completed");
+  });
+
   it("preserves fragmented provider SSE bytes without inserting keepalives", async () => {
     const provider = deferred();
     const response = createDeferredResponsesResponse(
       () => provider.promise,
-      { keepaliveMs: 10 },
+      { keepaliveMs: 10, eventKeepalive: true },
     );
     const reader = response.body.getReader();
 
