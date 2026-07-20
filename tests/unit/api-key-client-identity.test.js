@@ -130,7 +130,7 @@ describe("API key client identity", () => {
     expect(mapped.maskedNetwork).toBe("192.0.2.*");
   });
 
-  it("detects Codex activity variants without expanding native passthrough detection", async () => {
+  it("detects Codex activity variants and preserves local native passthrough detection", async () => {
     const headers = { "user-agent": "codex_cli_rs/0.144.1" };
     const identity = await getApiKeyClientIdentity(request({
       ...headers,
@@ -138,6 +138,6 @@ describe("API key client identity", () => {
     }));
 
     expect(identity.clientFamily).toBe("codex");
-    expect(detectClientTool(headers, {})).toBeNull();
+    expect(detectClientTool(headers, {})).toBe("codex");
   });
 });

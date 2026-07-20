@@ -16,9 +16,21 @@ vi.mock("../../src/sse/services/auth.js", () => ({
   clearAccountError: vi.fn(),
   extractApiKey: vi.fn(() => null),
   isValidApiKey: vi.fn(),
+  resolveApiKeyId: vi.fn(),
 }));
 vi.mock("open-sse/utils/claudeHeaderCache.js", () => ({ cacheClaudeHeaders: vi.fn() }));
 vi.mock("../../src/lib/localDb.js", () => ({ getSettings: vi.fn(async () => ({})) }));
+vi.mock("../../src/lib/db/index.js", () => ({
+  releaseApiKeyUsageReservation: vi.fn(),
+  reserveApiKeyUsage: vi.fn(),
+}));
+vi.mock("../../src/lib/requestOrigin.js", () => ({ getSafeRequestHeaders: vi.fn(() => ({})) }));
+vi.mock("../../src/sse/services/apiKeyClientActivity.js", () => ({
+  trackApiKeyClientActivity: vi.fn(),
+}));
+vi.mock("../../src/sse/services/usageReservation.js", () => ({
+  estimateChatUsageReservation: vi.fn(),
+}));
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: vi.fn(async () => ({ provider: "gemini-cli", model: "gemini-2.5-pro" })),
   getComboModels: vi.fn(async () => null),
@@ -33,10 +45,19 @@ vi.mock("open-sse/utils/error.js", () => ({
 }));
 vi.mock("open-sse/services/combo.js", () => ({ handleComboChat: vi.fn(), handleFusionChat: vi.fn() }));
 vi.mock("open-sse/utils/bypassHandler.js", () => ({ handleBypassRequest: vi.fn(() => null) }));
-vi.mock("open-sse/config/runtimeConfig.js", () => ({
-  HTTP_STATUS: { BAD_REQUEST: 400, UNAUTHORIZED: 401, NOT_FOUND: 404, SERVICE_UNAVAILABLE: 503 },
+vi.mock("open-sse/translator/formats.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  detectFormatByEndpoint: vi.fn(),
 }));
-vi.mock("open-sse/translator/formats.js", () => ({ detectFormatByEndpoint: vi.fn() }));
+vi.mock("open-sse/services/provider.js", () => ({
+  applyProviderThinking: vi.fn((body) => body),
+  detectFormat: vi.fn(() => "openai"),
+}));
+vi.mock("open-sse/rtk/caveman.js", () => ({ injectCaveman: vi.fn() }));
+vi.mock("open-sse/rtk/ponytail.js", () => ({ injectPonytail: vi.fn() }));
+vi.mock("../../src/sse/services/bestGptRoute.js", () => ({
+  applyBestGptRoute: vi.fn((body) => ({ applied: false, body, model: body.model })),
+}));
 vi.mock("../../src/sse/utils/logger.js", () => ({
   debug: vi.fn(),
   error: vi.fn(),

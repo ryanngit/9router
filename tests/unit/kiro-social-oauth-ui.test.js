@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const harness = vi.hoisted(() => ({ effects: [] }));
 
 vi.mock("react", () => ({
+  useCallback: (callback) => callback,
   useEffect: (effect) => harness.effects.push(effect),
   useRef: (initialValue) => ({ current: initialValue }),
   useState: (initialValue) => [
