@@ -30,7 +30,7 @@ function processSSEMessage(msg, state) {
   } else if (eventType === "response.completed" || eventType === "response.done") {
     const responseStatus = parsed.response?.status;
     const completedStatus = !responseStatus || responseStatus === "completed" || responseStatus === "done";
-    state.status = eventType === "response.done" || completedStatus ? "completed" : "failed";
+    state.status = completedStatus ? "completed" : "failed";
     state.model = parsed.response?.model || state.model;
     state.serviceTier = parsed.response?.service_tier || state.serviceTier;
     if (parsed.response?.usage) state.usage = { ...state.usage, ...parsed.response.usage };
