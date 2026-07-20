@@ -35,8 +35,30 @@ describe("Schema migrations", () => {
     const tables = db.all(`SELECT name FROM sqlite_master WHERE type='table'`).map(t => t.name);
     expect(tables).toEqual(expect.arrayContaining([
       "_meta", "settings", "providerConnections", "providerNodes",
-      "proxyPools", "apiKeys", "apiKeyClients", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
+      "proxyPools", "apiKeys", "apiKeyClients", "apiKeyUsageReservations",
+      "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
     ]));
+  });
+
+  it("schema version 3 restart applies reservation migration 4", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    db.exec("DROP TABLE IF EXISTS apiKeyUsageReservations");
+    db.exec("DROP INDEX IF EXISTS idx_uh_api_key_ts");
+    db.run("UPDATE _meta SET value = '3' WHERE key = 'schemaVersion'");
+    db.close?.();
+
+    delete global._dbAdapter;
+    vi.resetModules();
+    const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
+    const { latestVersion } = await import("@/lib/db/migrations/index.js");
+    const db2 = await getAdapter2();
+
+    expect(latestVersion()).toBe(4);
+    expect(Number(db2.get("SELECT value FROM _meta WHERE key = 'schemaVersion'").value)).toBe(4);
+    expect(db2.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'apiKeyUsageReservations'")).toBeDefined();
+    expect(db2.all("PRAGMA index_list(apiKeyUsageReservations)").map((index) => index.name)).toContain("idx_akur_key_expiry");
+    expect(db2.all("PRAGMA index_list(usageHistory)").map((index) => index.name)).toContain("idx_uh_api_key_ts");
   });
 
   it("existing DB at older schemaVersion → re-applies pending migrations on restart", async () => {
