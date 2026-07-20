@@ -35,6 +35,12 @@ import {
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { applyBestGptRoute } from "../services/bestGptRoute.js";
 import {
+  createCacheAffinityScope,
+  getCacheAffinityPreference,
+  rememberCacheAffinity,
+} from "../services/cacheAffinity.js";
+import { extractClientSessionId } from "open-sse/utils/sessionManager.js";
+import {
   cloneRequestTiming,
   createAttemptTiming,
   createRequestTiming,
@@ -114,8 +120,9 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   }
 
   let admitted = false;
+  let admittedClient = null;
   const admitRequest = async () => {
-    if (admitted || !apiKey) return;
+    if (admitted || !apiKey) return admittedClient;
     admitted = true;
     const trackedClient = await trackApiKeyClientActivity({
       request,
@@ -124,7 +131,9 @@ export async function handleChat(request, clientRawRequest = null, options = {})
       apiKeyId,
       endpoint: clientRawRequest?.endpoint,
     });
+    admittedClient = trackedClient;
     if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
+    return admittedClient;
   };
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -166,7 +175,7 @@ export async function handleChat(request, clientRawRequest = null, options = {})
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId, admitRequest);
         },
         log,
         comboName: modelStr,
@@ -180,7 +189,7 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId, admitRequest),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -243,7 +252,7 @@ async function handleSingleModelChat(
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId, admitRequest);
           },
           log,
           comboName: modelStr,
@@ -257,7 +266,7 @@ async function handleSingleModelChat(
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, externalSignal, cloneRequestTiming(requestTiming), correlationId, admitRequest),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -304,7 +313,23 @@ async function handleSingleModelChat(
     }
     usageReservationId = limitStatus.reservationId;
   }
-  await admitRequest?.();
+  const apiKeyClient = await admitRequest?.();
+  const providerStrategy = (chatSettings.providerStrategies || {})[provider] || {};
+  const affinityScope = providerStrategy.cacheAffinityEnabled === true
+    ? createCacheAffinityScope({
+        provider,
+        model,
+        apiKey,
+        fingerprint: apiKeyClient?.fingerprint,
+        sessionId: extractClientSessionId(
+          clientRawRequest?.headers || {},
+          body,
+          provider,
+          { includeRequestId: false },
+        ),
+      })
+    : null;
+  const preferredConnectionId = getCacheAffinityPreference(affinityScope);
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
@@ -329,7 +354,9 @@ async function handleSingleModelChat(
       const attemptId = globalThis.crypto.randomUUID();
       const credentials = await measureRequestPhase(attemptTiming.phases, "routing_total_ms", () =>
         measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () =>
-          getProviderCredentials(provider, excludeConnectionIds, model)));
+          preferredConnectionId
+            ? getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId })
+            : getProviderCredentials(provider, excludeConnectionIds, model)));
 
       // All accounts unavailable
       if (!credentials || credentials.allRateLimited) {
@@ -414,6 +441,7 @@ async function handleSingleModelChat(
       });
 
       if (result.success) {
+        if (affinityScope) rememberCacheAffinity(affinityScope, credentials.connectionId);
         preserveUsageReservation = true;
         return result.response;
       }

@@ -1,0 +1,199 @@
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+const authMocks = vi.hoisted(() => ({
+  clearAccountError: vi.fn(),
+  getProviderCredentials: vi.fn(),
+  markAccountUnavailable: vi.fn(),
+  resolveApiKeyId: vi.fn(),
+}));
+const dbMocks = vi.hoisted(() => ({
+  releaseApiKeyUsageReservation: vi.fn(),
+  reserveApiKeyUsage: vi.fn(),
+}));
+const dispatchMocks = vi.hoisted(() => ({ handleChatCore: vi.fn() }));
+const modelMocks = vi.hoisted(() => ({ getComboModels: vi.fn(), getModelInfo: vi.fn() }));
+const settingsMocks = vi.hoisted(() => ({ getSettings: vi.fn() }));
+const trackingMocks = vi.hoisted(() => ({ trackApiKeyClientActivity: vi.fn() }));
+const tokenMocks = vi.hoisted(() => ({
+  checkAndRefreshToken: vi.fn(),
+  resolveRefreshProxyOptions: vi.fn(() => ({})),
+  updateProviderCredentials: vi.fn(),
+}));
+
+vi.mock("@/sse/services/auth.js", () => ({
+  clearAccountError: authMocks.clearAccountError,
+  extractApiKey: (request) => request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || null,
+  getProviderCredentials: authMocks.getProviderCredentials,
+  markAccountUnavailable: authMocks.markAccountUnavailable,
+  resolveApiKeyId: authMocks.resolveApiKeyId,
+}));
+vi.mock("@/lib/db/index.js", () => dbMocks);
+vi.mock("open-sse/handlers/chatCore.js", () => dispatchMocks);
+vi.mock("@/sse/services/model.js", () => modelMocks);
+vi.mock("@/lib/localDb", () => settingsMocks);
+vi.mock("@/lib/requestOrigin", () => ({
+  getSafeRequestHeaders: (request) => Object.fromEntries(request.headers),
+}));
+vi.mock("@/sse/services/apiKeyClientActivity.js", () => trackingMocks);
+vi.mock("@/sse/services/tokenRefresh.js", () => tokenMocks);
+vi.mock("@/sse/services/bestGptRoute.js", () => ({
+  applyBestGptRoute: (body) => ({ applied: false, body, model: body.model }),
+}));
+
+let clearCacheAffinity;
+let handleChat;
+
+function credentials(connectionId) {
+  return {
+    connectionId,
+    connectionName: connectionId,
+    apiKey: "provider-key",
+    providerSpecificData: {},
+  };
+}
+
+function success() {
+  return {
+    success: true,
+    response: Response.json({ choices: [{ message: { role: "assistant", content: "ok" } }] }),
+  };
+}
+
+function failure(status = 503, error = "Selected model is at capacity") {
+  return {
+    success: false,
+    status,
+    error,
+    response: Response.json({ error: { message: error } }, { status }),
+  };
+}
+
+function request({ session = "session-1", model = "codex/gpt-5.6-sol", apiKey = "key-1" } = {}) {
+  return new Request("http://localhost/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "x-session-id": session,
+    },
+    body: JSON.stringify({ model, messages: [{ role: "user", content: "hello" }], max_tokens: 8 }),
+  });
+}
+
+function settings(cacheAffinityEnabled = true) {
+  return {
+    requireApiKey: true,
+    providerStrategies: {
+      codex: { fallbackStrategy: "round-robin", cacheAffinityEnabled },
+    },
+    providerThinking: {},
+    cavemanEnabled: false,
+    ponytailEnabled: false,
+    ccFilterNaming: false,
+  };
+}
+
+beforeAll(async () => {
+  ({ clearCacheAffinity } = await import("../../src/sse/services/cacheAffinity.js"));
+  ({ handleChat } = await import("../../src/sse/handlers/chat.js"));
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  clearCacheAffinity();
+  settingsMocks.getSettings.mockResolvedValue(settings());
+  authMocks.resolveApiKeyId.mockResolvedValue("api-key-id-1");
+  authMocks.getProviderCredentials.mockResolvedValue(credentials("account-a"));
+  authMocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: false, cooldownMs: 0 });
+  authMocks.clearAccountError.mockResolvedValue(undefined);
+  dbMocks.reserveApiKeyUsage.mockResolvedValue({ accepted: true, reservationId: null });
+  dbMocks.releaseApiKeyUsageReservation.mockResolvedValue(undefined);
+  modelMocks.getComboModels.mockResolvedValue(null);
+  modelMocks.getModelInfo.mockImplementation(async (model) => {
+    const [provider, ...parts] = model.split("/");
+    return { provider, model: parts.join("/") };
+  });
+  trackingMocks.trackApiKeyClientActivity.mockResolvedValue({
+    apiKeyId: "api-key-id-1",
+    fingerprint: "client-1",
+  });
+  tokenMocks.checkAndRefreshToken.mockImplementation(async (_provider, value) => value);
+  dispatchMocks.handleChatCore.mockResolvedValue(success());
+});
+
+describe("chat cache affinity", () => {
+  it("uses strategy first, then prefers successful account for same scope", async () => {
+    await handleChat(request());
+    await handleChat(request());
+
+    expect(authMocks.getProviderCredentials).toHaveBeenNthCalledWith(
+      1,
+      "codex",
+      expect.any(Set),
+      "gpt-5.6-sol",
+    );
+    expect(authMocks.getProviderCredentials).toHaveBeenNthCalledWith(
+      2,
+      "codex",
+      expect.any(Set),
+      "gpt-5.6-sol",
+      { preferredConnectionId: "account-a" },
+    );
+  });
+
+  it("does not share affinity across session, model, client, or API key", async () => {
+    await handleChat(request());
+    await handleChat(request({ session: "session-2" }));
+    await handleChat(request({ model: "codex/gpt-5.6-terra" }));
+    trackingMocks.trackApiKeyClientActivity.mockResolvedValue({ apiKeyId: "api-key-id-1", fingerprint: "client-2" });
+    await handleChat(request());
+    trackingMocks.trackApiKeyClientActivity.mockResolvedValue({ apiKeyId: "api-key-id-2", fingerprint: "client-1" });
+    await handleChat(request({ apiKey: "key-2" }));
+
+    for (const call of authMocks.getProviderCredentials.mock.calls.slice(1)) {
+      expect(call).toHaveLength(3);
+    }
+  });
+
+  it("preserves fallback and repins successful replacement", async () => {
+    await handleChat(request());
+    authMocks.getProviderCredentials.mockReset()
+      .mockResolvedValueOnce(credentials("account-a"))
+      .mockResolvedValueOnce(credentials("account-b"));
+    dispatchMocks.handleChatCore.mockReset()
+      .mockResolvedValueOnce(failure())
+      .mockResolvedValueOnce(success());
+    authMocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true, cooldownMs: 30_000 });
+
+    await handleChat(request());
+    authMocks.getProviderCredentials.mockReset().mockResolvedValue(credentials("account-b"));
+    dispatchMocks.handleChatCore.mockReset().mockResolvedValue(success());
+    await handleChat(request());
+
+    expect(authMocks.getProviderCredentials).toHaveBeenCalledWith(
+      "codex",
+      expect.any(Set),
+      "gpt-5.6-sol",
+      { preferredConnectionId: "account-b" },
+    );
+  });
+
+  it("does not consult or record affinity when provider setting is disabled", async () => {
+    settingsMocks.getSettings.mockResolvedValue(settings(false));
+    await handleChat(request());
+    await handleChat(request());
+
+    for (const call of authMocks.getProviderCredentials.mock.calls) {
+      expect(call).toHaveLength(3);
+    }
+  });
+
+  it("does not pin a failed request", async () => {
+    dispatchMocks.handleChatCore.mockResolvedValue(failure(400, "invalid request"));
+    await handleChat(request());
+
+    dispatchMocks.handleChatCore.mockResolvedValue(success());
+    await handleChat(request());
+    expect(authMocks.getProviderCredentials.mock.calls[1]).toHaveLength(3);
+  });
+});
