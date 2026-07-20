@@ -170,6 +170,7 @@ export function canonicalizeUsage(usage) {
     ?? usage.output_tokens_details?.reasoning_tokens
     ?? usage.completion_tokens_details?.reasoning_tokens;
   const reasoning = num(reasoningSource);
+  const reportedTotal = num(usage.total_tokens);
   const cacheWrite = num(
     usage.cache_creation_input_tokens ??
     usage.cache_write_input_tokens ??
@@ -180,6 +181,11 @@ export function canonicalizeUsage(usage) {
   );
 
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
+  const reasoningIsSeparate = reasoning > 0
+    && reportedTotal >= prompt + completion + reasoning;
+  const canonicalCompletion = reasoningIsSeparate
+    ? completion + reasoning
+    : Math.max(completion, reasoning);
   let cached;
 
   if (usage.cached_tokens === undefined &&
@@ -198,8 +204,8 @@ export function canonicalizeUsage(usage) {
 
   const result = {
     prompt_tokens: prompt,
-    completion_tokens: completion,
-    total_tokens: prompt + completion,
+    completion_tokens: canonicalCompletion,
+    total_tokens: prompt + canonicalCompletion,
     cached_tokens: cached,
     cache_creation_input_tokens: cacheWrite,
   };
