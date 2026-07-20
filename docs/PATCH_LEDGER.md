@@ -1,13 +1,13 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-19
+Last updated: 2026-07-20
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`. Live includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`. Source-only additions not yet live include atomic reservation review waves through `5a9d56c`, Codex post-header SSE keepalive `029d6ce`, cache-affinity spec/plan `d72b6d1`, and Gemini usage authority `cb82d82`. Live still includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -905,10 +905,24 @@ Files:
 - `src/lib/db/migrate.js`
 - `src/lib/db/repos/apiKeysRepo.js`
 - `src/lib/db/repos/usageRepo.js`
+- `src/lib/db/adapters/betterSqliteAdapter.js`
+- `src/lib/db/adapters/nodeSqliteAdapter.js`
+- `src/lib/db/adapters/sqljsAdapter.js`
 - `src/lib/db/schema.js`
 - `src/lib/localDb.js`
 - `src/sse/handlers/chat.js`
+- `src/sse/services/usageReservation.js`
+- `open-sse/handlers/chatCore.js`
+- `open-sse/handlers/chatCore/streamingHandler.js`
+- `open-sse/handlers/chatCore/sseToJsonHandler.js`
+- `open-sse/utils/usageTracking.js`
+- `open-sse/translator/formats/maxTokens.js`
 - `tests/unit/chat-daily-limit-http.test.js`
+- `tests/unit/api-key-usage-reservations.test.js`
+- `tests/unit/api-key-usage-reservations-adapters.test.js`
+- `tests/unit/chat-stream-reservation-authority.test.js`
+- `tests/unit/chat-token-reservation-estimate.test.js`
+- `tests/unit/chat-usage-reservation-plumbing.test.js`
 - `tests/unit/db-sqlite-vs-lowdb.test.js`
 
 Required invariants:
@@ -916,22 +930,39 @@ Required invariants:
 - Blank or null limit means unlimited.
 - Limit is stored as a non-negative integer token count.
 - Daily window is the server local day.
-- Prompt, completion, and reasoning tokens count toward the limit.
+- Canonical prompt and completion tokens count toward the limit. OpenAI/Responses
+  reasoning is a completion subset and must not be added twice. Gemini candidate
+  and separately reported thinking tokens are folded into completion exactly once.
 - Same-prefix API keys remain separate in usage grouping and masking.
-- Current ceiling is a preflight soft cap: concurrent in-flight requests can overshoot. Add atomic token reservations plus request-ID reconciliation before selling this as a hard billing cap.
+- Reserve a translated output ceiling atomically before provider/account selection.
+  SQLite uses one DB transaction; sql.js uses its local mutex.
+- One reservation follows account fallback. Successful authoritative terminal
+  usage replaces it; pre-upstream/upstream failure releases it; uncertain or
+  truncated usage remains reserved for bounded six-hour expiry.
+- Combo members and fusion panels reserve independently. Reservation release is
+  ownership-qualified and idempotent.
 
 Verification:
 
 - Key with no limit continues normally.
 - Key above its daily token limit returns HTTP 429 before provider selection.
 - Route-level test uses real Bearer-key extraction, proves exhausted keys do not reach model/account selection or `handleChatCore`, and proves an unlimited control does reach selection without network access.
-- Unit test covers SQLite and LowDB paths.
-- Fresh 2026-07-19 verification: HTTP route 2/2, DB parity 22/22, changed-test ESLint, and `git diff --check` passed.
+- Unit tests cover better-sqlite3, node:sqlite, bun:sqlite, and sql.js paths.
+- Final 2026-07-20 verification: expanded reservation/accounting matrix 160/160
+  across nine files; Gemini RED was 2 failures/52 passes and GREEN was 54/54.
+  Changed-file ESLint, diff check, 12-feature-commit Gitleaks, isolated 130-route
+  build, and loopback exhausted/admitted release checks passed.
+- Final independent review first found Gemini mixed candidate/thinking undercount;
+  `3a91b38` fixed normalization and re-review returned no findings.
 
 Upstream status:
 
 - Open PR: <https://github.com/decolua/9router/pull/2454>
-- Public head `e2f8abd`; two test-only follow-ups add and harden handler-level admission proof, one comment records the concurrent soft-cap ceiling, and the internal review artifact was removed from the public diff. PR is `OPEN`/`CLEAN`.
+- Public head `7ed5dff` is `OPEN`/`CLEAN` on upstream v0.5.40. Update used a
+  normal merge, not force-push; its one adapter conflict preserves both atomic
+  transaction scope and upstream spread-parameter binding.
+- Local v0.5.35 integration includes atomic commits through `5a9d56c` and Gemini
+  authority `cb82d82`. Neither is live before the zero-OOM deployment gate.
 
 ### P12. Private best-GPT Sol/max routing and custom Codex catalog
 
@@ -1490,6 +1521,8 @@ Deployment/upstream status:
 Purpose:
 
 - Prevent Cloudflare `524` and Codex reconnect loops when account/provider work takes longer than the public tunnel's response-header window.
+- Prevent Codex `idle timeout waiting for SSE` after provider headers when the
+  provider emits no parsed event for about 120 seconds.
 - Stop disconnected public requests from continuing as orphan provider jobs or consuming another account.
 
 Files:
@@ -1508,8 +1541,17 @@ Files:
 Required invariants:
 
 - Only explicit `stream:true` `/v1/responses` requests use the deferred bridge. `stream:false`, omitted `stream`, and invalid JSON retain direct HTTP status and JSON bodies.
-- Return HTTP 200/SSE immediately with `: connected`, then emit `: keepalive` every 25 seconds while account fallback or provider headers are pending.
-- Stop heartbeat immediately when provider SSE headers arrive, then pull one upstream chunk per downstream demand and preserve provider bytes exactly. This prevents comments from splitting fragmented provider events and bounds buffering.
+- Return HTTP 200/SSE immediately with `: connected`. Generic clients receive
+  `: keepalive` comments every 25 seconds while account fallback or provider
+  headers are pending.
+- Codex clients receive an ignorable real SSE `9router.keepalive` event every 25
+  seconds before and after provider headers. Codex discards comments before its
+  idle timer but parsed unknown events reset that timer and are ignored safely.
+- Inject post-header keepalives only between complete SSE events. Track CR/LF
+  boundaries, pull one upstream chunk per downstream demand, and preserve every
+  fragmented provider byte without mid-event insertion.
+- Detect modern `codex_cli_rs`/`codex_exec` UAs inside the Responses route only;
+  do not change shared native-pass-through detection or provider routing.
 - Convert delayed JSON/transport errors into one schema-complete `response.failed` terminal plus `[DONE]`; include `sequence_number`, request model, and required Response object fields.
 - Downstream stream cancellation and inbound request abort both reach the provider `AbortController`; parent abort also closes downstream. Pre-aborted requests never start provider work. Normal completion removes the external listener and every abort/heartbeat timer.
 - Client cancellation returns internal `499` without calling `markAccountUnavailable`; real provider failures retain existing account fallback.
@@ -1524,11 +1566,21 @@ Verification before deployment:
 - Isolated candidate uses an integrity-checked 208 MB SQLite backup with zero nested `refreshToken` fields, no tunnel settings, and loopback-only `127.0.0.1:20129`. Real GitHub Fable returned HTTP 200 with `response.completed`; first byte arrived in 32 ms and total time was 9.88 seconds. Invalid JSON remained JSON HTTP 400; `stream:false` auth remained JSON HTTP 401; streaming auth became schema-complete SSE `response.failed` HTTP 200.
 - Fresh v2 public QA first omitted candidate-only `FETCH_CONNECT_TIMEOUT_MS=180000`; the custom delayed provider therefore made three expected 60-second header attempts and the test timed out. Live runtime was untouched. Restoring the recorded test environment produced HTTP 200, first byte 232 ms, total 140.484 seconds, five keepalives, exactly one upstream request, one completion, and no `524` or reconnect.
 - Public cancellation QA returned first byte in 679 ms. Client timeout left `started=1`, `active=0`, `completed=0`, `aborted=1`; cooldown, lock, backoff, error, and test-status state remained unchanged.
+- Post-header root-cause pair: 9Router started at `06:06:27`; Codex disconnected
+  at `124.402s`; the same Go-gateway stream completed at `125.862s`. Tunnel and
+  gateway remained healthy. Codex source wraps parsed events in idle timeout;
+  eventsource comments do not reset it.
+- New TDD regression failed waiting for post-header data before the fix. Final
+  route/bridge matrix passes 12/12; changed-file ESLint, diff check, PR-range
+  Gitleaks, 130-route build, and independent re-review pass.
+- Isolated loopback provider paused 130 seconds after `response.created`.
+  Candidate emitted five 25-second `9router.keepalive` events, then unchanged
+  `response.completed` and `[DONE]`; temporary ports `20129`/`20130` were freed.
 
 Deployment/upstream status:
 
 - Candidate HOME, staged/promote app copies, delayed mock, raised-timeout build HOME, and temporary tunnel artifacts were deleted after promotion QA. Clean upstream worktree and rollback artifacts remain.
-- Generic runtime/test files are isolated in clean upstream PR <https://github.com/decolua/9router/pull/2666>, branch `responses-stream-heartbeat`, head `d47cfc0`, merge state `CLEAN`. Its nine-file diff excludes private verifier, ledger, runbook, candidate data, tunnel URLs, routing, aliases, pools, DB, and deployment artifacts.
+- Generic runtime/test files are isolated in upstream PR <https://github.com/decolua/9router/pull/2666>, branch `responses-stream-heartbeat`, head `dfb0ac2`. Its route-local Codex extension excludes private verifier, ledger, runbook, candidate data, tunnel URLs, provider routing, aliases, pools, DB, and deployment artifacts.
 - Safe promotion completed at `2026-07-17T07:22:37Z` through the two-snapshot atomic exchange guard. PM2 is online as PID `2694238`; guarded tunnel recovery started cloudflared PID `2694503`, raw `https://holidays-heating-revenues-cathedral.trycloudflare.com`, and restored short `https://rkeyra9.abc-tunnel.us`.
 - Rollback app is `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-p21-responses-heartbeat-20260717-20260717T072141Z`; DB backup is `/home/home/.9router/db/backups/pre-p21-responses-heartbeat-20260717-20260717T072141Z/data.sqlite`. Both SQLite integrity checks returned `ok`.
 - Live short-domain Fable probes completed in `10.72s` and `11.08s` through distinct GitHub profiles; Sol completed in `7.65s`. A 140-second public delayed-header canary returned first byte in `232ms`, emitted five keepalives, started one provider request, completed once, and produced no `524` or retry.
@@ -1536,6 +1588,9 @@ Deployment/upstream status:
 - Fresh final short-domain probes returned Sol HTTP 200 with `890ms` first byte and `7.01s` total, and Fable HTTP 200 with `562ms` first byte and `9.17s` total. Both emitted `: connected`, `response.completed`, and the requested marker; Go gateway recorded both provider requests as HTTP 200.
 - `pm2 save` persisted exactly one process with `custom-server.js`, port `20128`, `HOSTNAME=0.0.0.0`, and best-GPT `cx/gpt-5.6-sol`/`max`/`default`.
 - Final review's omitted-`stream` JSON-default correction from source commit `c743708` and upstream PR #2666 was carried in the P22 app rebuild. Live invalid-model control with omitted `stream` now returns direct HTTP 404 `application/json`; source and live bundle are aligned.
+- The original pre-header heartbeat/cancellation patch above is live. The new
+  post-header Codex event extension is source-only at local commit `029d6ce` and
+  must not be promoted before the zero-OOM gate ending `2026-07-25 18:55 PDT`.
 
 ### P22. Codex cross-model encrypted-history recovery
 

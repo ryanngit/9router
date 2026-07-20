@@ -1,6 +1,6 @@
 # 9Router Update Runbook
 
-Last updated: 2026-07-19
+Last updated: 2026-07-20
 
 Use this before updating, patching, deploying, or preparing upstream PRs. The goal is minimal downtime and no rediscovery of fragile behavior.
 
@@ -11,6 +11,8 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - Live wrapper workspace is `/home/home/.openclaw/workspace-keyra/9router-patch`.
 - Use a clean version-specific worktree for source changes and builds. Current clean source is `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`.
 - User traffic may be connected through 9Router; avoid restarts until the final deploy step.
+- Active reliability gate forbids 9Router/gateway/Observer promotion before
+  `2026-07-25 18:55 PDT`; require zero new service restarts and cgroup OOM kills.
 - Do not rely on `git status` in `9router-patch` until broken worktree metadata is fixed.
 - Do not push upstream branches from a dirty/broken worktree.
 - Never proactively restart or replace cloudflared during an app upgrade. If local app health passes but the recorded raw tunnel remains down, one guarded recovery is allowed after app rollback gates pass; record the old/new PID and raw URL, then re-register the existing short ID.
@@ -26,6 +28,14 @@ Current verified live deployment (2026-07-19):
 - Cloudflared PID `638304`; raw URL `https://others-assuming-cooking-tagged.trycloudflare.com`; short URL `https://rkeyra9.abc-tunnel.us`.
 - Rollback app `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0535-p25-oauth-20260719-20260719T193507Z`; DB backup `/home/home/.9router/db/backups/pre-v0535-p25-oauth-20260719-20260719T193507Z/data.sqlite`.
 - Promotion status `/home/home/.openclaw/workspace-keyra/9router-ops/v0535-p25-oauth-20260719.status` is `succeeded`; post-promotion Codex, Fable incomplete/usage, Grok, local/raw/short health, DB integrity, and full-verifier gates passed.
+
+Source-only candidates as of 2026-07-20:
+
+- Atomic API-key reservations and Gemini usage authority are integrated through
+  local head `cb82d82`; public PR #2454 is CLEAN at `7ed5dff` on v0.5.40.
+- Post-header Codex SSE events are integrated at `029d6ce`; public PR #2666 is
+  CLEAN at `dfb0ac2`. Candidate passed a 130-second silent-provider stream.
+- These source changes are not live. Do not infer live behavior from source tests.
 
 ## 1. Brainstorm / Analyze
 
@@ -158,7 +168,12 @@ Targeted manual checks by patch:
 - P5 Copilot thinking: Opus 4.8 and Fable 5 with `max` must both reach native `/v1/messages`; Fable wire must use adaptive thinking plus `output_config.effort`.
 - P6 usage: cached tokens lower cost; API-key grouping remains separated.
 - P7 reset bank: confirmation appears before reset consume; cancel does not POST.
-- P11 key limits: unlimited key proceeds; exhausted key returns HTTP 429 before provider/account selection; DB contains only null or non-negative integer limits.
+- P11 key limits: unlimited key proceeds; exhausted key returns HTTP 429 before
+  provider/account selection; DB contains only null or non-negative integer
+  limits. Run concurrent admission on SQLite and sql.js, account fallback with
+  one reservation, terminal reconciliation, failure release, truncated-stream
+  retention, combo/fusion isolation, same-prefix keys, OpenAI reasoning subset,
+  reasoning-only legacy rows, and Gemini candidate-plus-thinking authority.
 - P12 best GPT: `gpt-5.4-mini` must route to provider/usage model `gpt-5.6-sol` with effort `max`, no provider service tier, and effective response tier `default`.
 - P12 Codex catalog: active model exists in the catalog, active effort is supported, Sol/Terra retain Ultra/V2, Luna remains max-only/V1, and all GPT-5.6 entries retain Responses Lite plus 372,000 context.
 - P14 Responses Lite: omit `reasoning.context` and `parallel_tool_calls`; provider request must contain `reasoning.context="all_turns"` and `parallel_tool_calls=false`. Repeat with incoming `parallel_tool_calls=true`.
@@ -169,7 +184,16 @@ Targeted manual checks by patch:
 - P19 Grok subscription: bare private `grok-4.5` still resolves to `grok-cli/grok-4.5` through its strict residential pool; do not upstream that alias or pool.
 - P20 Grok codec: run minimal text, strict web search, native x-search two-turn replay, typed function/custom history, structured output, malformed/duplicate/orphan/dangling repair, local 400 no-lock, and approximately 1 MB/463-item replay.
 - P20 candidate safety: copy the live DB with SQLite `.backup`, remove every `refreshToken`, bind candidate to `127.0.0.1:20129`, start no tunnel, then delete the credential-bearing candidate home after QA.
-- P21 Responses heartbeat: an explicit `stream:true` `/v1/responses` request must return an SSE comment before provider headers, emit comments every 25 seconds only while headers are pending, then preserve provider bytes and downstream backpressure exactly. It must survive at least 130 seconds through a temporary public tunnel and start exactly one provider request. Cancelling the client must close downstream, abort that provider request, leave no timer, and avoid account locks. Repeat `stream:false`, omitted-`stream`, invalid-JSON, and streaming-error controls; synthetic `response.failed` must carry the request model and required Responses fields.
+- P21 Responses heartbeat: explicit `stream:true` must return `: connected`
+  immediately. Generic clients receive comments only before provider headers;
+  modern Codex clients receive real ignorable events every 25 seconds before and
+  after headers. A 130-second silent provider must yield five keepalives then
+  unchanged completion. Fragment a provider event across chunks and split CR/LF;
+  assert no keepalive appears inside it and one upstream read occurs per pull.
+  Cancelling the client must close downstream, abort provider work, leave no
+  timer, and avoid account locks. Repeat non-Codex, `stream:false`, omitted
+  `stream`, invalid JSON, and streaming-error controls. Shared client detection
+  and native provider pass-through must remain byte-equivalent.
 - P25 Responses terminal matrix: completed plus reset, incomplete plus usage, failed SSE, failed JSON, top-level `event:error`, and EOF before terminal. Assert fallback-capable 502 for failures and exact cached/reasoning accounting for incomplete. Live Fable incomplete canary must use `stream:false`, `max_output_tokens:1`, and `reasoning.effort=max`; do not use `none`, because Fable rejects `thinking.type.disabled`.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
