@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -48,6 +48,34 @@ const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
 
 export const statsEmitter = global._statsEmitter;
+
+function validateUsageTokens(tokens) {
+  if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) {
+    throw new Error("usage tokens must be an object");
+  }
+  const values = [
+    tokens.prompt_tokens,
+    tokens.input_tokens,
+    tokens.completion_tokens,
+    tokens.output_tokens,
+    tokens.reasoning_tokens,
+    tokens.total_tokens,
+    tokens.cached_tokens,
+    tokens.cache_read_input_tokens,
+    tokens.cache_creation_input_tokens,
+    tokens.prompt_tokens_details?.cached_tokens,
+    tokens.prompt_tokens_details?.cache_creation_tokens,
+    tokens.completion_tokens_details?.reasoning_tokens,
+    tokens.output_tokens_details?.reasoning_tokens,
+  ];
+  if (values.some((value) => value !== undefined && (!Number.isSafeInteger(value) || value < 0))) {
+    throw new Error("usage token components must be non-negative safe integers");
+  }
+}
+
+function getRequestIdentity(reservationId) {
+  return createHash("sha256").update(`usage-reservation:${reservationId}`).digest("base64url");
+}
 
 function scheduleStatsEvent(event, delayMs = 150) {
   const key = event === "update" ? "update" : "pending";
@@ -308,6 +336,12 @@ export async function saveRequestUsage(entry) {
       delete entry.usageReservationId;
     }
 
+    validateUsageTokens(entry.tokens);
+    const nestedReasoning = entry.tokens.reasoning_tokens
+      ?? entry.tokens.completion_tokens_details?.reasoning_tokens
+      ?? entry.tokens.output_tokens_details?.reasoning_tokens;
+    entry = { ...entry, tokens: { ...entry.tokens } };
+    if (nestedReasoning !== undefined) entry.tokens.reasoning_tokens = nestedReasoning;
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
     const costBreakdown = await calculateCostBreakdown(entry.provider, entry.model, entry.tokens);
     if (costBreakdown) {
@@ -318,35 +352,54 @@ export async function saveRequestUsage(entry) {
     }
 
     const tokens = entry.tokens || {};
-    const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-    const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    const promptTokens = tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+    const completionTokens = tokens.completion_tokens ?? tokens.output_tokens ?? 0;
     const meta = entry.meta && typeof entry.meta === "object" ? entry.meta : {};
+    const requestIdentity = usageReservationId && tokens.estimated !== true
+      ? getRequestIdentity(usageReservationId)
+      : null;
+    const storedMeta = requestIdentity ? { ...meta, requestIdentity } : meta;
 
     let inserted = false;
 
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
-      if (usageReservationId) {
-        db.run(`DELETE FROM apiKeyUsageReservations WHERE id = ?`, [usageReservationId]);
+      if (usageReservationId && tokens.estimated !== true) {
+        db.run(
+          `DELETE FROM apiKeyUsageReservations
+           WHERE id = ? AND apiKeyId = (SELECT id FROM apiKeys WHERE key = ?)`,
+          [usageReservationId, entry.apiKey || null]
+        );
       }
 
-      const existing = db.get(
-        `SELECT id, endpoint FROM usageHistory
-         WHERE timestamp = ?
-           AND COALESCE(provider, '') = COALESCE(?, '')
-           AND COALESCE(model, '') = COALESCE(?, '')
-           AND COALESCE(connectionId, '') = COALESCE(?, '')
-           AND COALESCE(apiKey, '') = COALESCE(?, '')
-           AND promptTokens = ?
-           AND completionTokens = ?
-         ORDER BY id DESC LIMIT 1`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null,
-          promptTokens, completionTokens,
-        ]
-      );
+      let existing;
+      if (requestIdentity) {
+        existing = db.get(
+          `SELECT id, endpoint FROM usageHistory
+           WHERE COALESCE(apiKey, '') = COALESCE(?, '')
+             AND json_extract(meta, '$.requestIdentity') = ?
+           ORDER BY id DESC LIMIT 1`,
+          [entry.apiKey || null, requestIdentity]
+        );
+      } else {
+        existing = db.get(
+          `SELECT id, endpoint FROM usageHistory
+           WHERE timestamp = ?
+             AND COALESCE(provider, '') = COALESCE(?, '')
+             AND COALESCE(model, '') = COALESCE(?, '')
+             AND COALESCE(connectionId, '') = COALESCE(?, '')
+             AND COALESCE(apiKey, '') = COALESCE(?, '')
+             AND promptTokens = ?
+             AND completionTokens = ?
+           ORDER BY id DESC LIMIT 1`,
+          [
+            entry.timestamp, entry.provider || null, entry.model || null,
+            entry.connectionId || null, entry.apiKey || null,
+            promptTokens, completionTokens,
+          ]
+        );
+      }
 
       if (existing) {
         if (!existing.endpoint && entry.endpoint) {
@@ -361,7 +414,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson(meta),
+          stringifyJson(tokens), stringifyJson(storedMeta),
         ]
       );
 

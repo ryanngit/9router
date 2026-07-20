@@ -266,11 +266,12 @@ async function handleSingleModelChat(
   }
 
   const { provider, model } = modelInfo;
+  const resolvedBody = { ...body, model: `${provider}/${model}` };
   let usageReservationId = null;
   if (apiKey) {
     let requestedTokens;
     try {
-      requestedTokens = estimateChatUsageReservation(body);
+      requestedTokens = estimateChatUsageReservation(resolvedBody);
     } catch (error) {
       log.warn("AUTH", error.message);
       return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
@@ -329,98 +330,98 @@ async function handleSingleModelChat(
         return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
       }
 
-    // Account selection shown in the unified "▶" line (acc:...)
-    const proxyOptions = resolveRefreshProxyOptions(credentials);
-    const refreshedCredentials = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
-      checkAndRefreshToken(provider, credentials, proxyOptions));
+      // Account selection shown in the unified "▶" line (acc:...)
+      const proxyOptions = resolveRefreshProxyOptions(credentials);
+      const refreshedCredentials = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
+        checkAndRefreshToken(provider, credentials, proxyOptions));
 
-    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
-    if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
-        getProjectIdForConnection(
-          credentials.connectionId,
-          refreshedCredentials.accessToken,
-          proxyOptions,
-        ));
-      if (pid) {
-        refreshedCredentials.projectId = pid;
-        // Persist to DB in background so subsequent requests have it immediately
-        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+      // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+      if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
+        const pid = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
+          getProjectIdForConnection(
+            credentials.connectionId,
+            refreshedCredentials.accessToken,
+            proxyOptions,
+          ));
+        if (pid) {
+          refreshedCredentials.projectId = pid;
+          // Persist to DB in background so subsequent requests have it immediately
+          updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+        }
       }
-    }
 
-    // Use shared chatCore
-    const chatSettings = await measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () => getSettings());
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
-      body: { ...structuredClone(body), model: `${provider}/${model}` },
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      clientRawRequest,
-      connectionId: credentials.connectionId,
-      userAgent,
-      apiKey,
-      usageReservationId,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
-      pxpipeMinChars: chatSettings.pxpipeMinChars,
-      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
-      // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
-      onPxpipeEvent: appendPxpipeEvent,
-      externalSignal,
-      providerThinking,
-      requestTiming: cloneRequestTiming(attemptTiming),
-      correlationId,
-      attemptId,
-      // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
+      // Use shared chatCore
+      const chatSettings = await measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () => getSettings());
+      const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+      const result = await handleChatCore({
+        body: structuredClone(resolvedBody),
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        usageReservationId,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: !!chatSettings.rtkEnabled,
+        headroomEnabled: !!chatSettings.headroomEnabled,
+        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+        cavemanEnabled: !!chatSettings.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
+        ponytailEnabled: !!chatSettings.ponytailEnabled,
+        ponytailLevel: chatSettings.ponytailLevel || "full",
+        pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+        pxpipeMinChars: chatSettings.pxpipeMinChars,
+        pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+        // Lazily warms the in-process module on first use; null when not installed (fail-open)
+        pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+        onPxpipeEvent: appendPxpipeEvent,
+        externalSignal,
+        providerThinking,
+        requestTiming: cloneRequestTiming(attemptTiming),
+        correlationId,
+        attemptId,
+        // Detect source format by endpoint + body
+        sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
+      });
+
+      if (result.success) {
+        preserveUsageReservation = true;
+        return result.response;
       }
-    });
+      if (externalSignal?.aborted) return result.response;
 
-    if (result.success) {
-      preserveUsageReservation = true;
-      return result.response;
-    }
-    if (externalSignal?.aborted) return result.response;
+      // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
+      const fallbackStartedAt = requestNow();
+      const { shouldFallback } = await markAccountUnavailable(
+        credentials.connectionId,
+        result.status,
+        result.error,
+        provider,
+        model,
+        result.resetsAtMs
+      );
+      fallbackTotalMs += elapsedRequestMilliseconds(fallbackStartedAt);
 
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const fallbackStartedAt = requestNow();
-    const { shouldFallback } = await markAccountUnavailable(
-      credentials.connectionId,
-      result.status,
-      result.error,
-      provider,
-      model,
-      result.resetsAtMs
-    );
-    fallbackTotalMs += elapsedRequestMilliseconds(fallbackStartedAt);
-
-    if (shouldFallback) {
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
-    }
+      if (shouldFallback) {
+        log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
+      }
 
       return result.response;
     }

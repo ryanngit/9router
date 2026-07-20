@@ -166,11 +166,10 @@ export function canonicalizeUsage(usage) {
 
   const num = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);
-  const reasoning = num(
-    usage.reasoning_tokens ??
-    usage.output_tokens_details?.reasoning_tokens ??
-    usage.completion_tokens_details?.reasoning_tokens
-  );
+  const reasoningSource = usage.reasoning_tokens
+    ?? usage.output_tokens_details?.reasoning_tokens
+    ?? usage.completion_tokens_details?.reasoning_tokens;
+  const reasoning = num(reasoningSource);
   const cacheWrite = num(
     usage.cache_creation_input_tokens ??
     usage.cache_write_input_tokens ??
@@ -204,11 +203,12 @@ export function canonicalizeUsage(usage) {
     cached_tokens: cached,
     cache_creation_input_tokens: cacheWrite,
   };
-  if (reasoning > 0) result.reasoning_tokens = reasoning;
+  if (reasoningSource !== undefined) result.reasoning_tokens = reasoning;
   if (typeof usage.service_tier === "string" && usage.service_tier) result.service_tier = usage.service_tier;
   if (Number.isFinite(Number(usage.cost_usd))) result.cost_usd = Number(usage.cost_usd);
   if (Number.isFinite(Number(usage.cost_in_usd))) result.cost_in_usd = Number(usage.cost_in_usd);
   if (Number.isFinite(Number(usage.cost_in_usd_ticks))) result.cost_in_usd_ticks = Number(usage.cost_in_usd_ticks);
+  if (usage.estimated === true) result.estimated = true;
   return result;
 }
 

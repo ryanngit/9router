@@ -126,10 +126,17 @@ export function formatDoneLine({ usage, latency }) {
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, usageReservationId, apiKeyClient, endpoint, serviceTier, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
-  const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
-  const outTokens = tokens.output_tokens ?? tokens.completion_tokens ?? 0;
+  // Canonicalize before the emptiness check so reasoning-only authoritative usage is saved.
+  const normalized = canonicalizeUsage({
+    ...tokens,
+    ...(tokens.service_tier || serviceTier ? { service_tier: tokens.service_tier || serviceTier } : {}),
+  });
+  if (!normalized) return;
+  const inTokens = normalized.prompt_tokens ?? 0;
+  const outTokens = normalized.completion_tokens ?? 0;
+  const reasoningTokens = normalized.reasoning_tokens ?? 0;
 
-  if (inTokens === 0 && outTokens === 0) return;
+  if (inTokens === 0 && outTokens === 0 && reasoningTokens === 0) return;
 
   if (!silent) {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -137,27 +144,8 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     console.log(`${COLORS.green}[${time}] 📊 [${label}] ${provider.toUpperCase()} | in=${inTokens} | out=${outTokens}${accountSuffix}${COLORS.reset}`);
   }
 
-  const normalized = canonicalizeUsage({
-    prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
-    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
-    ...(tokens.total_tokens !== undefined ? { total_tokens: tokens.total_tokens } : {}),
-    ...(tokens.cached_tokens !== undefined ? { cached_tokens: tokens.cached_tokens } : {}),
-    ...(tokens.cache_read_input_tokens !== undefined ? { cache_read_input_tokens: tokens.cache_read_input_tokens } : {}),
-    ...(tokens.cache_creation_input_tokens !== undefined ? { cache_creation_input_tokens: tokens.cache_creation_input_tokens } : {}),
-    ...(tokens.input_tokens_details !== undefined ? { input_tokens_details: tokens.input_tokens_details } : {}),
-    ...(tokens.output_tokens_details !== undefined ? { output_tokens_details: tokens.output_tokens_details } : {}),
-    ...(tokens.prompt_tokens_details !== undefined ? { prompt_tokens_details: tokens.prompt_tokens_details } : {}),
-    ...(tokens.completion_tokens_details !== undefined ? { completion_tokens_details: tokens.completion_tokens_details } : {}),
-    ...(tokens.reasoning_tokens !== undefined ? { reasoning_tokens: tokens.reasoning_tokens } : {}),
-    ...(tokens.service_tier || serviceTier ? { service_tier: tokens.service_tier || serviceTier } : {}),
-    ...(tokens.cost_usd !== undefined ? { cost_usd: tokens.cost_usd } : {}),
-    ...(tokens.cost_in_usd !== undefined ? { cost_in_usd: tokens.cost_in_usd } : {}),
-    ...(tokens.cost_in_usd_ticks !== undefined ? { cost_in_usd_ticks: tokens.cost_in_usd_ticks } : {})
-  }) || {
-    prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
-    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
-  };
-
+  // Canonicalize to one storage convention (prompt_tokens cache-inclusive) so
+  // cached/cache-creation tokens survive to cost calc + stats. See canonicalizeUsage.
   saveRequestUsage({
     provider: provider || "unknown",
     model: model || "unknown",

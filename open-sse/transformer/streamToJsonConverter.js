@@ -28,16 +28,19 @@ function processSSEMessage(msg, state) {
   } else if (eventType === "response.output_item.done") {
     state.items.set(parsed.output_index ?? 0, parsed.item);
   } else if (eventType === "response.completed" || eventType === "response.done") {
-    state.status = "completed";
-    if (parsed.response) {
-      state.model = parsed.response.model || state.model;
-      state.serviceTier = parsed.response.service_tier || state.serviceTier;
-      if (parsed.response.usage) {
-        state.usage = { ...state.usage, ...parsed.response.usage };
-      }
+    const responseStatus = parsed.response?.status;
+    const completedStatus = !responseStatus || responseStatus === "completed" || responseStatus === "done";
+    state.status = eventType === "response.done" || completedStatus ? "completed" : "failed";
+    state.model = parsed.response?.model || state.model;
+    state.serviceTier = parsed.response?.service_tier || state.serviceTier;
+    if (parsed.response?.usage) state.usage = { ...state.usage, ...parsed.response.usage };
+    if (state.status === "failed") {
+      state.error = parsed.response?.error || { message: `Unexpected ${responseStatus} status in ${eventType}` };
     }
   } else if (eventType === "response.incomplete") {
     state.status = "incomplete";
+    state.model = parsed.response?.model || state.model;
+    state.serviceTier = parsed.response?.service_tier || state.serviceTier;
     state.incompleteDetails = parsed.response?.incomplete_details || parsed.incomplete_details || null;
     if (parsed.response?.usage) state.usage = { ...state.usage, ...parsed.response.usage };
   } else if (eventType === "response.failed") {
