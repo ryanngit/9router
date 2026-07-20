@@ -441,7 +441,13 @@ async function handleSingleModelChat(
       });
 
       if (result.success) {
-        if (affinityScope) rememberCacheAffinity(affinityScope, credentials.connectionId);
+        if (affinityScope) {
+          const outcome = !preferredConnectionId
+            ? "miss"
+            : preferredConnectionId === credentials.connectionId ? "hit" : "repin";
+          rememberCacheAffinity(affinityScope, credentials.connectionId);
+          log.debug("CACHE_AFFINITY", `${provider}/${model} | ${affinityScope.level} | ${outcome}`);
+        }
         preserveUsageReservation = true;
         return result.response;
       }

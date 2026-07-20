@@ -64,6 +64,7 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [providerCacheAffinity, setProviderCacheAffinity] = useState(false);
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -306,6 +307,7 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setProviderCacheAffinity(override.cacheAffinityEnabled === true);
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -355,7 +357,7 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const saveProviderStrategy = async (strategy, stickyLimit) => {
+  const saveProviderStrategy = async (strategy, stickyLimit, cacheAffinityEnabled = providerCacheAffinity) => {
     try {
       const settingsRes = await fetch("/api/settings", { cache: "no-store" });
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
@@ -367,6 +369,7 @@ export default function ProviderDetailPage() {
       if (strategy === "round-robin" && stickyLimit !== "") {
         override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
       }
+      if (cacheAffinityEnabled) override.cacheAffinityEnabled = true;
 
       const updated = { ...current };
       if (Object.keys(override).length === 0) {
@@ -396,6 +399,11 @@ export default function ProviderDetailPage() {
   const handleStickyLimitChange = (value) => {
     setProviderStickyLimit(value);
     saveProviderStrategy("round-robin", value);
+  };
+
+  const handleCacheAffinityToggle = (enabled) => {
+    setProviderCacheAffinity(enabled);
+    saveProviderStrategy(providerStrategy, providerStickyLimit, enabled);
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -1450,6 +1458,13 @@ export default function ProviderDetailPage() {
                     />
                   </div>
                 )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted font-medium">Cache affinity</span>
+                <Toggle
+                  checked={providerCacheAffinity}
+                  onChange={handleCacheAffinityToggle}
+                />
               </div>
             </div>
           </div>

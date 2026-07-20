@@ -14,6 +14,12 @@ const dispatchMocks = vi.hoisted(() => ({ handleChatCore: vi.fn() }));
 const modelMocks = vi.hoisted(() => ({ getComboModels: vi.fn(), getModelInfo: vi.fn() }));
 const settingsMocks = vi.hoisted(() => ({ getSettings: vi.fn() }));
 const trackingMocks = vi.hoisted(() => ({ trackApiKeyClientActivity: vi.fn() }));
+const logMocks = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  maskKey: vi.fn(() => "***"),
+  warn: vi.fn(),
+}));
 const tokenMocks = vi.hoisted(() => ({
   checkAndRefreshToken: vi.fn(),
   resolveRefreshProxyOptions: vi.fn(() => ({})),
@@ -39,6 +45,7 @@ vi.mock("@/sse/services/tokenRefresh.js", () => tokenMocks);
 vi.mock("@/sse/services/bestGptRoute.js", () => ({
   applyBestGptRoute: (body) => ({ applied: false, body, model: body.model }),
 }));
+vi.mock("@/sse/utils/logger.js", () => logMocks);
 
 let clearCacheAffinity;
 let handleChat;
@@ -139,6 +146,15 @@ describe("chat cache affinity", () => {
       "gpt-5.6-sol",
       { preferredConnectionId: "account-a" },
     );
+    expect(logMocks.debug).toHaveBeenCalledWith(
+      "CACHE_AFFINITY",
+      "codex/gpt-5.6-sol | session | miss",
+    );
+    expect(logMocks.debug).toHaveBeenCalledWith(
+      "CACHE_AFFINITY",
+      "codex/gpt-5.6-sol | session | hit",
+    );
+    expect(JSON.stringify(logMocks.debug.mock.calls)).not.toMatch(/key-1|client-1|session-1|[a-f0-9]{64}/);
   });
 
   it("does not share affinity across session, model, client, or API key", async () => {
@@ -175,6 +191,10 @@ describe("chat cache affinity", () => {
       expect.any(Set),
       "gpt-5.6-sol",
       { preferredConnectionId: "account-b" },
+    );
+    expect(logMocks.debug).toHaveBeenCalledWith(
+      "CACHE_AFFINITY",
+      "codex/gpt-5.6-sol | session | repin",
     );
   });
 
