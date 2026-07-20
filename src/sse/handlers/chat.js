@@ -22,7 +22,11 @@ import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
-import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import {
+  updateProviderCredentials,
+  checkAndRefreshToken,
+  resolveRefreshProxyOptions,
+} from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { applyBestGptRoute } from "../services/bestGptRoute.js";
 import {
@@ -313,13 +317,18 @@ async function handleSingleModelChat(
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
+    const proxyOptions = resolveRefreshProxyOptions(credentials);
     const refreshedCredentials = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
-      checkAndRefreshToken(provider, credentials));
+      checkAndRefreshToken(provider, credentials, proxyOptions));
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
       const pid = await measureRequestPhase(attemptTiming.phases, "auth_total_ms", () =>
-        getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken));
+        getProjectIdForConnection(
+          credentials.connectionId,
+          refreshedCredentials.accessToken,
+          proxyOptions,
+        ));
       if (pid) {
         refreshedCredentials.projectId = pid;
         // Persist to DB in background so subsequent requests have it immediately

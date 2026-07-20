@@ -154,31 +154,97 @@ describe("quota auto-ping", () => {
     expect(state.resetCache["codex:codex-1"]).toBe("2026-01-01T13:00:00.000Z");
   });
 
-  it("passes Codex account data, proxy options, and id token when reading usage", async () => {
+  it("passes Codex account data, normalized proxy route, and id token through refresh and usage", async () => {
     const providerSpecificData = { chatgptAccountId: "ws-1" };
+    const proxyRoute = {
+      source: "pool",
+      proxyPoolId: "pool-1",
+      proxyPool: { id: "pool-1" },
+      proxyUnavailable: false,
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.test:8080",
+      connectionNoProxy: "",
+      vercelRelayUrl: "",
+      strictProxy: true,
+      disableEnvProxy: true,
+    };
     deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (
       provider === "codex"
         ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token", idToken: "id-token", providerSpecificData }]
         : []
     ));
-    deps.resolveConnectionProxyConfig.mockResolvedValue({
-      connectionProxyEnabled: true,
-      connectionProxyUrl: "http://proxy.example:8080",
-    });
+    deps.resolveConnectionProxyConfig.mockResolvedValue(proxyRoute);
     getCodexUsage.mockResolvedValue({
       quotas: { session: { used: 1, resetAt: "2026-01-01T13:00:00.000Z" } },
     });
 
     await runQuotaAutoPingTick(deps, state);
 
-    expect(getCodexUsage).toHaveBeenCalledWith("token", providerSpecificData, {
-      connectionProxyEnabled: true,
-      connectionProxyUrl: "http://proxy.example:8080",
+    expect(deps.refreshAndUpdateCredentials).toHaveBeenCalledWith(expect.any(Object), false, proxyRoute);
+    expect(getCodexUsage).toHaveBeenCalledWith("token", providerSpecificData, proxyRoute, "id-token");
+  });
+
+  it("keeps Direct ambient-proxy disabling through quota calls", async () => {
+    const directRoute = {
+      source: "none",
+      proxyPoolId: null,
+      proxyPool: null,
+      connectionProxyEnabled: false,
+      connectionProxyUrl: "",
       connectionNoProxy: "",
-      vercelRelayUrl: "",
       strictProxy: false,
-    }, "id-token");
+      disableEnvProxy: true,
+      vercelRelayUrl: "",
+    };
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "codex" ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" }] : []
+    ));
+    deps.resolveConnectionProxyConfig.mockResolvedValue(directRoute);
+    getCodexUsage.mockResolvedValue({
+      quotas: { session: { used: 1, resetAt: "2026-01-01T13:00:00.000Z" } },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.refreshAndUpdateCredentials).toHaveBeenCalledWith(expect.any(Object), false, directRoute);
+    expect(getCodexUsage).toHaveBeenCalledWith("token", undefined, directRoute, undefined);
+  });
+
+  it("rejects an unavailable pool before refresh or provider usage", async () => {
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "codex" ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" }] : []
+    ));
+    deps.resolveConnectionProxyConfig.mockResolvedValue({
+      source: "unavailable",
+      proxyPoolId: "missing-pool",
+      proxyUnavailable: true,
+      strictProxy: true,
+      disableEnvProxy: true,
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.refreshAndUpdateCredentials).not.toHaveBeenCalled();
+    expect(getCodexUsage).not.toHaveBeenCalled();
+    expect(deps.getExecutor).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes nested quota failures before logging", async () => {
+    const secret = "https://user:password@provider.test/usage?access_token=SECRET-TOKEN";
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "codex" ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" }] : []
+    ));
+    getCodexUsage.mockRejectedValue(new Error(secret));
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await runQuotaAutoPingTick(deps, state);
+
+    const output = logged.mock.calls.flat().map(String).join(" ");
+    for (const value of ["user", "password", "SECRET-TOKEN"]) expect(output).not.toContain(value);
   });
 
   it("sends Codex ping when session resetAt slides", async () => {
