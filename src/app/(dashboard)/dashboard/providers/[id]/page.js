@@ -299,8 +299,8 @@ export default function ProviderDetailPage() {
       }
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
+        setProxyPoolsReady(true);
       }
-      setProxyPoolsReady(true);
       // Load per-provider strategy override
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
@@ -331,7 +331,6 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error fetching connections:", error);
-      setProxyPoolsReady(true);
     } finally {
       setLoading(false);
     }
@@ -445,6 +444,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loader updates state after requests settle
     fetchConnections();
     fetchAliases();
     fetchCustomModels();
@@ -832,6 +832,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- selection must track removed connections
     setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
   }, [connections]);
 

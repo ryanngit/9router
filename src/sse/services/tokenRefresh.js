@@ -76,6 +76,9 @@ export const getAllAccessTokens = (userInfo) =>
 export const shouldRefreshCredentials = (provider, credentials) =>
   _shouldRefreshCredentials(provider, credentials);
 
+export const resolveRefreshProxyOptions = (credentials, proxyOptions = null) =>
+  _resolveRefreshProxyOptions(credentials, proxyOptions);
+
 // ─── Lifecycle hook ───────────────────────────────────────────────────────────
 
 /**

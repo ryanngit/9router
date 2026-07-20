@@ -319,6 +319,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionNoProxy: credentialProxy.connectionNoProxy || "",
     vercelRelayUrl: credentialProxy.vercelRelayUrl || "",
     strictProxy: credentialProxy.strictProxy === true,
+    disableEnvProxy: credentialProxy.disableEnvProxy === true,
     ...(credentialProxy.proxyUnavailable === true
       ? {
           proxyUnavailable: true,

@@ -10,7 +10,7 @@ import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { updateProviderCredentials, checkAndRefreshToken, resolveRefreshProxyOptions } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
 import { trackApiKeyClientActivity } from "../services/apiKeyClientActivity.js";
@@ -94,11 +94,13 @@ async function handleSingleModelImage(
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
+    const proxyOptions = resolveRefreshProxyOptions(null);
     const result = await handleImageGenerationCore({
       body,
       modelInfo: { provider, model },
       credentials: null,
       binaryOutput,
+      proxyOptions,
     });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Image generation failed");
@@ -124,7 +126,8 @@ async function handleSingleModelImage(
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const proxyOptions = resolveRefreshProxyOptions(credentials);
+    const refreshedCredentials = await checkAndRefreshToken(provider, credentials, proxyOptions);
 
     const result = await handleImageGenerationCore({
       body,
@@ -132,6 +135,7 @@ async function handleSingleModelImage(
       credentials: refreshedCredentials,
       streamToClient: wantsStream,
       binaryOutput,
+      proxyOptions,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
