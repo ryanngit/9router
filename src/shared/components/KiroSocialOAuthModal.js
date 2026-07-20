@@ -102,7 +102,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         }
       } catch (err) {
         if (cancelled || generation !== flowGenerationRef.current) return;
-        setError(err.message);
+        setError(sanitizeOAuthError(err));
         setStep("error");
       }
     };
@@ -179,7 +179,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       setStep("success");
       onSuccess?.();
     } catch (err) {
-      setError(err.message);
+      setError(sanitizeOAuthError(err));
       setStep("error");
     }
   };
