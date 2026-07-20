@@ -24,9 +24,21 @@ vi.mock("../../src/sse/services/auth.js", () => ({
   isValidApiKey: mocks.isValidApiKey,
   markAccountUnavailable: mocks.markAccountUnavailable,
   clearAccountError: mocks.clearAccountError,
+  resolveApiKeyId: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
+vi.mock("@/lib/db/index.js", () => ({
+  releaseApiKeyUsageReservation: vi.fn(),
+  reserveApiKeyUsage: vi.fn(),
+}));
+vi.mock("@/lib/requestOrigin", () => ({ getSafeRequestHeaders: vi.fn(() => ({})) }));
+vi.mock("../../src/sse/services/apiKeyClientActivity.js", () => ({
+  trackApiKeyClientActivity: vi.fn(),
+}));
+vi.mock("../../src/sse/services/usageReservation.js", () => ({
+  estimateChatUsageReservation: vi.fn(),
+}));
 
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: mocks.getModelInfo,
@@ -47,20 +59,25 @@ vi.mock("open-sse/utils/error.js", () => ({
   errorResponse: vi.fn((status, message) => new Response(message, { status })),
   unavailableResponse: vi.fn((status, message) => new Response(message, { status })),
 }));
-vi.mock("open-sse/config/runtimeConfig.js", () => ({
-  HTTP_STATUS: {
-    BAD_REQUEST: 400,
-    UNAUTHORIZED: 401,
-    NOT_FOUND: 404,
-    SERVICE_UNAVAILABLE: 503,
-  },
+vi.mock("open-sse/translator/formats.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  detectFormatByEndpoint: vi.fn(() => "openai"),
 }));
-vi.mock("open-sse/translator/formats.js", () => ({ detectFormatByEndpoint: vi.fn(() => "openai") }));
+vi.mock("open-sse/services/provider.js", () => ({
+  applyProviderThinking: vi.fn((body) => body),
+  detectFormat: vi.fn(() => "openai"),
+}));
+vi.mock("open-sse/rtk/caveman.js", () => ({ injectCaveman: vi.fn() }));
+vi.mock("open-sse/rtk/ponytail.js", () => ({ injectPonytail: vi.fn() }));
+vi.mock("../../src/sse/services/bestGptRoute.js", () => ({
+  applyBestGptRoute: vi.fn((body) => ({ applied: false, body, model: body.model })),
+}));
 vi.mock("../../src/sse/utils/logger.js", () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), maskKey: vi.fn(() => "masked"),
 }));
 vi.mock("../../src/sse/services/tokenRefresh.js", () => ({
   checkAndRefreshToken: mocks.checkAndRefreshToken,
+  resolveRefreshProxyOptions: vi.fn(() => null),
   updateProviderCredentials: mocks.updateProviderCredentials,
 }));
 vi.mock("open-sse/services/projectId.js", () => ({
@@ -131,7 +148,7 @@ describe("chat request phase timing", () => {
     const { requestTiming } = mocks.handleChatCore.mock.calls[0][0];
     expect(requestTiming).toEqual({
       requestStartedAt: 1_000,
-      attemptStartedAt: 1_036,
+      attemptStartedAt: 1_059,
       phases: {
         ingress_ms: 5,
         auth_total_ms: 26,

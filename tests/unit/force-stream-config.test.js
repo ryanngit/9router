@@ -66,7 +66,9 @@ vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   default: vi.fn(),
+  normalizeExplicitProxyOptions: vi.fn((options) => options),
   proxyAwareFetch: vi.fn(),
+  redactProxyUrlForLog: vi.fn(() => "[proxy]"),
 }));
 
 vi.mock("../../open-sse/translator/formats/claude.js", () => ({
