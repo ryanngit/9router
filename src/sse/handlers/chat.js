@@ -21,8 +21,11 @@ import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { applyProviderThinking, detectFormat } from "open-sse/services/provider.js";
+import { injectCaveman } from "open-sse/rtk/caveman.js";
+import { injectPonytail } from "open-sse/rtk/ponytail.js";
 import * as log from "../utils/logger.js";
 import {
   updateProviderCredentials,
@@ -267,11 +270,25 @@ async function handleSingleModelChat(
 
   const { provider, model } = modelInfo;
   const resolvedBody = { ...body, model: `${provider}/${model}` };
+  const chatSettings = await measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getSettings());
+  const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+  const sourceFormatOverride = request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null;
+  const sourceFormat = sourceFormatOverride || detectFormat(resolvedBody);
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+  const cavemanLevel = chatSettings.cavemanLevel || "full";
+  const ponytailLevel = chatSettings.ponytailLevel || "full";
+  const preparedBody = applyProviderThinking(structuredClone(resolvedBody), providerThinking);
+  if (tokenSaverEnabled && chatSettings.cavemanEnabled && cavemanLevel) {
+    injectCaveman(preparedBody, sourceFormat, cavemanLevel);
+  }
+  if (tokenSaverEnabled && chatSettings.ponytailEnabled && ponytailLevel) {
+    injectPonytail(preparedBody, sourceFormat, ponytailLevel);
+  }
   let usageReservationId = null;
   if (apiKey) {
     let requestedTokens;
     try {
-      requestedTokens = estimateChatUsageReservation(resolvedBody, { provider, model });
+      requestedTokens = estimateChatUsageReservation(preparedBody, { provider, model });
     } catch (error) {
       log.warn("AUTH", error.message);
       return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
@@ -351,10 +368,8 @@ async function handleSingleModelChat(
       }
 
       // Use shared chatCore
-      const chatSettings = await measureRequestPhase(attemptTiming.phases, "db_overlap_ms", () => getSettings());
-      const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
       const result = await handleChatCore({
-        body: structuredClone(resolvedBody),
+        body: structuredClone(preparedBody),
         modelInfo: { provider, model },
         credentials: refreshedCredentials,
         log,
@@ -369,9 +384,9 @@ async function handleSingleModelChat(
         headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
         headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
         cavemanEnabled: !!chatSettings.cavemanEnabled,
-        cavemanLevel: chatSettings.cavemanLevel || "full",
+        cavemanLevel,
         ponytailEnabled: !!chatSettings.ponytailEnabled,
-        ponytailLevel: chatSettings.ponytailLevel || "full",
+        ponytailLevel,
         pxpipeEnabled: !!chatSettings.pxpipeEnabled,
         pxpipeMinChars: chatSettings.pxpipeMinChars,
         pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
@@ -383,8 +398,9 @@ async function handleSingleModelChat(
         requestTiming: cloneRequestTiming(attemptTiming),
         correlationId,
         attemptId,
+        serverMutationsApplied: true,
         // Detect source format by endpoint + body
-        sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        sourceFormatOverride,
         onCredentialsRefreshed: async (newCreds) => {
           await updateProviderCredentials(credentials.connectionId, {
             ...newCreds,

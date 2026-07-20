@@ -33,7 +33,9 @@ function processSSEMessage(msg, state) {
     state.status = completedStatus ? "completed" : "failed";
     state.model = parsed.response?.model || state.model;
     state.serviceTier = parsed.response?.service_tier || state.serviceTier;
-    if (parsed.response?.usage) state.usage = { ...state.usage, ...parsed.response.usage };
+    if (Object.prototype.hasOwnProperty.call(parsed.response || {}, "usage")) {
+      state.usage = parsed.response.usage;
+    }
     if (state.status === "failed") {
       state.error = parsed.response?.error || { message: `Unexpected ${responseStatus} status in ${eventType}` };
     }
@@ -42,7 +44,9 @@ function processSSEMessage(msg, state) {
     state.model = parsed.response?.model || state.model;
     state.serviceTier = parsed.response?.service_tier || state.serviceTier;
     state.incompleteDetails = parsed.response?.incomplete_details || parsed.incomplete_details || null;
-    if (parsed.response?.usage) state.usage = { ...state.usage, ...parsed.response.usage };
+    if (Object.prototype.hasOwnProperty.call(parsed.response || {}, "usage")) {
+      state.usage = parsed.response.usage;
+    }
   } else if (eventType === "response.failed") {
     state.status = "failed";
     state.error = parsed.response?.error || parsed.error || null;
@@ -72,7 +76,7 @@ export async function convertResponsesStreamToJson(stream) {
     responseId: "",
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
-    usage: { ...EMPTY_RESPONSE },
+    usage: undefined,
     model: null,
     serviceTier: null,
     items: new Map(),
@@ -117,8 +121,8 @@ export async function convertResponsesStreamToJson(stream) {
     ...(state.model ? { model: state.model } : {}),
     ...(state.serviceTier ? { service_tier: state.serviceTier } : {}),
     output,
-    usage: state.usage
   };
+  if (state.usage !== undefined) response.usage = state.usage;
   if (state.error) response.error = state.error;
   if (state.incompleteDetails) response.incomplete_details = state.incompleteDetails;
   return response;

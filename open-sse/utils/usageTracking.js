@@ -217,7 +217,7 @@ export function canonicalizeUsage(usage) {
  * Explicit zero primary/reasoning components are authoritative. Totals and
  * cache components alone are not enough to derive trustworthy billable usage.
  */
-export function hasValidUsage(usage) {
+function hasSafeUsageComponents(usage) {
   if (!usage || typeof usage !== "object" || Array.isArray(usage)) return false;
   if (usage.estimated !== undefined && typeof usage.estimated !== "boolean") return false;
 
@@ -263,20 +263,28 @@ export function hasValidUsage(usage) {
     return false;
   }
 
-  return [
-    usage.prompt_tokens,
-    usage.input_tokens,
-    usage.completion_tokens,
-    usage.output_tokens,
+  return true;
+}
+
+export function hasValidUsage(usage) {
+  if (!hasSafeUsageComponents(usage)) return false;
+
+  const hasInput = usage.prompt_tokens !== undefined
+    || usage.input_tokens !== undefined
+    || usage.promptTokenCount !== undefined
+    || usage.prompt_eval_count !== undefined;
+  const hasOutput = usage.completion_tokens !== undefined
+    || usage.output_tokens !== undefined
+    || usage.candidatesTokenCount !== undefined
+    || usage.eval_count !== undefined;
+  const hasReasoning = [
     usage.reasoning_tokens,
-    usage.promptTokenCount,
-    usage.candidatesTokenCount,
     usage.thoughtsTokenCount,
-    usage.prompt_eval_count,
-    usage.eval_count,
     usage.completion_tokens_details?.reasoning_tokens,
     usage.output_tokens_details?.reasoning_tokens,
   ].some((value) => value !== undefined);
+
+  return (hasInput && hasOutput) || hasReasoning;
 }
 
 /**
@@ -287,25 +295,23 @@ export function extractUsage(chunk) {
 
   // Claude input/cache usage arrives at message_start; output arrives later.
   if (chunk.type === "message_start" && chunk.message?.usage && typeof chunk.message.usage === "object") {
-    const usage = chunk.message.usage;
-    if (!hasValidUsage(usage)) return null;
-    return normalizeUsage({
-      prompt_tokens: usage.input_tokens || 0,
-      completion_tokens: usage.output_tokens || 0,
-      cache_read_input_tokens: usage.cache_read_input_tokens,
-      cache_creation_input_tokens: usage.cache_creation_input_tokens,
-    });
+    const u = chunk.message.usage;
+    if (!hasSafeUsageComponents(u) || u.input_tokens === undefined) return null;
+    return {
+      prompt_tokens: u.input_tokens,
+      cache_read_input_tokens: u.cache_read_input_tokens,
+      cache_creation_input_tokens: u.cache_creation_input_tokens
+    };
   }
 
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
-    if (!hasValidUsage(chunk.usage)) return null;
-    return normalizeUsage({
-      prompt_tokens: chunk.usage.input_tokens || 0,
-      completion_tokens: chunk.usage.output_tokens || 0,
+    if (!hasSafeUsageComponents(chunk.usage) || chunk.usage.output_tokens === undefined) return null;
+    return {
+      completion_tokens: chunk.usage.output_tokens,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
       cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
-    });
+    };
   }
 
   // OpenAI Responses API terminal events
@@ -316,8 +322,8 @@ export function extractUsage(chunk) {
     const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens ??
       usage.input_tokens_details?.cache_creation_tokens;
     return normalizeUsage({
-      prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
-      completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
+      prompt_tokens: usage.input_tokens ?? usage.prompt_tokens,
+      completion_tokens: usage.output_tokens ?? usage.completion_tokens,
       cached_tokens: cachedTokens,
       cache_creation_input_tokens: cacheWriteTokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
@@ -339,8 +345,8 @@ export function extractUsage(chunk) {
     if (!hasValidUsage(chunk.usage)) return null;
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
-      completion_tokens: chunk.usage.completion_tokens || 0,
-      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
+      completion_tokens: chunk.usage.completion_tokens,
+      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens ?? chunk.usage.prompt_cache_hit_tokens,
       cache_creation_input_tokens: chunk.usage.prompt_tokens_details?.cache_write_tokens ??
         chunk.usage.prompt_tokens_details?.cache_creation_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
