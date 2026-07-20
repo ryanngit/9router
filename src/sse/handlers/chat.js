@@ -271,7 +271,7 @@ async function handleSingleModelChat(
   if (apiKey) {
     let requestedTokens;
     try {
-      requestedTokens = estimateChatUsageReservation(resolvedBody);
+      requestedTokens = estimateChatUsageReservation(resolvedBody, { provider, model });
     } catch (error) {
       log.warn("AUTH", error.message);
       return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);

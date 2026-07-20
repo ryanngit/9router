@@ -123,10 +123,39 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, usageReservationId, apiKeyClient, endpoint, serviceTier, label = "USAGE", silent = false }) {
-  if (!tokens || typeof tokens !== "object") return;
+function hasValidAuthoritativeUsage(tokens) {
+  if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) return false;
+  const values = [
+    tokens.prompt_tokens,
+    tokens.input_tokens,
+    tokens.completion_tokens,
+    tokens.output_tokens,
+    tokens.reasoning_tokens,
+    tokens.total_tokens,
+    tokens.cached_tokens,
+    tokens.cache_read_input_tokens,
+    tokens.cache_creation_input_tokens,
+    tokens.cache_write_input_tokens,
+    tokens.input_tokens_details?.cached_tokens,
+    tokens.input_tokens_details?.cache_write_tokens,
+    tokens.input_tokens_details?.cache_creation_tokens,
+    tokens.prompt_tokens_details?.cached_tokens,
+    tokens.prompt_tokens_details?.cache_write_tokens,
+    tokens.prompt_tokens_details?.cache_creation_tokens,
+    tokens.completion_tokens_details?.reasoning_tokens,
+    tokens.output_tokens_details?.reasoning_tokens,
+  ];
+  let present = false;
+  return values.every((value) => {
+    if (value === undefined) return true;
+    present = true;
+    return Number.isSafeInteger(value) && value >= 0;
+  }) && present;
+}
 
-  // Canonicalize before the emptiness check so reasoning-only authoritative usage is saved.
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, usageReservationId, apiKeyClient, endpoint, serviceTier, label = "USAGE", silent = false }) {
+  if (!hasValidAuthoritativeUsage(tokens)) return;
+
   const normalized = canonicalizeUsage({
     ...tokens,
     ...(tokens.service_tier || serviceTier ? { service_tier: tokens.service_tier || serviceTier } : {}),
@@ -134,9 +163,6 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
   if (!normalized) return;
   const inTokens = normalized.prompt_tokens ?? 0;
   const outTokens = normalized.completion_tokens ?? 0;
-  const reasoningTokens = normalized.reasoning_tokens ?? 0;
-
-  if (inTokens === 0 && outTokens === 0 && reasoningTokens === 0) return;
 
   if (!silent) {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });

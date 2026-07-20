@@ -2,6 +2,7 @@
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { clearAllPendingApiKeyClientActivity } from "./repos/apiKeyClientsRepo.js";
+import { normalizeDailyLimitTokens } from "./repos/apiKeysRepo.js";
 
 // Settings
 export {
@@ -106,6 +107,10 @@ export async function importDb(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
+  const apiKeys = (payload.apiKeys || []).map((key) => ({
+    ...key,
+    dailyLimitTokens: normalizeDailyLimitTokens(key.dailyLimitTokens),
+  }));
   const db = await getAdapter();
   clearAllPendingApiKeyClientActivity();
 
@@ -147,7 +152,7 @@ export async function importDb(payload) {
         [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
       );
     }
-    for (const k of payload.apiKeys || []) {
+    for (const k of apiKeys) {
       db.run(
         `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, dailyLimitTokens, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
         [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.dailyLimitTokens ?? null, k.createdAt || new Date().toISOString()]
