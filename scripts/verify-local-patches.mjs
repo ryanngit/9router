@@ -224,7 +224,7 @@ function checkSource() {
   mustContain("src/shared/components/OAuthModal.js", "proxyPoolsReady", "OAuth waits for proxy pool list");
   mustContain("src/shared/components/OAuthModal.js", "flowGenerationRef", "OAuth stale-flow generation fence");
   mustContain("src/shared/components/OAuthModal.js", "proxyStopPromiseRef.current = pending", "OAuth serialized fixed-port shutdown");
-  mustContain("src/shared/components/OAuthModal.js", "state=${encodeURIComponent(state)}", "OAuth state-bound fixed-port shutdown");
+  mustContain("src/shared/components/OAuthModal.js", "body: JSON.stringify({ state })", "OAuth state-bound fixed-port shutdown");
   mustContain("src/shared/components/OAuthModal.js", "method: \"POST\"", "OAuth fixed-port sessions use POST bodies");
   mustContain("src/shared/components/OAuthModal.js", "proxyPools.find((pool) => pool.isActive === true)?.id", "OAuth active-pool default");
   mustContain("src/lib/oauth/utils/server.js", "publicSessionStatus", "OAuth status response redaction");
@@ -236,7 +236,7 @@ function checkSource() {
   mustContain("src/lib/oauth/providers.js", "isCloudflareHtmlBadRequest", "Cloudflare HTML 400 detector");
   mustContain("src/lib/oauth/providers.js", "buildRequest({ disableEnvProxy: true })", "Codex exchange direct retry");
   mustContain("open-sse/services/tokenRefresh/providers.js", "oauthRefreshProxyOptions", "OAuth refresh proxy normalization");
-  mustContain("open-sse/services/tokenRefresh/providers.js", "return hasConnectionProxy || proxyOptions?.vercelRelayUrl", "OAuth refresh explicit proxy preservation");
+  mustContain("open-sse/utils/proxyFetch.js", "return hasConnectionProxy || normalizeString(proxyOptions?.vercelRelayUrl)", "OAuth refresh explicit proxy preservation");
   mustContain("tests/unit/oauth-refresh-routing.test.js", "disableEnvProxy", "OAuth refresh no-proxy regression test");
   mustContain("tests/unit/oauth-modal-behavior.test.js", "serializes rapid pool changes", "OAuth modal concurrency regression test");
 
@@ -450,7 +450,8 @@ function checkSource() {
   mustContain("custom-server.js", "resolveTrustedClientIp", "trusted client-IP server wrapper");
   mustContain("client-ip.js", "CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
   mustContain("src/lib/db/schema.js", "apiKeyClients", "API-key client activity schema");
-  mustContain("src/sse/handlers/chat.js", "getApiKeyClientIdentity", "API-key client observation");
+  mustContain("src/sse/handlers/chat.js", "trackApiKeyClientActivity", "API-key client observation");
+  mustContain("src/sse/services/apiKeyClientActivity.js", "getApiKeyClientIdentity", "API-key client identity resolution");
   mustContain("open-sse/handlers/chatCore/requestDetail.js", "apiKeyClientFingerprint", "API-key client usage attribution");
   mustContain("src/shared/components/UsageStats.js", "API Key Clients", "API-key clients usage view");
   mustContain("src/app/api/usage/clients/route.js", "getApiKeyClientActivity", "API-key client activity endpoint");
