@@ -5,7 +5,7 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
+  resolveApiKeyId,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getApiKeyUsageLimitStatus, getSettings } from "@/lib/localDb";
@@ -85,14 +85,15 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   // db_overlap_ms is diagnostic; auth/routing totals already include the same DB wait.
   const settings = await measureRequestPhase(requestTiming.phases, "auth_total_ms", () =>
     measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getSettings()));
+  let apiKeyId = null;
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await measureRequestPhase(requestTiming.phases, "auth_total_ms", () =>
-      measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => isValidApiKey(apiKey)));
-    if (!valid) {
+    apiKeyId = await measureRequestPhase(requestTiming.phases, "auth_total_ms", () =>
+      measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => resolveApiKeyId(apiKey)));
+    if (!apiKeyId) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
@@ -114,10 +115,27 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
+  let admitted = false;
+  const admitRequest = async () => {
+    if (admitted || !apiKey) return;
+    admitted = true;
+    const trackedClient = await trackApiKeyClientActivity({
+      request,
+      body,
+      apiKey,
+      apiKeyId,
+      endpoint: clientRawRequest?.endpoint,
+    });
+    if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
+  };
+
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
-  if (bypassResponse) return bypassResponse.response || bypassResponse;
+  if (bypassResponse) {
+    await admitRequest();
+    return bypassResponse.response || bypassResponse;
+  }
 
   const bestGptRoute = applyBestGptRoute(body);
   if (bestGptRoute.applied) {
@@ -128,19 +146,6 @@ export async function handleChat(request, clientRawRequest = null, options = {})
       `${bestGptRoute.from} → ${modelStr} | effort=${bestGptRoute.config.reasoningEffort} | tier=${bestGptRoute.config.serviceTier}`
     );
   }
-
-  let admitted = false;
-  const admitRequest = async () => {
-    if (admitted || !apiKey) return;
-    admitted = true;
-    const trackedClient = await trackApiKeyClientActivity({
-      request,
-      body,
-      apiKey,
-      endpoint: clientRawRequest?.endpoint,
-    });
-    if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
-  };
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
