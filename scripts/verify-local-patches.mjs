@@ -285,7 +285,7 @@ function checkSource() {
   mustContain("open-sse/utils/clientDetector.js", "ua.includes(\"codex_exec\")", "Codex Desktop executor detection");
   mustContain("open-sse/rtk/systemInject.js", "m?.type !== \"additional_tools\"", "Responses Lite additional_tools protection");
   mustContain("open-sse/handlers/chatCore.js", "structuredClone(body)", "account fallback deep request clone");
-  mustContain("src/sse/handlers/chat.js", "structuredClone(body)", "model fallback deep request clone");
+  mustContain("src/sse/handlers/chat.js", "structuredClone(preparedBody)", "model fallback deep prepared-request clone");
 
   mustContain("open-sse/executors/codex.js", "\"ChatGPT-Account-ID\"", "Codex request account header");
   mustContain("open-sse/services/codexAccount.js", "providerSpecificData?.workspaceId", "Codex workspace binding");
@@ -371,7 +371,12 @@ function checkSource() {
 
   mustContain("src/lib/db/schema.js", "dailyLimitTokens: \"INTEGER\"", "API-key daily token limit schema");
   mustContain("src/lib/db/repos/apiKeysRepo.js", "getApiKeyUsageLimitStatus", "API-key daily token limit query");
+  mustContain("src/lib/db/schema.js", "apiKeyUsageReservations", "API-key usage reservation schema");
+  mustContain("src/lib/db/repos/apiKeysRepo.js", "export async function reserveApiKeyUsage", "API-key atomic usage reservation");
+  mustContain("src/lib/db/repos/usageRepo.js", "DELETE FROM apiKeyUsageReservations", "API-key reservation reconciliation");
+  mustContain("src/sse/handlers/chat.js", "releaseApiKeyUsageReservation(usageReservationId)", "API-key failed-request reservation release");
   mustContain("src/sse/handlers/chat.js", "API key daily token limit exceeded", "API-key daily token limit enforcement");
+  mustContain("tests/unit/api-key-usage-reservations-adapters.test.js", "separate-process races", "API-key cross-process reservation regression test");
   mustContain("tests/unit/db-sqlite-vs-lowdb.test.js", "daily usage limit status uses today's API-key tokens", "API-key daily token limit regression test");
 
   mustContain("open-sse/services/usage/codex.js", "parseCodexResetCredits", "Codex reset credit parser");

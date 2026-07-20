@@ -1,4 +1,4 @@
-export default {
+const migration = {
   version: 4,
   name: "api-key-usage-reservations",
   up(db) {
@@ -13,3 +13,5 @@ export default {
     db.exec("CREATE INDEX IF NOT EXISTS idx_uh_api_key_ts ON usageHistory(apiKey, timestamp)");
   },
 };
+
+export default migration;
