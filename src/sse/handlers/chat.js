@@ -8,8 +8,9 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getApiKeyUsageLimitStatus, getSettings, recordApiKeyClientRequest } from "@/lib/localDb";
-import { getApiKeyClientIdentity } from "@/lib/apiKeyClientIdentity";
+import { getApiKeyUsageLimitStatus, getSettings } from "@/lib/localDb";
+import { getSafeRequestHeaders } from "@/lib/requestOrigin";
+import { trackApiKeyClientActivity } from "../services/apiKeyClientActivity.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -59,8 +60,10 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     clientRawRequest = {
       endpoint: url.pathname,
       body,
-      headers: Object.fromEntries(request.headers.entries())
+      headers: getSafeRequestHeaders(request),
     };
+  } else {
+    clientRawRequest = { ...clientRawRequest, headers: getSafeRequestHeaders(request) };
   }
   cacheClaudeHeaders(clientRawRequest.headers);
 
@@ -104,18 +107,6 @@ export async function handleChat(request, clientRawRequest = null, options = {})
       log.warn("AUTH", `API key daily token limit exceeded (${used}/${limit})`);
       return errorResponse(HTTP_STATUS.RATE_LIMITED, `API key daily token limit exceeded (${used}/${limit} tokens)`);
     }
-
-    try {
-      const identity = await getApiKeyClientIdentity(request, body);
-      const trackedClient = await recordApiKeyClientRequest(
-        apiKey,
-        identity,
-        clientRawRequest?.endpoint,
-      );
-      if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
-    } catch (error) {
-      log.warn("AUTH", `Failed to record API key client: ${error.message}`);
-    }
   }
 
   if (!modelStr) {
@@ -138,10 +129,24 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     );
   }
 
+  let admitted = false;
+  const admitRequest = async () => {
+    if (admitted || !apiKey) return;
+    admitted = true;
+    const trackedClient = await trackApiKeyClientActivity({
+      request,
+      body,
+      apiKey,
+      endpoint: clientRawRequest?.endpoint,
+    });
+    if (trackedClient && clientRawRequest) clientRawRequest.apiKeyClient = trackedClient;
+  };
+
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
     measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getComboModels(modelStr)));
   if (comboModels) {
+    await admitRequest();
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -181,13 +186,33 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, externalSignal, requestTiming, correlationId);
+  return handleSingleModelChat(
+    body,
+    modelStr,
+    clientRawRequest,
+    request,
+    apiKey,
+    externalSignal,
+    requestTiming,
+    correlationId,
+    admitRequest,
+  );
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, externalSignal = null, requestTiming = createRequestTiming(), correlationId = globalThis.crypto.randomUUID()) {
+async function handleSingleModelChat(
+  body,
+  modelStr,
+  clientRawRequest = null,
+  request = null,
+  apiKey = null,
+  externalSignal = null,
+  requestTiming = createRequestTiming(),
+  correlationId = globalThis.crypto.randomUUID(),
+  admitRequest = null,
+) {
   const modelInfo = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
     measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getModelInfo(modelStr)));
 
@@ -196,6 +221,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const comboModels = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
       measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getComboModels(modelStr)));
     if (comboModels) {
+      await admitRequest?.();
       const chatSettings = await measureRequestPhase(requestTiming.phases, "routing_total_ms", () =>
         measureRequestPhase(requestTiming.phases, "db_overlap_ms", () => getSettings()));
       // Check for combo-specific strategy first, fallback to global
@@ -240,6 +266,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  await admitRequest?.();
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
