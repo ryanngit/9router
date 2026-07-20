@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   track: vi.fn(async () => ({ apiKeyId: "key-id", fingerprint: "fingerprint" })),
   getSettings: vi.fn(async () => ({ requireApiKey: true })),
+  getApiKeyUsageLimitStatus: vi.fn(async () => ({ exceeded: false })),
   getCombos: vi.fn(async () => []),
   extractApiKey: vi.fn((request) => {
     const auth = request.headers.get("authorization");
@@ -32,6 +33,7 @@ vi.mock("@/sse/services/auth.js", () => ({
 }));
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
+  getApiKeyUsageLimitStatus: mocks.getApiKeyUsageLimitStatus,
   getCombos: mocks.getCombos,
 }));
 vi.mock("@/sse/services/model.js", () => ({
