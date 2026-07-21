@@ -271,7 +271,13 @@ Helper status `succeeded_external_pending` means app promotion and rollback chec
 
 For isolated Next standalone candidates, set `HOSTNAME=127.0.0.1`; `HOST=127.0.0.1` is ignored and leaves the candidate on `0.0.0.0`. Verify with `ss -ltnp 'sport = :20129'` before any credential-bearing canary.
 
-Default `MAX_ACTIVE=0` must remain the normal gate. When the deployment controller itself is the one active 9Router request and cannot finish before deployment, launch the detached helper with `MAX_ACTIVE=1` only after confirming the count is exactly one. Both quiet snapshots still apply, and any second request blocks the swap. Record this exception because that one control request may reconnect during PM2 restart.
+Default `MAX_ACTIVE=0` must remain the normal gate. `activeRequests` is grouped
+by route/account, so the helper must sum each row's `count`; array length is not
+request concurrency. When the deployment controller itself is the one active
+9Router request and cannot finish before deployment, launch the helper with
+`MAX_ACTIVE=1` only after confirming the summed count is exactly one. Both quiet
+snapshots still apply, and any second request blocks the swap. Record this
+exception because that one control request may reconnect during PM2 restart.
 
 Before staged CLI build, verify nested CLI dev dependencies exist:
 

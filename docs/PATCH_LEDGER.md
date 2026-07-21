@@ -1972,6 +1972,12 @@ Upstream and rollout state:
   and review. Promotion exchanges only `cli/app`, retains the local wrapper and
   PM2 environment, uses one restart, and preserves rollback until local health,
   bundle invariants, DB integrity, raw tunnel, and short tunnel pass.
+- Promotion preflight found `/api/usage/stats.activeRequests` contains grouped
+  rows with a numeric `count`. The helper incorrectly used array length. Its
+  gate now sums `count` with a one-request fallback for legacy rows; a runnable
+  regression proves grouped `2+3+legacy` equals six and an empty list equals
+  zero. The first wait was cancelled before backup or exchange, and live stayed
+  v0.5.35/healthy.
 - Delete the credential-bearing candidate data directory after successful
   promotion or rollback.
 
