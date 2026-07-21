@@ -36,6 +36,7 @@ const { handleNonStreamingResponse } = await import("../../open-sse/handlers/cha
 const { handleForcedSSEToJson, responsesJsonToOpenAIResponse } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
 const { extractUsageFromResponse } = await import("../../open-sse/handlers/chatCore/requestDetail.js");
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
+const { createRequestTiming } = await import("../../open-sse/utils/requestTiming.js");
 
 describe("xAI native Responses routing", () => {
   beforeEach(() => {
@@ -115,7 +116,7 @@ describe("xAI native Responses routing", () => {
       targetFormat,
       body: { model: "grok-4.5", input: "hi" },
       stream: false,
-      requestStartTime: Date.now(),
+      requestTiming: createRequestTiming(),
       connectionId: "xai-failed-json",
       onRequestSuccess,
       reqLogger: { logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() },
@@ -278,7 +279,7 @@ describe("xAI native Responses routing", () => {
       model: "grok-4.5",
       body: { model: "grok-4.5", messages: [{ role: "user", content: "hi" }] },
       stream: true,
-      requestStartTime: Date.now(),
+      requestTiming: createRequestTiming(),
       connectionId: "xai-failed-stream",
       onRequestSuccess,
       trackDone: vi.fn(),
@@ -305,7 +306,7 @@ describe("xAI native Responses routing", () => {
       model: "grok-4.5",
       body: { model: "grok-4.5", input: "hi" },
       stream: false,
-      requestStartTime: Date.now(),
+      requestTiming: createRequestTiming(),
       connectionId: "xai-top-level-error",
       onRequestSuccess: vi.fn(),
       trackDone: vi.fn(),
@@ -335,7 +336,7 @@ describe("xAI native Responses routing", () => {
       model: "grok-4.5",
       body: { model: "grok-4.5", input: "hi" },
       stream: false,
-      requestStartTime: Date.now(),
+      requestTiming: createRequestTiming(),
       connectionId: "xai-truncated-stream",
       onRequestSuccess,
       trackDone: vi.fn(),
@@ -377,7 +378,7 @@ describe("xAI native Responses routing", () => {
       model: "grok-4.5",
       body: { model: "grok-4.5", input: "hi" },
       stream: false,
-      requestStartTime: Date.now(),
+      requestTiming: createRequestTiming(),
       connectionId: "xai-usage-detail",
       trackDone: vi.fn(),
       appendLog: vi.fn(),

@@ -12,6 +12,7 @@ const {
   parseSSEToOpenAIResponse
 } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
 const { handleNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
+const { createRequestTiming } = await import("../../open-sse/utils/requestTiming.js");
 
 describe("Kiro non-streaming error propagation", () => {
   it("rejects standard SSE that closes without a finish reason or DONE", () => {
@@ -68,7 +69,7 @@ describe("Kiro non-streaming error propagation", () => {
       model: "kr/claude-opus-4.8",
       body: { model: "kr/claude-opus-4.8", messages: [] },
       stream: false,
-      requestStartTime: Date.now(),
+      requestTiming: createRequestTiming(),
       connectionId: "test-connection",
       clientRawRequest: { endpoint: "/v1/chat/completions" },
       trackDone: vi.fn(),
@@ -96,7 +97,7 @@ describe("Kiro non-streaming error propagation", () => {
       targetFormat: FORMATS.OPENAI,
       body: { model: "kiro/claude-opus-4.8", messages: [] },
       stream: false,
-      requestStartTime: Date.now(),
+      requestTiming: createRequestTiming(),
       connectionId: "test-connection",
       clientRawRequest: { endpoint: "/v1/chat/completions" },
       onRequestSuccess,

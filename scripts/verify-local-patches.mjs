@@ -317,7 +317,7 @@ function checkSource() {
   mustContain("open-sse/executors/github.js", "supportsNativeResponses(\"github\", model)", "GitHub executor shares Responses policy");
   mustContain("src/app/api/v1/responses/route.js", "createDeferredResponsesResponse(", "Responses route returns deferred SSE");
   mustContain("src/app/api/v1/responses/route.js", "body?.stream !== true", "Responses explicit-stream gate");
-  mustContain("src/app/api/v1/responses/route.js", "{ signal: request.signal, model: body?.model }", "Responses failure model propagation");
+  mustContain("src/app/api/v1/responses/route.js", "model: body?.model,", "Responses failure model propagation");
   mustContain("open-sse/utils/responsesStreamBridge.js", "keepaliveMs = 25_000", "Responses tunnel heartbeat interval");
   mustContain("open-sse/utils/responsesStreamBridge.js", "buildResponsesFailureTerminalBytes", "Responses delayed error framing");
   mustContain("open-sse/utils/responsesStreamBridge.js", "const state = await ready", "Responses pull-based upstream bridge");
