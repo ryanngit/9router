@@ -104,7 +104,12 @@ describe("request correlation and terminal timing", () => {
       translatedBody: {},
     });
 
-    onStreamComplete({ content: "OK" }, { input_tokens: 1, output_tokens: 1 }, 1_050);
+    onStreamComplete(
+      { content: "OK" },
+      { input_tokens: 1, output_tokens: 1 },
+      1_050,
+      { terminalSuccess: true },
+    );
 
     expect(streamDetailId).toBe(ATTEMPT_ID);
     expect(saveRequestDetailMock).toHaveBeenCalledTimes(1);
@@ -316,7 +321,12 @@ describe("request correlation and terminal timing", () => {
       translatedBody: {},
       onRequestSuccess,
     });
-    completed.onStreamComplete({ content: "OK" }, { prompt_tokens: 1, completion_tokens: 1 });
+    completed.onStreamComplete(
+      { content: "OK" },
+      { prompt_tokens: 1, completion_tokens: 1 },
+      undefined,
+      { terminalSuccess: true },
+    );
     await Promise.resolve();
 
     expect(onRequestSuccess).toHaveBeenCalledTimes(1);

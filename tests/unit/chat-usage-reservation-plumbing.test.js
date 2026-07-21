@@ -66,6 +66,7 @@ describe("chat usage reservation plumbing", () => {
       { content: "ok" },
       { prompt_tokens: 10, completion_tokens: 5 },
       Date.now(),
+      { terminalSuccess: true },
     );
 
     expectSavedReservation("reservation-stream");
