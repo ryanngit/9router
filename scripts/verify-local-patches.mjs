@@ -319,6 +319,10 @@ function checkSource() {
   mustContain("src/app/api/v1/responses/route.js", "body?.stream !== true", "Responses explicit-stream gate");
   mustContain("src/app/api/v1/responses/route.js", "model: body?.model,", "Responses failure model propagation");
   mustContain("open-sse/utils/responsesStreamBridge.js", "keepaliveMs = 25_000", "Responses tunnel heartbeat interval");
+  mustContain("open-sse/utils/streamHandler.js", "withOpenAIChatKeepalive", "Chat stream heartbeat helper");
+  mustContain("open-sse/utils/streamHandler.js", "chatcmpl-9router-keepalive", "Chat heartbeat marker");
+  mustContain("open-sse/handlers/chatCore/streamingHandler.js", "sourceFormat === FORMATS.OPENAI", "Chat-only heartbeat gate");
+  mustContain("open-sse/handlers/chatCore/streamingHandler.js", "withOpenAIChatKeepalive(transformedBody", "Chat heartbeat stream wiring");
   mustContain("open-sse/utils/responsesStreamBridge.js", "buildResponsesFailureTerminalBytes", "Responses delayed error framing");
   mustContain("open-sse/utils/responsesStreamBridge.js", "const state = await ready", "Responses pull-based upstream bridge");
   mustContain("open-sse/utils/responsesStreamBridge.js", "cancelWork(parentSignal?.reason || \"client closed\", true)", "Responses parent abort closes downstream");
@@ -341,6 +345,9 @@ function checkSource() {
   mustContain("tests/unit/responses-early-stream.test.js", "preserves fragmented provider SSE bytes without inserting keepalives", "Responses fragmented SSE regression test");
   mustContain("tests/unit/responses-early-stream.test.js", "reads one provider chunk per downstream pull", "Responses backpressure regression test");
   mustContain("tests/unit/responses-early-stream.test.js", "does not start provider work for an already-aborted request", "Responses pre-abort regression test");
+  mustContain("tests/unit/chat-stream-heartbeat.test.js", "emits a valid empty Chat chunk while provider output is idle", "Chat heartbeat payload regression test");
+  mustContain("tests/unit/chat-stream-heartbeat.test.js", "does not insert a keepalive inside a fragmented SSE event", "Chat fragmented SSE regression test");
+  mustContain("tests/unit/chat-stream-heartbeat.test.js", "emits keepalives through the production Chat streaming handler", "Chat heartbeat integration test");
   mustContain("tests/unit/responses-route.test.js", "keeps omitted stream non-streaming", "Responses omitted-stream regression test");
   mustContain("tests/unit/headroom-chat-core.test.js", "detaches the client abort listener after an executor error", "failed-attempt abort-listener regression test");
 
