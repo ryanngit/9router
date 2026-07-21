@@ -45,15 +45,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestTiming, correlationId, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, onStreamError, streamDetailId, pxpipe, reqTag, log }) {
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestTiming, correlationId, connectionId, apiKey, clientRawRequest, reqLogger, toolNameMap, streamController, onStreamComplete, onStreamError, streamDetailId, pxpipe, reqTag, log }) {
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -117,7 +109,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ requestId, correlationId, provider, model, connectionId, apiKey, usageReservationId, requestTiming, responseStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
+export function buildOnStreamComplete({ requestId, correlationId, provider, model, connectionId, apiKey, usageReservationId, requestTiming, responseStartTime, body, stream, finalBody, translatedBody, clientRawRequest, onRequestSuccess, pxpipe, reqTag, log }) {
   const streamDetailId = requestId || `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   let detailFinalized = false;
 
@@ -137,7 +129,7 @@ export function buildOnStreamComplete({ requestId, correlationId, provider, mode
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
   };
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, { terminalSuccess = true } = {}) => {
     const completedAt = requestNow();
     const ttft = ttftAt
       ? elapsedRequestMilliseconds(requestTiming.requestStartedAt, ttftAt)
@@ -153,6 +145,14 @@ export function buildOnStreamComplete({ requestId, correlationId, provider, mode
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: "success"
     });
+
+    if (terminalSuccess && onRequestSuccess) {
+      Promise.resolve()
+        .then(onRequestSuccess)
+        .catch(err => {
+          console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+        });
+    }
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
     saveUsageStats({

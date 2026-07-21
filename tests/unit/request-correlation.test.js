@@ -8,6 +8,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   appendRequestLog: vi.fn(() => Promise.resolve()),
   saveRequestDetail: saveRequestDetailMock,
   saveRequestUsage: vi.fn(() => Promise.resolve()),
+  trackPendingRequest: vi.fn(),
 }));
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
@@ -27,6 +28,42 @@ function requestTiming(phases = {}) {
 
 function responseLogger() {
   return { logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() };
+}
+
+async function runResponsesStream(sse, onRequestSuccess) {
+  const terminal = buildOnStreamComplete({
+    requestId: ATTEMPT_ID,
+    correlationId: CORRELATION_ID,
+    provider: "codex",
+    model: "gpt-5.6-sol",
+    requestTiming: requestTiming(),
+    responseStartTime: 1_000,
+    body: {},
+    translatedBody: {},
+    onRequestSuccess,
+  });
+  const result = await handleStreamingResponse({
+    providerResponse: new Response(sse, { headers: { "content-type": "text/event-stream" } }),
+    provider: "codex",
+    model: "gpt-5.6-sol",
+    sourceFormat: FORMATS.OPENAI_RESPONSES,
+    targetFormat: FORMATS.OPENAI_RESPONSES,
+    body: { input: [] },
+    stream: true,
+    translatedBody: {},
+    requestTiming: requestTiming(),
+    responseStartTime: 1_000,
+    connectionId: "test-connection",
+    reqLogger: {},
+    streamController: {
+      signal: undefined,
+      isConnected: () => true,
+      handleComplete: vi.fn(),
+      handleError: vi.fn(),
+    },
+    ...terminal,
+  });
+  return result.response.text();
 }
 
 beforeEach(() => {
@@ -249,6 +286,69 @@ describe("request correlation and terminal timing", () => {
       response: { error: "Stream aborted", status: 499 },
       latency: { phases: { upstream_headers_ms: 10, response_ms: 100 } },
     });
+  });
+
+  it("reports streaming success only after terminal completion", async () => {
+    const onRequestSuccess = vi.fn();
+    const terminal = buildOnStreamComplete({
+      requestId: ATTEMPT_ID,
+      correlationId: CORRELATION_ID,
+      provider: "github",
+      model: "test-model",
+      requestTiming: requestTiming(),
+      responseStartTime: 1_000,
+      body: {},
+      translatedBody: {},
+      onRequestSuccess,
+    });
+
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+    terminal.onStreamError(new DOMException("aborted", "AbortError"));
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+
+    const completed = buildOnStreamComplete({
+      requestId: `${ATTEMPT_ID}-complete`,
+      provider: "github",
+      model: "test-model",
+      requestTiming: requestTiming(),
+      responseStartTime: 1_000,
+      body: {},
+      translatedBody: {},
+      onRequestSuccess,
+    });
+    completed.onStreamComplete({ content: "OK" }, { prompt_tokens: 1, completion_tokens: 1 });
+    await Promise.resolve();
+
+    expect(onRequestSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report success when a Responses stream closes without a terminal event", async () => {
+    const onRequestSuccess = vi.fn();
+    const output = await runResponsesStream([
+      "event: response.output_text.delta",
+      'data: {"type":"response.output_text.delta","delta":"partial"}',
+      "",
+    ].join("\n"), onRequestSuccess);
+    await Promise.resolve();
+
+    expect(output).toContain("response.failed");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("reports success for a Responses stream with a completed terminal event", async () => {
+    const onRequestSuccess = vi.fn();
+    const output = await runResponsesStream([
+      "event: response.completed",
+      'data: {"type":"response.completed","response":{"id":"resp_test","status":"completed","output":[]}}',
+      "",
+      "data: [DONE]",
+      "",
+      "",
+    ].join("\n"), onRequestSuccess);
+    await Promise.resolve();
+
+    expect(output).toContain("response.completed");
+    expect(onRequestSuccess).toHaveBeenCalledTimes(1);
   });
 
   it("persists terminal stream detail when upstream is not SSE", async () => {

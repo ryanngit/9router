@@ -3,7 +3,12 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
-import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import {
+  formatIncompleteOpenAIResponsesStreamFailure,
+  getOpenAIResponsesEventName,
+  isOpenAIResponsesSuccessfulTerminalEvent,
+  isOpenAIResponsesTerminalEvent,
+} from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 import { requestNow } from "./requestTiming.js";
 
@@ -34,7 +39,7 @@ const STREAM_MODE = {
  * @param {string} options.model - Model name
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @param {object} options.body - Request body (for input token estimation)
- * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
+ * @param {function} options.onStreamComplete - Callback when stream completes (content, usage, ttftAt, metadata)
  * @param {string} options.apiKey - API key for usage tracking
  */
 export function createSSEStream(options = {}) {
@@ -71,6 +76,7 @@ export function createSSEStream(options = {}) {
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
   let openAIResponsesTerminalSeen = false;
+  let openAIResponsesSuccessfulTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
 
@@ -218,6 +224,9 @@ export function createSSEStream(options = {}) {
 
         if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
+          if (isOpenAIResponsesSuccessfulTerminalEvent(openAIResponsesEventName, parsed)) {
+            openAIResponsesSuccessfulTerminalSeen = true;
+          }
         }
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
@@ -397,6 +406,9 @@ export function createSSEStream(options = {}) {
               : null;
             if (targetFormat === FORMATS.OPENAI_RESPONSES && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
               openAIResponsesTerminalSeen = true;
+              if (isOpenAIResponsesSuccessfulTerminalEvent(openAIResponsesEventName, parsed)) {
+                openAIResponsesSuccessfulTerminalSeen = true;
+              }
             }
             const extracted = extractUsage(parsed);
             if (extracted) {
@@ -474,7 +486,9 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, usage, ttftAt);
+          }, usage, ttftAt, {
+            terminalSuccess: targetFormat !== FORMATS.OPENAI_RESPONSES || openAIResponsesSuccessfulTerminalSeen,
+          });
         }
       } catch (error) {
         console.log("Error in flush:", error);

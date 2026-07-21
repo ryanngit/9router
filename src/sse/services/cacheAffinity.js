@@ -87,4 +87,3 @@ export function rememberCacheAffinity(scope, connectionId, now = Date.now()) {
 export function clearCacheAffinity() {
   entries.clear();
 }
-

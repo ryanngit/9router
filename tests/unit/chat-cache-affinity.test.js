@@ -11,6 +11,7 @@ const dbMocks = vi.hoisted(() => ({
   reserveApiKeyUsage: vi.fn(),
 }));
 const dispatchMocks = vi.hoisted(() => ({ handleChatCore: vi.fn() }));
+const comboMocks = vi.hoisted(() => ({ handleComboChat: vi.fn(), handleFusionChat: vi.fn() }));
 const modelMocks = vi.hoisted(() => ({ getComboModels: vi.fn(), getModelInfo: vi.fn() }));
 const settingsMocks = vi.hoisted(() => ({ getSettings: vi.fn() }));
 const trackingMocks = vi.hoisted(() => ({ trackApiKeyClientActivity: vi.fn() }));
@@ -35,6 +36,7 @@ vi.mock("@/sse/services/auth.js", () => ({
 }));
 vi.mock("@/lib/db/index.js", () => dbMocks);
 vi.mock("open-sse/handlers/chatCore.js", () => dispatchMocks);
+vi.mock("open-sse/services/combo.js", () => comboMocks);
 vi.mock("@/sse/services/model.js", () => modelMocks);
 vi.mock("@/lib/localDb", () => settingsMocks);
 vi.mock("@/lib/requestOrigin", () => ({
@@ -73,6 +75,11 @@ function failure(status = 503, error = "Selected model is at capacity") {
     error,
     response: Response.json({ error: { message: error } }, { status }),
   };
+}
+
+async function terminalSuccess(options) {
+  await options.onRequestSuccess?.();
+  return success();
 }
 
 function request({ session = "session-1", model = "codex/gpt-5.6-sol", apiKey = "key-1" } = {}) {
@@ -125,7 +132,7 @@ beforeEach(() => {
     fingerprint: "client-1",
   });
   tokenMocks.checkAndRefreshToken.mockImplementation(async (_provider, value) => value);
-  dispatchMocks.handleChatCore.mockResolvedValue(success());
+  dispatchMocks.handleChatCore.mockImplementation(terminalSuccess);
 });
 
 describe("chat cache affinity", () => {
@@ -178,12 +185,12 @@ describe("chat cache affinity", () => {
       .mockResolvedValueOnce(credentials("account-b"));
     dispatchMocks.handleChatCore.mockReset()
       .mockResolvedValueOnce(failure())
-      .mockResolvedValueOnce(success());
+      .mockImplementationOnce(terminalSuccess);
     authMocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true, cooldownMs: 30_000 });
 
     await handleChat(request());
     authMocks.getProviderCredentials.mockReset().mockResolvedValue(credentials("account-b"));
-    dispatchMocks.handleChatCore.mockReset().mockResolvedValue(success());
+    dispatchMocks.handleChatCore.mockReset().mockImplementation(terminalSuccess);
     await handleChat(request());
 
     expect(authMocks.getProviderCredentials).toHaveBeenCalledWith(
@@ -215,5 +222,35 @@ describe("chat cache affinity", () => {
     dispatchMocks.handleChatCore.mockResolvedValue(success());
     await handleChat(request());
     expect(authMocks.getProviderCredentials.mock.calls[1]).toHaveLength(3);
+  });
+
+  it("does not pin a streaming response before terminal success", async () => {
+    dispatchMocks.handleChatCore.mockResolvedValue(success());
+    await handleChat(request());
+
+    dispatchMocks.handleChatCore.mockImplementation(terminalSuccess);
+    await handleChat(request());
+
+    expect(authMocks.getProviderCredentials.mock.calls[1]).toHaveLength(3);
+  });
+
+  it("propagates affinity identity through combo members", async () => {
+    modelMocks.getComboModels.mockImplementation(async (model) => (
+      model === "cache-combo" ? ["codex/gpt-5.6-sol"] : null
+    ));
+    comboMocks.handleComboChat.mockImplementation(({ body, models, handleSingleModel }) => (
+      handleSingleModel({ ...body, model: models[0] }, models[0])
+    ));
+
+    await handleChat(request({ model: "cache-combo" }));
+    await handleChat(request({ model: "cache-combo" }));
+
+    expect(authMocks.getProviderCredentials).toHaveBeenNthCalledWith(
+      2,
+      "codex",
+      expect.any(Set),
+      "gpt-5.6-sol",
+      { preferredConnectionId: "account-a" },
+    );
   });
 });

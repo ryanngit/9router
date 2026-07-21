@@ -436,18 +436,18 @@ async function handleSingleModelChat(
           });
         },
         onRequestSuccess: async () => {
+          if (affinityScope) {
+            const outcome = !preferredConnectionId
+              ? "miss"
+              : preferredConnectionId === credentials.connectionId ? "hit" : "repin";
+            rememberCacheAffinity(affinityScope, credentials.connectionId);
+            log.debug("CACHE_AFFINITY", `${provider}/${model} | ${affinityScope.level} | ${outcome}`);
+          }
           await clearAccountError(credentials.connectionId, credentials, model);
         }
       });
 
       if (result.success) {
-        if (affinityScope) {
-          const outcome = !preferredConnectionId
-            ? "miss"
-            : preferredConnectionId === credentials.connectionId ? "hit" : "repin";
-          rememberCacheAffinity(affinityScope, credentials.connectionId);
-          log.debug("CACHE_AFFINITY", `${provider}/${model} | ${affinityScope.level} | ${outcome}`);
-        }
         preserveUsageReservation = true;
         return result.response;
       }
