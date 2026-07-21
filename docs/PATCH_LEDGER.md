@@ -1,18 +1,18 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0540-integration`, branch `local-v0.5.40-integration`, head `501deb9`. Merge commit `717c275` applies published v0.5.40 over the tracked local patch history. Live remains v0.5.35 until the guarded promotion status says `succeeded`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0540-integration`, branch `local-v0.5.40-integration`, runtime code head `2ec49db`. Merge commit `717c275` applies published v0.5.40 over the tracked local patch history. Live runs the reviewed `2ec49db` bundle; later ledger-only commits do not change it.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
 - Current PM2 entrypoint: `/home/home/.npm-global/lib/node_modules/9router/app/custom-server.js`.
-- Current app and retained-wrapper package version: `0.5.35`.
+- Current app and retained-wrapper package version: `0.5.40`.
 - P15-P17 candidate was promoted to live on 2026-07-12; its temporary credential-bearing QA data was removed after deploy.
 - P2/P18 latency candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed after deploy.
 - P9 xAI stale-tool-choice candidate was promoted to live on 2026-07-13; its temporary credential-bearing QA data was removed before deploy.
@@ -22,19 +22,21 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://others-assuming-cooking-tagged.trycloudflare.com`.
-- Current cloudflared PID: `638304`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://accept-notified-earrings-gotta.trycloudflare.com`.
+- Current cloudflared PID: `2216695`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
 - The 2026-07-19 combined promotion retained that policy; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2` after live canaries.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
 - xAI OAuth profile `songoku200794@gmail.com` uses proxy pool `3497197d-1c66-48f8-845c-325a9e46d49e` (`http://127.0.0.1:18888`). Gateway routes `x.ai`/`grok.com` domains through US exits on both listeners.
 - xAI OAuth access expired around 2026-07-13 02:56 local time and all refresh attempts failed; that profile requires reauthorization before direct `xai` canaries can pass again.
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
+- All GitHub Copilot profiles use that same residential pool on `18889`. The shared `18888` pool returned trade-restricted/HTML token-refresh failures; both active GitHub profiles refresh and test valid on `18889`.
 - Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
-- Current PM2 PID after the combined P25/OAuth promotion: `638076`.
-- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0535-p25-oauth-20260719-20260719T193507Z`.
-- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-v0535-p25-oauth-20260719-20260719T193507Z/data.sqlite`.
-- Active Codex config references `/home/home/.openclaw/codex-9router-model-catalog.json` and currently selects `grok-4.5` with effort `max`. This client selection is independent of the endpoint-wide best-GPT route for incoming `gpt-*` models.
+- Current PM2 PID after the Fable stream-integrity promotion: `2216464`.
+- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-stream-integrity-20260721-20260721T135949Z`.
+- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-v0540-fable-stream-integrity-20260721-20260721T135949Z/data.sqlite`.
+- Latest pre-GitHub-pool DB backup: `/home/home/.9router/db/backups/pre-github-residential-pool-20260721T140531Z/data.sqlite`.
+- Active Codex config references `/home/home/.openclaw/codex-9router-model-catalog.json` and currently selects `claude-fable-5` with effort `max`. This client selection is independent of the endpoint-wide best-GPT route for incoming `gpt-*` models.
 - Previous live rollback app from Claude pairing: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-claude-pairing-max2-20260717T033932Z-20260717T034004Z`.
 - Previous DB backup from Claude pairing: `/home/home/.9router/db/backups/pre-claude-pairing-max2-20260717T033932Z-20260717T034004Z/data.sqlite`.
 - Previous `0.5.35` live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`.
@@ -2099,6 +2101,69 @@ Upstream and rollout state:
   `/home/home/.9router/db/backups/pre-v0540-codex-route-heartbeat-20260721-20260721T103823Z/data.sqlite`.
   Promotion status is `succeeded`.
 
+### Fable Responses stream-integrity correction (2026-07-21)
+
+- Production-path debugging found two independent translator defects. The
+  registered OpenAI-to-Responses translator reused source index `0` for
+  reasoning, message, and the first tool call. The translated stream also
+  suppressed upstream `[DONE]` while marking it sent, which could omit the
+  downstream sentinel after terminal flush.
+- Commit `e7af782` initially changed the legacy transformer only and was
+  rejected in review. Final commit `2ec49db` supersedes it: allocator state now
+  lives in `open-sse/translator/index.js`, registered translation allocates
+  stable monotonic indexes in
+  `open-sse/translator/response/openai-responses.js`, and
+  `open-sse/utils/stream.js` emits terminal events before exactly one `[DONE]`.
+- `cli/scripts/build-cli.js` removes the staged `.next-cli-build` directory
+  before compiling. This prevents linked-worktree cache reuse from producing a
+  stale runtime bundle after source tests pass.
+- Focused production-path tests pass 37/37. Changed-file ESLint,
+  `git diff --check`, source checks, candidate-bundle checks, candidate DB
+  checks, and candidate health pass. Candidate verification reports zero
+  failures and zero warnings. Independent reviewer
+  `019f84bd-8c5a-7cd0-965a-990af1c4a4e6` found no Critical, Important, or Minor
+  issues.
+- Isolated candidate
+  `/home/home/.openclaw/workspace-keyra/9router-candidate-v0540-fable-index-20260721/app`
+  bound only `127.0.0.1:20129`, started no tunnel, and used an
+  integrity-checked DB with zero direct or nested `refreshToken` fields. A
+  forced Fable tool turn emitted reasoning at output index `0`, the function
+  call at `1`, one `response.completed`, and one `[DONE]`. Its
+  `function_call_output` continuation returned
+  `CANDIDATE_FABLE_CONTINUATION_OK` with one completion, one sentinel, and zero
+  failures. Candidate HOME was deleted and port `20129` released before
+  promotion.
+- Initial candidate attempts through shared pool `3497197d-1c66-48f8-845c-325a9e46d49e`
+  on `18888` failed before model execution: expired Copilot tokens could not
+  refresh because exits returned `trade_restricted_country`, GitHub HTML, or
+  proxy fetch errors. Candidate-only use of existing residential pool
+  `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `18889` proved this was egress,
+  separate from stream translation.
+- Promotion label `v0540-fable-stream-integrity-20260721` used explicitly
+  authorized `MAX_ACTIVE=10` and `ALLOW_ACTIVE_CUTOVER=1`. The gate observed 10
+  active streams, backed up SQLite, exchanged only `cli/app`, restarted PM2
+  once, and passed the complete source/live-bundle/config/DB verifier with zero
+  failures or warnings. Promotion status is `succeeded`.
+- Restart replaced cloudflared. Guarded recovery created PID `2216695`, raw URL
+  `https://accept-notified-earrings-gotta.trycloudflare.com`, and restored
+  `https://rkeyra9.abc-tunnel.us`. Local, raw, and short health each return
+  HTTP 200.
+- GitHub connections were updated through the provider API, not raw live DB
+  writes, to use the existing residential pool on `18889`; Codex, xAI, global
+  outbound routing, aliases, API-key limits, and account activation were not
+  changed. Both active Copilot profile tests return `valid=true`; their token
+  expiries advanced after refresh.
+- Live short-URL QA passed the exact two-turn failure path. Forced Fable/max
+  tool output used indexes `0/1`, one completion, and one `[DONE]`.
+  `function_call_output` then returned `LIVE_FABLE_CONTINUATION_OK`, one
+  completion, one `[DONE]`, and zero failed events.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-stream-integrity-20260721-20260721T135949Z`.
+  Pre-promotion DB backup:
+  `/home/home/.9router/db/backups/pre-v0540-fable-stream-integrity-20260721-20260721T135949Z/data.sqlite`.
+  Pre-pool-change DB backup:
+  `/home/home/.9router/db/backups/pre-github-residential-pool-20260721T140531Z/data.sqlite`.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
@@ -2142,6 +2207,11 @@ Run after every update/deploy:
 - Run a provider that delays more than 30 seconds after headers through the
   short URL. Verify Codex receives heartbeat events until terminal completion
   and no `idle timeout waiting for SSE` or false account lock occurs.
+- Confirm every GitHub profile remains bound to residential pool
+  `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `18889`; test both active profiles.
+- Through the short URL, force Fable to call one function and submit its
+  `function_call_output`. Require unique monotonic output indexes, exactly one
+  `response.completed`, exactly one `[DONE]`, and a successful continuation.
 - Re-run the verifier against source, bundle, and DB.
 - Open Usage once and confirm `/api/usage/stream` emits only realtime fields without blocking `/api/health`.
 - Save the backup path and tunnel URL in this ledger if they changed.
