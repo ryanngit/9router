@@ -99,6 +99,41 @@ describe("OpenAI Chat SSE keepalive", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("emits repeated keepalives at the configured cadence", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(20)
+      .mockReturnValueOnce(20)
+      .mockReturnValueOnce(21)
+      .mockReturnValueOnce(40)
+      .mockReturnValue(60);
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"a"}}]}\n\n'));
+      },
+    });
+    const reader = withOpenAIChatKeepalive(source, { keepaliveMs: 20 }).getReader();
+
+    await reader.read();
+    const firstRead = reader.read();
+    await vi.advanceTimersByTimeAsync(20);
+    expect(decoder.decode((await firstRead).value)).toContain("chatcmpl-9router-keepalive");
+
+    let second;
+    const secondRead = reader.read().then((result) => { second = result; });
+    await vi.advanceTimersByTimeAsync(20);
+    await Promise.resolve();
+    try {
+      expect(second?.done).toBe(false);
+      expect(decoder.decode(second.value)).toContain("chatcmpl-9router-keepalive");
+    } finally {
+      await reader.cancel("done");
+      await secondRead;
+    }
+  });
+
   it("emits keepalives through the production Chat streaming handler", async () => {
     vi.useFakeTimers();
     let upstream;

@@ -124,13 +124,14 @@ export function withOpenAIChatKeepalive(source, { keepaliveMs = 25_000, model = 
   const boundary = { atBoundary: true, lineHasData: false, trailingCr: false };
   let timer = null;
   let closed = false;
-  let lastOutputAt = Date.now();
 
   const cleanup = () => {
     if (!timer) return;
-    clearInterval(timer);
+    clearTimeout(timer);
     timer = null;
   };
+
+  let scheduleKeepalive;
 
   const observe = (bytes) => {
     for (const byte of bytes) {
@@ -154,22 +155,32 @@ export function withOpenAIChatKeepalive(source, { keepaliveMs = 25_000, model = 
 
   return new ReadableStream({
     start(controller) {
-      timer = setInterval(() => {
-        if (closed || Date.now() - lastOutputAt < keepaliveMs) return;
-        if (!boundary.atBoundary || boundary.trailingCr || controller.desiredSize <= 0) return;
-        try {
-          controller.enqueue(heartbeatEncoder.encode(chatChunkSse({
-            id: "chatcmpl-9router-keepalive",
-            created: Math.floor(Date.now() / 1000),
-            model,
-            delta: {},
-          })));
-          lastOutputAt = Date.now();
-        } catch {
-          closed = true;
-          cleanup();
-        }
-      }, keepaliveMs);
+      scheduleKeepalive = () => {
+        cleanup();
+        if (closed) return;
+        timer = setTimeout(() => {
+          timer = null;
+          if (closed) return;
+          if (!boundary.atBoundary || boundary.trailingCr || controller.desiredSize <= 0) {
+            scheduleKeepalive();
+            return;
+          }
+          try {
+            controller.enqueue(heartbeatEncoder.encode(chatChunkSse({
+              id: "chatcmpl-9router-keepalive",
+              created: Math.floor(Date.now() / 1000),
+              model,
+              delta: {},
+            })));
+          } catch (error) {
+            closed = true;
+            reader.cancel(error).catch(() => {});
+            return;
+          }
+          scheduleKeepalive();
+        }, keepaliveMs);
+      };
+      scheduleKeepalive();
     },
 
     async pull(controller) {
@@ -184,8 +195,8 @@ export function withOpenAIChatKeepalive(source, { keepaliveMs = 25_000, model = 
           return;
         }
         observe(value);
-        lastOutputAt = Date.now();
         controller.enqueue(value);
+        scheduleKeepalive();
       } catch (error) {
         if (closed) return;
         closed = true;
