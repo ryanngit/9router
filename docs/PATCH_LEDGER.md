@@ -2171,8 +2171,8 @@ Upstream and rollout state:
 
 ### P27. Responses custom-tool round trip
 
-Deployment state: candidate source only. Live remains at `2ec49db` until
-isolated dual-profile QA and rollback gates pass.
+Deployment state: candidate verified. Live remains at `2ec49db` until atomic
+promotion and rollback gates pass.
 
 - A real Codex/Fable request completed upstream with a tool call but Codex sent
   no continuation. Live wire inspection showed ordinary `function_call` output
@@ -2193,8 +2193,29 @@ isolated dual-profile QA and rollback gates pass.
 - Focused red-green coverage passes 13/13. Broader translator, index, pairing,
   GitHub routing, terminal, xAI, reservation, affinity, correlation, and Kiro
   matrix passes 86/86. Changed-file ESLint, source verifier, and diff checks
-  pass. Independent review, standalone build, candidate/live canaries,
-  promotion paths, and upstream status are recorded here after completion.
+  pass. A 409-test broad translator baseline and current comparison have the
+  same 12 legacy failures; P27 adds 13 passing tests and no failure. Independent
+  reviewer `019f84bd-8c5a-7cd0-965a-990af1c4a4e6` found no Critical or
+  Important issue.
+- Standalone build compiled, type-checked, generated 130 routes, bundled MITM,
+  and produced a 58 MB candidate at
+  `/home/home/.openclaw/workspace-keyra/9router-candidate-v0540-fable-custom-20260721/app`.
+  Source/bundle/config/DB verification reports zero failures and warnings.
+- Isolated candidate bound only `127.0.0.1:20129`, started no tunnel, and used
+  an integrity-checked SQLite backup with zero `refreshToken` keys. Each active
+  GitHub profile was enabled alone so fallback could not mask failure. Both
+  `903b7db5-5366-47f6-b135-95cd56edb54b` and
+  `f42d668a-ee2f-430c-aefe-85e4c8dadacc` emitted official custom input
+  delta/done events for real `apply_patch`, completed after
+  `custom_tool_call_output`, stored required `input:string` provider schemas,
+  and persisted no `_customToolNames`. Profile `f42d668a` also passed an
+  ordinary function control. Every request produced one completion and one
+  `[DONE]`. Credential-bearing candidate HOME was deleted and port `20129` was
+  released after QA.
+- Reusable local canary is
+  `scripts/probe-fable-custom-tool-roundtrip.mjs`; it reads the key without
+  printing it and verifies exact account, custom continuation, ordinary
+  function compatibility, provider schema, terminals, and metadata leakage.
 - Future upgrades fail source/bundle verification unless custom request
   metadata, `{input:string}` wrapping, metadata stripping, official custom input
   events, and continuation regression coverage remain present. Runbook P27
