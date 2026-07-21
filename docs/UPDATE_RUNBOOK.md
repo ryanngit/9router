@@ -9,10 +9,12 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - Live data is `/home/home/.9router`.
 - Live app is `/home/home/.npm-global/lib/node_modules/9router/app`.
 - Live wrapper workspace is `/home/home/.openclaw/workspace-keyra/9router-patch`.
-- Use a clean version-specific worktree for source changes and builds. Current local integration source is `/home/home/.openclaw/workspace-keyra/9router-local-v0535-integration`; public P26 source is `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`.
+- Use a clean version-specific worktree for source changes and builds. Current local integration source is `/home/home/.openclaw/workspace-keyra/9router-local-v0540-integration`; public PR worktrees share `/home/home/.openclaw/workspace-keyra/9router-prs-20260708`.
 - User traffic may be connected through 9Router; avoid restarts until the final deploy step.
-- Active reliability gate forbids 9Router/gateway/Observer promotion before
-  `2026-07-25 18:55 PDT`; require zero new service restarts and cgroup OOM kills.
+- Gateway, proxy-farm, health-check, and Observer runtime changes remain behind
+  their reliability soak. An explicitly requested 9Router release promotion may
+  proceed separately after isolated differential QA, zero-active exchange gates,
+  verified rollback, and unchanged gateway/proxy configuration.
 - Do not rely on `git status` in `9router-patch` until broken worktree metadata is fixed.
 - Do not push upstream branches from a dirty/broken worktree.
 - Never proactively restart or replace cloudflared during an app upgrade. If local app health passes but the recorded raw tunnel remains down, one guarded recovery is allowed after app rollback gates pass; record the old/new PID and raw URL, then re-register the existing short ID.
@@ -40,7 +42,12 @@ Source-only candidates as of 2026-07-20:
   CLEAN at `dfb0ac2`. Candidate passed a 130-second silent-provider stream.
 - Cache-affinity routing and terminal hardening are integrated through
   `b03a81d`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
-- These source changes are not live. Do not infer live behavior from source tests.
+- Local v0.5.40 integration is `501deb9` after merge commit `717c275`. Physical
+  standalone candidate `/home/home/.openclaw/workspace-keyra/9router-candidate-v0540-20260720/app`
+  is 58 MB, binds only `127.0.0.1:20129`, and passes source/bundle/copied-DB
+  verification with zero failures and warnings.
+- These source changes are not live until promotion status says `succeeded`.
+  Do not infer live behavior from source tests or candidate canaries.
 
 ## 1. Brainstorm / Analyze
 
@@ -65,7 +72,7 @@ cat /home/home/.9router/tunnel/state.json 2>/dev/null || true
 - Check source/config/DB invariants before building:
 
 ```bash
-cd /home/home/.openclaw/workspace-keyra/9router-local-v0535-integration
+cd /home/home/.openclaw/workspace-keyra/9router-local-v0540-integration
 node scripts/verify-local-patches.mjs \
   --root . \
   --no-bundle \

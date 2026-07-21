@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0535-integration`, branch `local-v0.5.35-upgrade`. Source-only additions not yet live include atomic reservation review waves through `5a9d56c`, Codex post-header SSE keepalive `029d6ce`, Gemini usage authority `cb82d82`, cache-affinity routing through `b03a81d`, and terminal hardening `c31bf4a`. Live still includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0540-integration`, branch `local-v0.5.40-integration`, head `501deb9`. Merge commit `717c275` applies published v0.5.40 over the tracked local patch history. Live remains v0.5.35 until the guarded promotion status says `succeeded`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -1918,6 +1918,61 @@ Deployment status:
 - Short-domain live canaries passed: Codex returned `LIVE_P25_CODEX_OK` as `gpt-5.6-sol`/`default`; Fable/max non-stream returned billable `status=incomplete` with `max_output_tokens`, 1,278 input, 1 output, and 1,250 cached tokens; Grok returned `LIVE_P25_GROK_OK` as `grok-4.5-build` with `xhigh`, 219 input, 59 output, 128 cached, and 50 reasoning tokens.
 - Since promotion, request details recorded 118 Codex successes, four Fable successes, and one Grok success during the audit window. The only error was a deliberate Fable `none` probe proving that model rejects `thinking.type.disabled`; it emitted one structured `response.failed` and created no account lock.
 - Local/raw/short health, package/version surfaces, PM2 entrypoint/policy, full verifier, and `pm2 save` passed after canaries. Promotion status `/home/home/.openclaw/workspace-keyra/9router-ops/v0535-p25-oauth-20260719.status` is `succeeded`.
+
+## v0.5.40 Upgrade Audit (2026-07-20)
+
+Baseline and integration:
+
+- npm `latest` and published source both resolve to `0.5.40`; upstream commit is
+  `79918c7`. Local merge commit `717c275` preserves the tracked patch history;
+  `501deb9` aligns only local verification fixtures.
+- Ten merge conflicts were resolved across request timing, terminal stream
+  handling, OAuth proxy lifecycle, Kimi device identity/refresh, SQLite spread
+  binding, and provider model resolution. Private aliases, proxy pools,
+  best-GPT policy, ports, and tunnel behavior remain outside public branches.
+- Source verification and the physical standalone bundle each return zero
+  failures and zero warnings. Production build compiled, type-checked, generated
+  130/130 routes, bundled MITM, and produced a 58 MB candidate.
+
+Differential and isolated QA:
+
+- Full local suite reports 2,114 passed, 68 failed, 18 expected failures, and 66
+  skipped. Clean v0.5.40 reports 1,388 passed, 82 failed, and 18 expected
+  failures. Clean upstream reproduces the 36 Cursor codec failures and the DB
+  concurrency failures; candidate-only timeout files pass 24/24 when isolated.
+- Full-suite failures move between timeout-sensitive files under parallel load;
+  exact candidate-only OAuth/cache-affinity files pass with a 30-second test
+  timeout. Always use `TMPDIR="$PWD/.tmp"`; the host `/tmp` quota can make Vitest
+  fail with `EDQUOT`.
+- Candidate `/home/home/.openclaw/workspace-keyra/9router-candidate-v0540-20260720/app`
+  uses a copied SQLite home, has integrity `ok`, starts no tunnel, and binds only
+  `127.0.0.1:20129`.
+- Real candidate canaries returned HTTP 200 for Sol/max, Fable/max, Opus/max,
+  and Grok 4.5. Live/candidate model catalog parity is exact for GPT-5.6,
+  Fable, Opus, and Grok.
+- A 130-second silent provider emitted five `9router.keepalive` events, one
+  completion, and one `[DONE]` from one provider request with zero aborts. This
+  verifies post-header protection for the observed Codex idle-SSE disconnect.
+- Cache-affinity canary used A/A for session 1 and B for session 2. Forced A
+  HTTP 503 reached B through existing fallback and repinned; after A recovery,
+  session 1 stayed on B. Provider transport retried the failed A request four
+  times before account fallback, which is a separate retry-budget optimization.
+
+Upstream and rollout state:
+
+- Public PR #2666 (Responses heartbeat) is clean at `dfb0ac2`; PR #2736
+  (cache affinity) is clean at `f93d8aa`.
+- Audit of all 21 open public PRs found 19 mergeable-but-behind branches and two
+  conflicting branches: #2710 request correlation and #2343 OAuth proxy routing.
+  No PR is fully absorbed by v0.5.40. Refresh uses normal merges and no force
+  pushes; durable results belong in
+  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-upstream-refresh-report.md`.
+- Live v0.5.35 remains untouched during merge, build, differential, canaries,
+  and review. Promotion exchanges only `cli/app`, retains the local wrapper and
+  PM2 environment, uses one restart, and preserves rollback until local health,
+  bundle invariants, DB integrity, raw tunnel, and short tunnel pass.
+- Delete the credential-bearing candidate data directory after successful
+  promotion or rollback.
 
 ## Not Yet Verified As Local Patch
 
