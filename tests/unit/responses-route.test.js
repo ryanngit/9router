@@ -49,6 +49,7 @@ describe("Responses route streaming selection", () => {
       headers: {
         "Content-Type": "application/json",
         "User-Agent": userAgent,
+        "X-Initiator": "user",
       },
       body: JSON.stringify(body),
     });

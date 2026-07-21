@@ -283,8 +283,9 @@ function checkSource() {
   mustContain("open-sse/executors/codex.js", "body.parallel_tool_calls = false", "Codex Lite parallel tool contract");
   mustContain("open-sse/executors/base.js", "const transformedBody = this.transformRequest", "request transformed before URL resolution");
   mustContain("open-sse/utils/clientDetector.js", "ua.includes(\"codex_exec\")", "Codex Desktop executor detection");
-  mustContain("open-sse/utils/clientDetector.js", "ua.startsWith(\"codex/\")", "Codex app client detection");
-  mustContain("tests/unit/client-detector.test.js", "Codex/0.1.0", "Codex app client regression test");
+  mustContain("src/app/api/v1/responses/route.js", "userAgent.startsWith(\"codex/\")", "Codex app route heartbeat detection");
+  mustContain("tests/unit/responses-route.test.js", "\"X-Initiator\": \"user\"", "Codex app route heartbeat shadow regression");
+  mustContain("tests/unit/client-detector.test.js", "keeps Codex app heartbeat detection route-local", "Codex app passthrough regression test");
   mustContain("open-sse/rtk/systemInject.js", "m?.type !== \"additional_tools\"", "Responses Lite additional_tools protection");
   mustContain("open-sse/handlers/chatCore.js", "structuredClone(body)", "account fallback deep request clone");
   mustContain("src/sse/handlers/chat.js", "structuredClone(preparedBody)", "model fallback deep prepared-request clone");
