@@ -63,31 +63,39 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
+  let structuredMessage = "";
+  let structuredCode;
+  try {
+    const json = JSON.parse(bodyText);
+    structuredMessage = json.error?.message || json.message || json.error || bodyText;
+    structuredCode = json.error?.code || json.code;
+  } catch {
+    structuredMessage = bodyText;
+  }
+  const messageStr = typeof structuredMessage === "string"
+    ? structuredMessage
+    : JSON.stringify(structuredMessage);
+  const fallbackMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
-        const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs, code: parsed.code };
+        const message = parsed.message && parsed.message !== bodyText
+          ? parsed.message
+          : fallbackMessage;
+        return {
+          statusCode: parsed.status || response.status,
+          message,
+          resetsAtMs: parsed.resetsAtMs,
+          code: parsed.code ?? structuredCode,
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
 
-  let message = "";
-  let code;
-  try {
-    const json = JSON.parse(bodyText);
-    message = json.error?.message || json.message || json.error || bodyText;
-    code = json.error?.code || json.code;
-  } catch {
-    message = bodyText;
-  }
-
-  const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-
-  return { statusCode: response.status, message: finalMessage, code };
+  return { statusCode: response.status, message: fallbackMessage, code: structuredCode };
 }
 
 /**

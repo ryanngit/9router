@@ -246,7 +246,7 @@ describe("GitHub Claude prompt-limit preflight", () => {
       },
     }), { status: 400, headers: { "content-type": "application/json" } });
 
-    const parsed = await parseUpstreamError(upstream);
+    const parsed = await parseUpstreamError(upstream, new GithubExecutor());
     const result = createErrorResult(parsed.statusCode, parsed.message, undefined, parsed.code);
 
     expect(await result.response.json()).toMatchObject({
