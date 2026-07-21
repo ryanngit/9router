@@ -1960,12 +1960,13 @@ Differential and isolated QA:
 
 Upstream and rollout state:
 
-- Public PR #2666 (Responses heartbeat) is clean at `dfb0ac2`; PR #2736
+- Public PR #2666 (Responses heartbeat) is clean at `171355b`; PR #2736
   (cache affinity) is clean at `f93d8aa`.
-- Audit of all 21 open public PRs found 19 mergeable-but-behind branches and two
-  conflicting branches: #2710 request correlation and #2343 OAuth proxy routing.
-  No PR is fully absorbed by v0.5.40. Refresh uses normal merges and no force
-  pushes; durable results belong in
+- All 21 open public PRs now report `MERGEABLE/CLEAN`: 19 branches received
+  normal merge updates, while #2454 and #2736 already contained v0.5.40. The
+  two initial conflicts, #2710 request correlation and #2343 OAuth proxy
+  routing, were resolved with 40/40 and 125/125 focused tests. No force push or
+  PR closure occurred; durable heads and test results are in
   `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-upstream-refresh-report.md`.
 - Live v0.5.35 remains untouched during merge, build, differential, canaries,
   and review. Promotion exchanges only `cli/app`, retains the local wrapper and

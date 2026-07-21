@@ -39,7 +39,7 @@ Source-only candidates as of 2026-07-20:
 - Atomic API-key reservations and Gemini usage authority are integrated through
   local head `cb82d82`; public PR #2454 is CLEAN at `7ed5dff` on v0.5.40.
 - Post-header Codex SSE events are integrated at `029d6ce`; public PR #2666 is
-  CLEAN at `dfb0ac2`. Candidate passed a 130-second silent-provider stream.
+  CLEAN at `171355b`. Candidate passed a 130-second silent-provider stream.
 - Cache-affinity routing and terminal hardening are integrated through
   `b03a81d`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
 - Local v0.5.40 integration is `501deb9` after merge commit `717c275`. Physical
@@ -48,6 +48,10 @@ Source-only candidates as of 2026-07-20:
   verification with zero failures and warnings.
 - These source changes are not live until promotion status says `succeeded`.
   Do not infer live behavior from source tests or candidate canaries.
+- All 21 open public PRs were checked against v0.5.40: 19 received normal merge
+  updates, two already contained v0.5.40, and all 21 report `MERGEABLE/CLEAN`.
+  Full heads/tests are recorded in
+  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-upstream-refresh-report.md`.
 
 ## 1. Brainstorm / Analyze
 
