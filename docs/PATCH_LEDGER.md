@@ -2089,11 +2089,11 @@ Upstream and rollout state:
   `OC` retain `dailyLimitTokens=NULL`; no API key has one-token limit. A live
   short-URL Codex Responses canary returned `LIVE_OK`, `response.completed`, and
   `[DONE]` in six seconds without a failed/incomplete terminal.
-- Public PR #2666 is `CLEAN` at head `c49e37e`. Its final public diff is limited
-  to the route-local UA condition and exact-header regression coverage; focused
-  route/Responses/Chat/cancellation tests pass 25/25, changed-file ESLint and
-  `git diff --check` pass, and the PR description plus correction comment record
-  the isolated and live evidence. No private verifier, alias, credential, pool,
+- Public PR #2666 is `CLEAN` at head `499d4db`. Its public diff includes the
+  route-local UA condition, exact-header regression coverage, and delayed
+  Responses error-code preservation. Focused route/Responses/Chat/cancellation
+  tests pass 27/27; changed-file ESLint, `git diff --check`, and the 130-route
+  production build pass. No private verifier, alias, credential, pool,
   deployment, or environment-specific routing change is included.
 - Rollback app:
   `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-codex-route-heartbeat-20260721-20260721T103823Z`.
@@ -2308,6 +2308,16 @@ label `v0540-fable-context-cutover-20260721` completed at
   exact `context_length_exceeded` and then completed a small Fable/max request
   in 10.045 seconds with `LIVE_FABLE_CONTEXT_OK`, `response.completed`, one
   `[DONE]`, and no failed event.
+- Public PR #2756 is `OPEN/CLEAN` at head `7a04c74`. It contains only GitHub
+  Claude capability limits, live Copilot catalog normalization, bounded exact
+  token-count preflight, structured executor error propagation, and regression
+  tests. Focused tests pass 15/15 and `git diff --check` passes. Private model
+  aliases, catalogs, pools, credentials, verifier, deployment paths, and DB data
+  are excluded.
+- Delayed Responses error-code preservation remains in PR #2666 at head
+  `499d4db`; keep both PRs or equivalent upstream changes when rebasing. PR
+  #2756 alone preserves executor errors through `chatCore`, while PR #2666 owns
+  the already-started SSE bridge that emits the final `response.failed` code.
 - Rollback app:
   `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-context-cutover-20260721-20260721T224739Z`.
   DB backup:
