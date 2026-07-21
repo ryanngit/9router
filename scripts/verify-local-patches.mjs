@@ -283,6 +283,8 @@ function checkSource() {
   mustContain("open-sse/executors/codex.js", "body.parallel_tool_calls = false", "Codex Lite parallel tool contract");
   mustContain("open-sse/executors/base.js", "const transformedBody = this.transformRequest", "request transformed before URL resolution");
   mustContain("open-sse/utils/clientDetector.js", "ua.includes(\"codex_exec\")", "Codex Desktop executor detection");
+  mustContain("open-sse/utils/clientDetector.js", "ua.startsWith(\"codex/\")", "Codex app client detection");
+  mustContain("tests/unit/client-detector.test.js", "Codex/0.1.0", "Codex app client regression test");
   mustContain("open-sse/rtk/systemInject.js", "m?.type !== \"additional_tools\"", "Responses Lite additional_tools protection");
   mustContain("open-sse/handlers/chatCore.js", "structuredClone(body)", "account fallback deep request clone");
   mustContain("src/sse/handlers/chat.js", "structuredClone(preparedBody)", "model fallback deep prepared-request clone");
@@ -552,6 +554,7 @@ function checkBundle() {
   contains("Unpaired tool result", "Claude orphan tool-result salvage");
   contains(": connected", "Responses immediate SSE comment");
   contains(": keepalive", "Responses tunnel keepalive");
+  contains("codex/", "Codex app client detection");
   contains("chatcmpl-9router-keepalive", "Chat tunnel heartbeat");
   contains("upstream_error", "Responses delayed error framing");
   contains("sequence_number", "Responses failure sequence number");
