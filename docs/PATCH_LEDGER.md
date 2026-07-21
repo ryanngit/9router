@@ -2171,8 +2171,9 @@ Upstream and rollout state:
 
 ### P27. Responses custom-tool round trip
 
-Deployment state: candidate verified. Live remains at `2ec49db` until atomic
-promotion and rollback gates pass.
+Deployment state: live on `0.5.40`. Candidate promoted under label
+`v0540-fable-custom-roundtrip-20260721` at `2026-07-21T20:30:23Z` with one PM2
+restart. Running PM2 PID is `2392590`; tunnel PID is `2392792`.
 
 - A real Codex/Fable request completed upstream with a tool call but Codex sent
   no continuation. Live wire inspection showed ordinary `function_call` output
@@ -2216,6 +2217,30 @@ promotion and rollback gates pass.
   `scripts/probe-fable-custom-tool-roundtrip.mjs`; it reads the key without
   printing it and verifies exact account, custom continuation, ordinary
   function compatibility, provider schema, terminals, and metadata leakage.
+  `--api-key-id` selects an active key without exposing it; use independent
+  keys plus `--expect-connection` to cover every profile without disabling live
+  accounts or letting cache affinity hide one.
+- Live source/bundle/config/DB verification passed with zero failures and zero
+  warnings after promotion. Local and short-domain canaries each completed all
+  three requests with three terminal events and three `[DONE]` sentinels.
+  Profile `f42d668a-ee2f-430c-aefe-85e4c8dadacc` passed at
+  `2026-07-21T20:55Z`; profile `903b7db5-5366-47f6-b135-95cd56edb54b` passed
+  through `https://rkeyra9.abc-tunnel.us` at `2026-07-21T20:57Z` after its
+  expired Copilot IDE token refreshed through residential pool
+  `b9b6de29-4fd4-42f6-9498-7d7d41014bf3`.
+- Earlier `401 IDE token expired`, `trade_restricted_country`, and HTML refresh
+  failures occurred before promotion. They were auth/proxy failures, not custom
+  translation failures. Diagnose source, bundle, wire events, and token refresh
+  separately before declaring P27 lost.
+- Rollback backups are
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-custom-roundtrip-20260721-20260721T203017Z`
+  and
+  `/home/home/.9router/db/backups/pre-v0540-fable-custom-roundtrip-20260721-20260721T203017Z/data.sqlite`.
+  Raw tunnel is `https://reflected-item-competitors-implied.trycloudflare.com`;
+  short tunnel is `https://rkeyra9.abc-tunnel.us`.
+- Public subset is pushed to PR `decolua/9router#2747` at head `30082c6` with
+  merge state `CLEAN`. Local non-stream/forced-SSE support remains private
+  because it depends on P25 infrastructure absent from stock `0.5.40`.
 - Future upgrades fail source/bundle verification unless custom request
   metadata, `{input:string}` wrapping, metadata stripping, official custom input
   events, and continuation regression coverage remain present. Runbook P27

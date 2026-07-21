@@ -78,10 +78,10 @@
 - Consumes: verified source commit and copied DB.
 - Produces: rollback-backed live `0.5.40` runtime.
 
-- [ ] Run focused translator, Fable routing, pairing, terminal, heartbeat, affinity, and reservation tests.
-- [ ] Run changed-file ESLint, `git diff --check`, patch verifier, and build.
-- [ ] Run independent code review and resolve findings.
-- [ ] Start isolated candidate and verify custom call plus `custom_tool_call_output` continuation through both GitHub profiles.
-- [ ] Promote atomically with current tunnel guarded, then verify local/raw/short health.
-- [ ] Repeat live short-domain custom call plus continuation and inspect request details/logs.
-- [ ] Create or update one clean public upstream PR containing no private configuration.
+- [x] Run focused translator, Fable routing, pairing, terminal, heartbeat, affinity, and reservation tests.
+- [x] Run changed-file ESLint, `git diff --check`, patch verifier, and build.
+- [x] Run independent code review and resolve findings.
+- [x] Start isolated candidate and verify custom call plus `custom_tool_call_output` continuation through both GitHub profiles.
+- [x] Promote atomically with current tunnel guarded, then verify local/raw/short health.
+- [x] Repeat live short-domain custom call plus continuation and inspect request details/logs.
+- [x] Create or update one clean public upstream PR containing no private configuration.

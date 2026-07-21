@@ -249,7 +249,10 @@ Targeted manual checks by patch:
   `type=custom_tool_call`. Submit its `custom_tool_call_output` and require a
   normal completion. Repeat through every active GitHub profile. Also run a
   mixed ordinary-function control and assert `_customToolNames` is absent from
-  provider requests and stored request details.
+  provider requests and stored request details. Use a different active API key
+  for each live profile so cache affinity cannot reuse the first account:
+  `node scripts/probe-fable-custom-tool-roundtrip.mjs --base "$BASE" --api-key-id "$API_KEY_ID" --expect-connection "$CONNECTION_ID"`.
+  Never disable live profiles merely to force this canary.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 

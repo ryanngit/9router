@@ -10,7 +10,10 @@ function option(name, fallback = null) {
 const base = option("--base", "http://127.0.0.1:20128").replace(/\/$/, "");
 const db = option("--db", "/home/home/.9router/db/data.sqlite");
 const expectedConnection = option("--expect-connection");
-if (!expectedConnection) throw new Error("--expect-connection is required");
+const apiKeyId = option("--api-key-id");
+if (apiKeyId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(apiKeyId)) {
+  throw new Error("--api-key-id must be a UUID");
+}
 
 function sql(query, json = false) {
   const args = json ? ["-json", db, query] : [db, query];
@@ -59,7 +62,9 @@ async function request(body) {
   return parsed;
 }
 
-const apiKey = sql("select key from apiKeys where isActive=1 order by createdAt limit 1;");
+const apiKey = sql(apiKeyId
+  ? `select key from apiKeys where id='${apiKeyId}' and isActive=1;`
+  : "select key from apiKeys where isActive=1 order by createdAt limit 1;");
 if (!apiKey) throw new Error("No active API key");
 
 const startedAt = new Date().toISOString();
@@ -182,15 +187,19 @@ for (let attempt = 0; attempt < 40 && rows.length < 3; attempt += 1) {
   if (rows.length < 3) await new Promise(resolve => setTimeout(resolve, 250));
 }
 if (rows.length !== 3) throw new Error(`Expected three stored requests, got ${rows.length}`);
-if (rows.some(row => row.connectionId !== expectedConnection || row.status !== "success")) {
+const connectionId = rows[0].connectionId;
+if (rows.some(row => row.connectionId !== connectionId || row.status !== "success")) {
   throw new Error(`Unexpected request rows: ${JSON.stringify(rows)}`);
+}
+if (expectedConnection && connectionId !== expectedConnection) {
+  throw new Error(`Expected connection ${expectedConnection}, got ${connectionId}`);
 }
 if (rows.some(row => row.metadataLeaks !== 0)) throw new Error("Internal custom metadata was persisted");
 if (rows[0].inputType !== "string") throw new Error(`Provider custom input schema is ${rows[0].inputType}`);
 
 console.log(JSON.stringify({
   ok: true,
-  connectionId: expectedConnection,
+  connectionId,
   callId: customItem.call_id,
   customEvents: first.events.filter(event => event.type.startsWith("response.custom_tool_call_input.")).length,
   completed: 3,
