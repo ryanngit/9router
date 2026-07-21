@@ -285,6 +285,14 @@ request concurrency. When the deployment controller itself is the one active
 snapshots still apply, and any second request blocks the swap. Record this
 exception because that one control request may reconnect during PM2 restart.
 
+If the user explicitly accepts interrupted streams and brief downtime, an
+active cutover may use `MAX_ACTIVE>1` only with
+`ALLOW_ACTIVE_CUTOVER=1`. Record observed active count and threshold, retain
+both pre-swap snapshots, DB backup, atomic exchange, local-health rollback, and
+raw/short tunnel recovery. This is emergency downtime authorization, not a
+drain mechanism. Never change API-key limits, activation, model access, account
+locks, aliases, or provider quotas to manufacture a quiet window.
+
 Before staged CLI build, verify nested CLI dev dependencies exist:
 
 ```bash

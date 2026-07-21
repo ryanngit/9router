@@ -2028,6 +2028,27 @@ Upstream and rollout state:
   live PID `2004259`. Never use customer quota fields as deployment controls.
   Wait for a natural quiet window until a dedicated connection-draining edge
   exists.
+- The user later approved brief downtime. Promotion label
+  `v0540-chat-heartbeat-active-cutover-20260721` therefore used an explicit
+  active cutover with threshold 20 while 12 real Codex streams were active; it
+  never changed key activation, quotas, limits, model access, or routing.
+  SQLite backup completed before exchange, then one atomic `cli/app` swap and
+  one PM2 restart promoted the verified Chat-heartbeat bundle.
+- Local app health returned in 6.8 seconds. PM2 is online as PID `2062112`,
+  restart count 11, through `app/custom-server.js`; live package, wrapper, PM2,
+  and `9router --version` all report `0.5.40`. Live bundle contains
+  `chatcmpl-9router-keepalive`; focused stream tests pass 26/26 and the complete
+  source/live-bundle/config/DB verifier reports zero failures and warnings.
+- Restart replaced cloudflared. Guarded recovery created PID `2062293`, raw URL
+  `https://brilliant-words-sustainability-intl.trycloudflare.com`, and restored
+  `https://rkeyra9.abc-tunnel.us`; local, raw, and short health each return HTTP
+  200. Post-restart requests recorded successful Codex completions and both
+  `Yuki`/`OC` retain `dailyLimitTokens=NULL`.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-chat-heartbeat-active-cutover-20260721-20260721T084955Z`.
+  DB backup:
+  `/home/home/.9router/db/backups/pre-v0540-chat-heartbeat-active-cutover-20260721-20260721T084955Z/data.sqlite`.
+  Promotion status is `succeeded`.
 
 ## Not Yet Verified As Local Patch
 
