@@ -39,7 +39,9 @@ Source-only candidates as of 2026-07-20:
 - Atomic API-key reservations and Gemini usage authority are integrated through
   local head `cb82d82`; public PR #2454 is CLEAN at `7ed5dff` on v0.5.40.
 - Post-header Codex SSE events are integrated at `029d6ce`; public PR #2666 is
-  CLEAN at `171355b`. Candidate passed a 130-second silent-provider stream.
+  extended by Chat heartbeat commits `5181b17` and `0b81aee`; public PR #2666
+  is CLEAN at `79be8a1`. Rebuilt candidate passed a 130-second Chat-wire stream
+  with five heartbeats at exact 25-second gaps and one upstream request.
 - Cache-affinity routing and terminal hardening are integrated through
   `b03a81d`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
 - Local v0.5.40 integration is `501deb9` after merge commit `717c275`. Physical

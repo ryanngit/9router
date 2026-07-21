@@ -1981,6 +1981,46 @@ Upstream and rollout state:
 - Delete the credential-bearing candidate data directory after successful
   promotion or rollback.
 
+### Chat SSE heartbeat correction (2026-07-21)
+
+- Post-v0.5.40 logs still contained `123-124s client_closed` requests with
+  `FMT: openai->openai-responses`. These enter through
+  `/v1/chat/completions`; the existing Responses-route heartbeat never reaches
+  that wire. Codex waits on parsed EventSource events, so SSE comments do not
+  reset its idle timer. Chat needs a valid `data:` event.
+- Generic commits `5181b17` and `0b81aee` wrap only OpenAI Chat output after
+  translation. Every 25 seconds of output silence they emit a schema-valid
+  empty `chat.completion.chunk` at an SSE event boundary. The wrapper respects
+  backpressure, cancels its reader on enqueue failure, and clears its timer on
+  EOF, error, or downstream cancellation. Because insertion occurs after the
+  translation/usage stream, heartbeats cannot alter provider requests, usage,
+  terminal detection, cache affinity, or fallback.
+- TDD covers payload schema, fragmented SSE boundaries, downstream cleanup,
+  repeated cadence under timer jitter, and production handler wiring. The
+  focused Chat/Responses/affinity/reservation matrix passes 63/63; changed-file
+  ESLint, `git diff --check`, source verifier, production build, and candidate
+  bundle verifier pass.
+- The first physical 130-second Chat canary found a fixed-interval drift: only
+  three heartbeats arrived because every second interval fired slightly before
+  the previous heartbeat's elapsed threshold. That candidate was rejected.
+  `0b81aee` replaces interval comparison with a timeout rescheduled from every
+  source chunk or heartbeat.
+- Rebuilt candidate
+  `/home/home/.openclaw/workspace-keyra/9router-candidate-v0540-chat-heartbeat-20260721/app`
+  produced five heartbeats with exact gaps `25,25,25,25`, one provider request,
+  one successful terminal record, one `[DONE]`, and HTTP 200 after 130 seconds.
+  Its copied DB had integrity `ok`, one local fake provider, zero OAuth
+  profiles/refresh tokens, tunnel disabled, and loopback-only ports `20129` and
+  `22001`. Candidate processes stopped, ports freed, and copied credentials
+  were removed after QA.
+- Public PR #2666 is `MERGEABLE/CLEAN` at `79be8a1`; its 19-test focused matrix,
+  ESLint, diff check, and Gitleaks pass. Private verifier commits `66ab07e` and
+  `58bcfa4`, deployment paths, aliases, pools, and DB data remain local.
+- Promotion label `v0540-chat-heartbeat-20260721` uses `MAX_ACTIVE=1` and two
+  five-second quiet gates. It remains blocked while real `Yuki`/`OC` traffic
+  holds 8-14 concurrent Codex streams; no active-stream threshold was weakened
+  and no live swap/restart has occurred for this correction yet.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
