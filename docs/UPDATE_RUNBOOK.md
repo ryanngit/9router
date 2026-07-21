@@ -1,6 +1,6 @@
 # 9Router Update Runbook
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 Use this before updating, patching, deploying, or preparing upstream PRs. The goal is minimal downtime and no rediscovery of fragile behavior.
 
@@ -26,34 +26,45 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - P19/P20 Grok subscription inference is a strict Responses compatibility boundary. Never restore the old incremental mutators in `grok-cli.js`; request semantics live in `grok-cli-compat.js`.
 - P1 OAuth proxy context must remain selected from authorize/device-code through callback, token exchange, and refresh. Fixed-port PKCE secrets belong in POST bodies, never query strings.
 - P25 native Responses has five terminal invariants: completed/incomplete/failed/error are terminal, terminal state survives pipe wrappers, `[DONE]` appears once, failed or unterminated JSON/SSE is not account success, and incomplete usage is billable.
+- Keep `Codex/<version>` heartbeat recognition route-local in
+  `/v1/responses`. Adding it to `detectClientTool()` changes native-passthrough
+  behavior and still loses to `X-Initiator: user` detector precedence.
 - P26 cache affinity is opt-in account preference, not sticky availability.
   First requests use the configured strategy; locks, cooldowns, exclusions, and
   fallback win; only explicit successful terminal events pin or repin.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
-Current verified live deployment (2026-07-19):
+Current verified live deployment (2026-07-21):
 
-- Version `0.5.35`; PM2 PID `638076`; entrypoint `app/custom-server.js`; Sol/max/default policy saved in `/home/home/.pm2/dump.pm2`.
-- Cloudflared PID `638304`; raw URL `https://others-assuming-cooking-tagged.trycloudflare.com`; short URL `https://rkeyra9.abc-tunnel.us`.
-- Rollback app `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0535-p25-oauth-20260719-20260719T193507Z`; DB backup `/home/home/.9router/db/backups/pre-v0535-p25-oauth-20260719-20260719T193507Z/data.sqlite`.
-- Promotion status `/home/home/.openclaw/workspace-keyra/9router-ops/v0535-p25-oauth-20260719.status` is `succeeded`; post-promotion Codex, Fable incomplete/usage, Grok, local/raw/short health, DB integrity, and full-verifier gates passed.
+- Version `0.5.40`; PM2 PID `2115168`; restart count 13; entrypoint
+  `app/custom-server.js`; Sol/max/default policy remains saved in
+  `/home/home/.pm2/dump.pm2`.
+- Cloudflared PID `2115378`; raw URL
+  `https://gorgeous-bare-lung-beer.trycloudflare.com`; short URL
+  `https://rkeyra9.abc-tunnel.us`.
+- Rollback app
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-codex-route-heartbeat-20260721-20260721T103823Z`;
+  DB backup
+  `/home/home/.9router/db/backups/pre-v0540-codex-route-heartbeat-20260721-20260721T103823Z/data.sqlite`.
+- Promotion status
+  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-codex-route-heartbeat-20260721.status`
+  is `succeeded`; exact-header delayed Responses QA, live short-URL Codex
+  canary, local/raw/short health, both DB integrity checks, key-limit invariants,
+  and full source/live-bundle/DB verifier passed.
 
-Source-only candidates as of 2026-07-20:
+Source and upstream state as of 2026-07-21:
 
 - Atomic API-key reservations and Gemini usage authority are integrated through
   local head `cb82d82`; public PR #2454 is CLEAN at `7ed5dff` on v0.5.40.
-- Post-header Codex SSE events are integrated at `029d6ce`; public PR #2666 is
-  extended by Chat heartbeat commits `5181b17` and `0b81aee`; public PR #2666
-  is CLEAN at `79be8a1`. Rebuilt candidate passed a 130-second Chat-wire stream
-  with five heartbeats at exact 25-second gaps and one upstream request.
+- Post-header Responses and Chat heartbeat work is live through local commit
+  `863db8f`. Public PR #2666 is `CLEAN` at `c49e37e` with exact
+  `Codex/0.1.0` plus `X-Initiator: user` coverage; do not restore the rejected
+  shared-detector implementation from `cec2e68`.
 - Cache-affinity routing and terminal hardening are integrated through
   `b03a81d`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
-- Local v0.5.40 integration is `501deb9` after merge commit `717c275`. Physical
-  standalone candidate `/home/home/.openclaw/workspace-keyra/9router-candidate-v0540-20260720/app`
-  is 58 MB, binds only `127.0.0.1:20129`, and passes source/bundle/copied-DB
-  verification with zero failures and warnings.
-- These source changes are not live until promotion status says `succeeded`.
-  Do not infer live behavior from source tests or candidate canaries.
+- Local v0.5.40 integration is `863db8f`; its rebuilt route-heartbeat candidate
+  passed source/bundle/live-DB verification and isolated delayed-header QA, then
+  promotion status `v0540-codex-route-heartbeat-20260721` made it live.
 - All 21 open public PRs were checked against v0.5.40: 19 received normal merge
   updates, two already contained v0.5.40, and all 21 report `MERGEABLE/CLEAN`.
   Full heads/tests are recorded in

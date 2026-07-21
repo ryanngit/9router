@@ -2050,6 +2050,55 @@ Upstream and rollout state:
   `/home/home/.9router/db/backups/pre-v0540-chat-heartbeat-active-cutover-20260721-20260721T084955Z/data.sqlite`.
   Promotion status is `succeeded`.
 
+### Codex Desktop Responses heartbeat detection (2026-07-21)
+
+- Current Windows Codex app sends `User-Agent: Codex/<version>` together with
+  `X-Initiator: user`. `detectClientTool()` classifies `X-Initiator: user` as
+  `github-copilot` before checking Codex CLI user agents, so the Responses route
+  selected comment keepalives. Codex ignores comment-only frames for its event
+  idle timer. Review also corrected an earlier evidence error: post-cutover
+  123-125 second `client_closed` entries were large `/v1/chat/completions`
+  requests, not native `/v1/responses` requests.
+- Commit `cec2e68` tried to recognize `Codex/<version>` in the shared client
+  detector. Exact-header regression testing found that `X-Initiator` still
+  shadowed the UA, while detector-wide recognition could also enable native
+  passthrough outside the heartbeat decision. Commit `863db8f` is the final
+  fix: shared detection again excludes `Codex/<version>`, and only the
+  `/v1/responses` heartbeat gate checks `userAgent.startsWith("codex/")`.
+  Provider payloads, routing, account selection, usage, affinity, and fallback
+  remain unchanged.
+- Credential-free native Responses QA used loopback-only ports `20129` and
+  `20130` with a fresh empty data directory. Provider headers stayed silent for
+  52 seconds. The candidate emitted two typed `9router.keepalive` events before
+  `QA_MARKER`, then emitted `response.completed`, `[DONE]`, and clean EOF in 53
+  seconds. No comment-only heartbeat or failed/incomplete terminal appeared;
+  QA processes stopped and the QA home was removed.
+- Promotion label `v0540-codex-route-heartbeat-20260721` used explicitly
+  authorized `MAX_ACTIVE=12` and `ALLOW_ACTIVE_CUTOVER=1`; the gate observed 10
+  active requests. SQLite backup completed before one atomic app exchange and
+  one PM2 restart. Local service recovered in about four seconds. Guarded
+  Cloudflare recovery restored the external path about 46 seconds after the
+  restart. No key limit, activation, alias, account lock, or quota changed.
+- PM2 is online as PID `2115168`, restart count 13. Cloudflared is PID
+  `2115378`; raw URL is `https://gorgeous-bare-lung-beer.trycloudflare.com`, and
+  `https://rkeyra9.abc-tunnel.us` remains the short URL. Local, raw, and short
+  health return HTTP 200; source/candidate/live verification reports zero
+  failures or warnings; live and backup DB integrity return `ok`; `Yuki` and
+  `OC` retain `dailyLimitTokens=NULL`; no API key has one-token limit. A live
+  short-URL Codex Responses canary returned `LIVE_OK`, `response.completed`, and
+  `[DONE]` in six seconds without a failed/incomplete terminal.
+- Public PR #2666 is `CLEAN` at head `c49e37e`. Its final public diff is limited
+  to the route-local UA condition and exact-header regression coverage; focused
+  route/Responses/Chat/cancellation tests pass 25/25, changed-file ESLint and
+  `git diff --check` pass, and the PR description plus correction comment record
+  the isolated and live evidence. No private verifier, alias, credential, pool,
+  deployment, or environment-specific routing change is included.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-codex-route-heartbeat-20260721-20260721T103823Z`.
+  DB backup:
+  `/home/home/.9router/db/backups/pre-v0540-codex-route-heartbeat-20260721-20260721T103823Z/data.sqlite`.
+  Promotion status is `succeeded`.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
