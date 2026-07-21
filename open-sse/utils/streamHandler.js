@@ -125,7 +125,7 @@ export function createStreamController({ externalSignal, onDisconnect, onError, 
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, terminalState = null) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
@@ -196,7 +196,8 @@ export function createDisconnectAwareStream(transformStream, streamController, o
     },
 
     cancel(reason) {
-      streamController.handleDisconnect(reason || "cancelled");
+      if (terminalState?.finalizeOnCancel?.()) streamController.handleComplete();
+      else streamController.handleDisconnect(reason || "cancelled");
       reader.cancel();
       writer.abort();
     }
@@ -220,6 +221,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {object} streamController - Stream controller from createStreamController
  */
 export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+  const terminalState = transformStream?.terminalState || null;
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -283,6 +285,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       getOpenAIResponsesTerminationState: () => transformStream.getOpenAIResponsesTerminationState?.(),
     },
     wrappedController,
-    onAbortTerminal
+    onAbortTerminal,
+    terminalState,
   );
 }

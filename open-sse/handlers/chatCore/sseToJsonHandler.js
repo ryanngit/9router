@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { OPENAI_FINISH, RESPONSES_ITEM, ROLE } from "../../translator/schema/index.js";
 import { extractReasoningText } from "../../translator/concerns/reasoning.js";
 import { PROVIDERS } from "../../config/providers.js";
+import { getStopReasonOutcome } from "../../utils/responsesStreamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
@@ -177,16 +178,49 @@ export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel) {
  */
 export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const chunks = [];
+  let streamError = null;
+  let terminalSeen = false;
 
   for (const line of String(rawSSE || "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
     const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    try { chunks.push(JSON.parse(payload)); } catch { /* ignore malformed lines */ }
+    if (!payload) continue;
+    if (payload === "[DONE]") {
+      terminalSeen = true;
+      continue;
+    }
+    try {
+      const chunk = JSON.parse(payload);
+      if (chunk?.error) streamError = chunk.error;
+      else {
+        const terminalReasons = (chunk?.choices || [])
+          .map((choice) => choice?.finish_reason)
+          .filter((reason) => reason != null);
+        const failedReason = terminalReasons.find((reason) => getStopReasonOutcome(reason) === "failure");
+        if (failedReason) {
+          streamError = {
+            message: `Upstream SSE stream ended with ${failedReason}`,
+            code: "stream_failed",
+          };
+        } else if (terminalReasons.some((reason) => getStopReasonOutcome(reason) === "success")) {
+          terminalSeen = true;
+        }
+        chunks.push(chunk);
+      }
+    } catch { /* ignore malformed lines */ }
   }
 
+  if (streamError) return { error: streamError };
   if (chunks.length === 0) return null;
+  if (!terminalSeen) {
+    return {
+      error: {
+        message: "Upstream SSE stream ended without a terminal event",
+        code: "stream_disconnected",
+      },
+    };
+  }
 
   const first = chunks[0];
   const contentParts = [];
@@ -277,6 +311,7 @@ export async function handleForcedSSEToJson({ requestId, correlationId, provider
             ? "Responses stream closed before a terminal event"
             : "Responses stream failed");
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        saveErrorDetail(message);
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, message);
       }
       if (onRequestSuccess) await onRequestSuccess();
@@ -350,6 +385,12 @@ export async function handleForcedSSEToJson({ requestId, correlationId, provider
     if (!parsed) {
       saveErrorDetail("Invalid SSE response for non-streaming request");
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    }
+    if (parsed.error) {
+      const message = parsed.error.message || "Upstream SSE stream failed";
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      saveErrorDetail(message);
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, message);
     }
 
     if (onRequestSuccess) await onRequestSuccess();

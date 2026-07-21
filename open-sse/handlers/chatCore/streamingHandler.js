@@ -111,11 +111,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
  */
 export function buildOnStreamComplete({ requestId, correlationId, provider, model, connectionId, apiKey, usageReservationId, requestTiming, responseStartTime, body, stream, finalBody, translatedBody, clientRawRequest, onRequestSuccess, pxpipe, reqTag, log }) {
   const streamDetailId = requestId || `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-  let detailFinalized = false;
+  let terminalStatus = null;
 
-  const persistTerminalDetail = (detail) => {
-    if (detailFinalized) return;
-    detailFinalized = true;
+  const persistTerminalDetail = (detail, { successOverridesError = false } = {}) => {
+    if (terminalStatus === "success") return false;
+    if (terminalStatus === "error" && !successOverridesError) return false;
+    terminalStatus = detail.status;
     saveRequestDetail(buildRequestDetail({
       id: streamDetailId,
       attemptId: streamDetailId,
@@ -128,8 +129,26 @@ export function buildOnStreamComplete({ requestId, correlationId, provider, mode
     })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
+    return true;
   };
-  const onStreamComplete = (contentObj, usage, ttftAt, { terminalSuccess = true } = {}) => {
+
+  const onStreamError = (error) => {
+    const completedAt = requestNow();
+    const aborted = error?.name === "AbortError";
+    persistTerminalDetail({
+      latency: buildRequestLatency(requestTiming, { responseStartedAt: responseStartTime, endedAt: completedAt }),
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      providerResponse: null,
+      response: { error: aborted ? "Stream aborted" : "Stream failed", status: aborted ? 499 : 502, thinking: null },
+      status: "error"
+    });
+  };
+
+  const onStreamComplete = (contentObj, usage, ttftAt, { terminalSuccess = false } = {}) => {
+    if (!terminalSuccess) {
+      onStreamError(new Error("stream ended without a successful terminal event"));
+      return;
+    }
     const completedAt = requestNow();
     const ttft = ttftAt
       ? elapsedRequestMilliseconds(requestTiming.requestStartedAt, ttftAt)
@@ -138,15 +157,16 @@ export function buildOnStreamComplete({ requestId, correlationId, provider, mode
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
-    persistTerminalDetail({
+    const persisted = persistTerminalDetail({
       latency,
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: "success"
-    });
+    }, { successOverridesError: true });
+    if (!persisted) return;
 
-    if (terminalSuccess && onRequestSuccess) {
+    if (onRequestSuccess) {
       Promise.resolve()
         .then(onRequestSuccess)
         .catch(err => {
@@ -169,18 +189,6 @@ export function buildOnStreamComplete({ requestId, correlationId, provider, mode
       silent: true
     });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
-  };
-
-  const onStreamError = (error) => {
-    const completedAt = requestNow();
-    const aborted = error?.name === "AbortError";
-    persistTerminalDetail({
-      latency: buildRequestLatency(requestTiming, { responseStartedAt: responseStartTime, endedAt: completedAt }),
-      tokens: { prompt_tokens: 0, completion_tokens: 0 },
-      providerResponse: null,
-      response: { error: aborted ? "Stream aborted" : "Stream failed", status: aborted ? 499 : 502, thinking: null },
-      status: "error"
-    });
   };
 
   return { onStreamComplete, onStreamError, streamDetailId };
