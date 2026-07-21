@@ -2169,6 +2169,38 @@ Upstream and rollout state:
   Pre-pool-change DB backup:
   `/home/home/.9router/db/backups/pre-github-residential-pool-20260721T140531Z/data.sqlite`.
 
+### P27. Responses custom-tool round trip
+
+Deployment state: candidate source only. Live remains at `2ec49db` until
+isolated dual-profile QA and rollback gates pass.
+
+- A real Codex/Fable request completed upstream with a tool call but Codex sent
+  no continuation. Live wire inspection showed ordinary `function_call` output
+  and zero custom-tool input events. GitHub completed normally; proxy and token
+  transport were not the failing boundary.
+- Audit of published `0.5.30`, local upgrade history, and current `0.5.40`
+  found no former shared GitHub custom-tool patch. Existing `{input:string}`
+  compatibility code was confined to xAI/Grok executors. Update QA was still
+  defective because it tested ordinary function continuation and allowed this
+  required Codex/Fable behavior to remain absent.
+- Request commits `b02a7b6` and `c5d8069` wrap Responses `custom` declarations
+  as Chat functions with one required string `input`, convert custom call/output
+  history, and preserve ordinary function-output semantics. Commit `e65171c`
+  carries request-local custom names through streaming, JSON, and forced-SSE
+  response paths, strips internal metadata before dispatch/persistence, and
+  restores official custom-tool events. Commit `1602633` preserves forced
+  custom and function choices across the Chat bridge.
+- Focused red-green coverage passes 13/13. Broader translator, index, pairing,
+  GitHub routing, terminal, xAI, reservation, affinity, correlation, and Kiro
+  matrix passes 86/86. Changed-file ESLint, source verifier, and diff checks
+  pass. Independent review, standalone build, candidate/live canaries,
+  promotion paths, and upstream status are recorded here after completion.
+- Future upgrades fail source/bundle verification unless custom request
+  metadata, `{input:string}` wrapping, metadata stripping, official custom input
+  events, and continuation regression coverage remain present. Runbook P27
+  requires an exact custom call plus `custom_tool_call_output` through every
+  active GitHub profile; ordinary `function_call` coverage cannot substitute.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
@@ -2214,9 +2246,11 @@ Run after every update/deploy:
   and no `idle timeout waiting for SSE` or false account lock occurs.
 - Confirm every GitHub profile remains bound to residential pool
   `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `18889`; test both active profiles.
-- Through the short URL, force Fable to call one function and submit its
-  `function_call_output`. Require unique monotonic output indexes, exactly one
-  `response.completed`, exactly one `[DONE]`, and a successful continuation.
+- Through the short URL, force Fable to call one Responses `custom` tool and
+  submit its `custom_tool_call_output`. Require custom input delta/done events,
+  unique monotonic output indexes, exactly one `response.completed`, exactly
+  one `[DONE]`, and a successful continuation through every active GitHub
+  profile. Repeat one ordinary function control.
 - Re-run the verifier against source, bundle, and DB.
 - Open Usage once and confirm `/api/usage/stream` emits only realtime fields without blocking `/api/health`.
 - Save the backup path and tunnel URL in this ledger if they changed.

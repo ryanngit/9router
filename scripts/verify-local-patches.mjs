@@ -339,9 +339,14 @@ function checkSource() {
   mustContain("open-sse/utils/stream.js", "formatIncompleteOpenAIResponsesStreamFailure", "Responses streaming missing-terminal formatter");
   mustContain("open-sse/utils/stream.js", "!openAIResponsesTerminalSeen", "Responses streaming EOF terminal guard");
   mustContain("open-sse/translator/index.js", "nextOutputIndex: 0", "Responses translated output-index state");
-  mustContain("open-sse/translator/response/openai-responses.js", "state.funcOutputIndexes[tcIdx] = state.nextOutputIndex++", "Responses translated item-index allocation");
+  mustContain("open-sse/translator/response/openai-responses.js", "state.funcOutputIndexes[idx] = outputIndex", "Responses translated item-index allocation");
   mustContain("open-sse/utils/stream.js", "sourceFormat === FORMATS.OPENAI_RESPONSES && !openAIResponsesDoneSent", "translated Responses DONE sentinel");
   mustContain("tests/unit/responses-transformer-item-index.test.js", "preserves unique indexes through the production SSE pipeline", "translated Responses item-index regression test");
+  mustContain("open-sse/translator/request/openai-responses.js", "result._customToolNames = customToolNames", "Responses custom tool request metadata");
+  mustContain("open-sse/translator/request/openai-responses.js", "properties: { input: { type: \"string\" } }", "Responses custom tool Chat wrapper");
+  mustContain("open-sse/handlers/chatCore.js", "delete translatedBody._customToolNames", "Responses custom metadata dispatch strip");
+  mustContain("open-sse/translator/response/openai-responses.js", "response.custom_tool_call_input.done", "Responses custom tool response restoration");
+  mustContain("tests/unit/responses-custom-tool-roundtrip.test.js", "custom_tool_call_output", "Responses custom tool continuation regression test");
   mustContain("open-sse/utils/usageTracking.js", "chunk.type === \"response.incomplete\"", "Responses incomplete usage extraction");
   mustContain("open-sse/transformer/streamToJsonConverter.js", "parsed.error || parsed.response?.error || parsed", "Responses top-level error preservation");
   mustContain("tests/unit/responses-abort-terminal.test.js", "preserves terminal state through the production pipe wrapper", "Responses pipe terminal regression test");
@@ -570,6 +575,8 @@ function checkBundle() {
   contains("response.incomplete", "Responses incomplete terminal handling");
   contains("nextOutputIndex", "Responses translated output-index allocation");
   contains("funcOutputIndexes", "Responses translated function-index allocation");
+  contains("response.custom_tool_call_input.done", "Responses custom tool events");
+  contains("_customToolNames", "Responses custom tool request metadata");
   contains("grok-4.5", "Grok 4.5");
   contains("gpt-5.5", "GPT-5.5 exact pricing/model");
   contains("gpt-5.6-sol", "GPT-5.6 Sol pricing/model");

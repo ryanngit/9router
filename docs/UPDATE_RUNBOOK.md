@@ -26,6 +26,10 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - P19/P20 Grok subscription inference is a strict Responses compatibility boundary. Never restore the old incremental mutators in `grok-cli.js`; request semantics live in `grok-cli-compat.js`.
 - P1 OAuth proxy context must remain selected from authorize/device-code through callback, token exchange, and refresh. Fixed-port PKCE secrets belong in POST bodies, never query strings.
 - P25 native Responses has five terminal invariants: completed/incomplete/failed/error are terminal, terminal state survives pipe wrappers, `[DONE]` appears once, failed or unterminated JSON/SSE is not account success, and incomplete usage is billable.
+- P27 Responses custom tools must remain custom across the GitHub Claude Chat
+  bridge. Wrapping them as Chat functions is internal only: provider requests
+  receive `{input:string}`, clients receive `custom_tool_call` plus plain-string
+  input, and internal metadata never reaches provider payloads or usage details.
 - Keep `Codex/<version>` heartbeat recognition route-local in
   `/v1/responses`. Adding it to `detectClientTool()` changes native-passthrough
   behavior and still loses to `X-Initiator: user` detector precedence.
@@ -239,6 +243,13 @@ Targeted manual checks by patch:
   key, client ID, or session ID, and confirm no affinity table or duplicate raw
   identity store was added. Repeat a client cancel after parsed terminal and an
   unterminated stream; only the former may pin and save usage.
+- P27 Fable custom tools: declare one Responses `custom` tool, force that tool,
+  and require `response.custom_tool_call_input.delta`,
+  `response.custom_tool_call_input.done`, and `response.output_item.done` with
+  `type=custom_tool_call`. Submit its `custom_tool_call_output` and require a
+  normal completion. Repeat through every active GitHub profile. Also run a
+  mixed ordinary-function control and assert `_customToolNames` is absent from
+  provider requests and stored request details.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 
