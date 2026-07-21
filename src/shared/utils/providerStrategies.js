@@ -1,8 +1,5 @@
-export function updateProviderStrategy(
-  current,
-  providerId,
-  { strategy, stickyLimit, cacheAffinityEnabled },
-) {
+export function updateProviderStrategy(current, providerId, options) {
+  const { strategy, stickyLimit } = options;
   const updated = { ...current };
   const override = { ...(current[providerId] || {}) };
 
@@ -15,8 +12,10 @@ export function updateProviderStrategy(
     delete override.stickyRoundRobinLimit;
   }
 
-  if (cacheAffinityEnabled) override.cacheAffinityEnabled = true;
-  else delete override.cacheAffinityEnabled;
+  if (Object.prototype.hasOwnProperty.call(options, "cacheAffinityEnabled")) {
+    if (options.cacheAffinityEnabled) override.cacheAffinityEnabled = true;
+    else delete override.cacheAffinityEnabled;
+  }
 
   if (Object.keys(override).length === 0) delete updated[providerId];
   else updated[providerId] = override;

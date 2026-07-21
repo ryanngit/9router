@@ -5,56 +5,83 @@ import { describe, expect, it } from "vitest";
 import Toggle from "../../src/shared/components/Toggle.js";
 import { updateProviderStrategy } from "../../src/shared/utils/providerStrategies.js";
 
-const source = fs.readFileSync(
+const pageSource = fs.readFileSync(
   new URL("../../src/app/(dashboard)/dashboard/providers/[id]/page.js", import.meta.url),
+  "utf8",
+);
+const cardSource = fs.readFileSync(
+  new URL("../../src/app/(dashboard)/dashboard/providers/components/ConnectionsCard.js", import.meta.url),
+  "utf8",
+);
+const toggleSource = fs.readFileSync(
+  new URL("../../src/shared/components/Toggle.js", import.meta.url),
+  "utf8",
+);
+const settingsRepoSource = fs.readFileSync(
+  new URL("../../src/lib/db/repos/settingsRepo.js", import.meta.url),
   "utf8",
 );
 
 describe("provider cache affinity control", () => {
-  it("loads, preserves, and saves the per-provider setting", () => {
-    expect(source).toContain("setProviderCacheAffinity(override.cacheAffinityEnabled === true)");
-    expect(source).toContain("updateProviderStrategy(current, providerId");
-    expect(source).toContain("saveProviderStrategy(providerStrategy, providerStickyLimit, enabled)");
-  });
-
-  it("preserves unrelated fields when updating a provider strategy", () => {
+  it("preserves unrelated and omitted provider settings", () => {
     const current = {
       codex: {
         proxyPoolId: "pool-us",
         rotateStrategy: "sticky",
+        cacheAffinityEnabled: true,
         futureSetting: true,
-        fallbackStrategy: "fallback",
       },
-      github: { proxyPoolId: "pool-eu" },
     };
     const updated = updateProviderStrategy(current, "codex", {
       strategy: "round-robin",
       stickyLimit: "2",
-      cacheAffinityEnabled: true,
     });
 
-    expect(updated).toEqual({
-      codex: {
-        proxyPoolId: "pool-us",
-        rotateStrategy: "sticky",
-        futureSetting: true,
-        fallbackStrategy: "round-robin",
-        stickyRoundRobinLimit: 2,
-        cacheAffinityEnabled: true,
-      },
-      github: { proxyPoolId: "pool-eu" },
+    expect(updated.codex).toEqual({
+      proxyPoolId: "pool-us",
+      rotateStrategy: "sticky",
+      cacheAffinityEnabled: true,
+      futureSetting: true,
+      fallbackStrategy: "round-robin",
+      stickyRoundRobinLimit: 2,
     });
-    expect(updated).not.toBe(current);
     expect(updated.codex).not.toBe(current.codex);
   });
 
-  it("renders a dedicated toggle", () => {
-    expect(source).toContain("Cache affinity");
-    expect(source).toContain("checked={providerCacheAffinity}");
-    expect(source).toContain("onChange={handleCacheAffinityToggle}");
+  it("loads and saves affinity through the provider detail page", () => {
+    expect(pageSource).toContain("setProviderCacheAffinity(override.cacheAffinityEnabled === true)");
+    expect(pageSource).toContain("cacheAffinityEnabled");
+    expect(pageSource).toContain("checked={providerCacheAffinity}");
+    expect(pageSource).toContain("onChange={handleCacheAffinityToggle}");
   });
 
-  it("gives the cache-affinity switch an accessible name", () => {
+  it("uses an atomic provider patch instead of saving a stale full map", () => {
+    expect(pageSource).toContain("providerStrategyPatch: {");
+    expect(cardSource).toContain("providerStrategyPatch: {");
+    expect(settingsRepoSource).toContain("const { providerStrategyPatch, ...plainUpdates }");
+    expect(pageSource).not.toContain("body: JSON.stringify({ providerStrategies: updated })");
+    expect(cardSource).not.toContain("body: JSON.stringify({ providerStrategies: updated })");
+  });
+
+  it("serializes saves and only rolls back the latest request", () => {
+    expect(pageSource).toContain("providerStrategySaveQueueRef");
+    expect(cardSource).toContain("providerStrategySaveQueueRef");
+    expect(pageSource).toContain("!saved && isLatest");
+    expect(cardSource).toContain("!saved && isLatest");
+  });
+
+  it("refetches confirmed strategy state when the latest save fails", () => {
+    expect(pageSource).toContain("if (!saved && isLatest) await fetchConnections()");
+    expect(cardSource).toContain("if (!saved && isLatest) await fetch_()");
+  });
+
+  it("forwards accessible switch names", () => {
+    expect(toggleSource).toContain("aria-label={ariaLabel || label}");
+    expect(pageSource).toContain('aria-label="Round Robin"');
+    expect(pageSource).toContain('aria-label="Cache affinity"');
+  });
+
+  it("renders the cache-affinity switch name", () => {
     const html = renderToStaticMarkup(createElement(Toggle, {
       "aria-label": "Cache affinity",
       checked: false,
