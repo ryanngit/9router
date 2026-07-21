@@ -12,23 +12,32 @@ items at `output_index: 0`. Codex does not continue the tool turn reliably, whil
 ## Design
 
 Keep current GitHub `/v1/messages` route and cache-token accounting. Change only
-the shared Chat-to-Responses transformer:
+the registered Chat-to-Responses response translator in
+`open-sse/translator/response/openai-responses.js` and its `initState` fields:
 
 - Allocate one monotonically increasing output index when each reasoning,
   message, or function-call item is first seen.
 - Reuse that allocated index for every delta and terminal event for that item.
 - Preserve existing event names, IDs, sequence numbers, response lifecycle, and
   provider routing.
+- Emit one downstream `[DONE]` after translated Responses terminal events; do
+  not mark an upstream sentinel as emitted when it was suppressed.
+- Leave the legacy `open-sse/transformer/responsesTransformer.js` module
+  unchanged because the live Fable streaming path does not call it.
 - Keep fallback, account affinity, quota accounting, heartbeat behavior, and Go
   gateway behavior unchanged.
 
 ## Verification
 
-Add direct transformer regressions for reasoning plus one tool call and for
-reasoning plus multiple tool calls. Assert unique indexes, stable indexes across
-item events, one `response.completed`, and one `[DONE]`. Run focused tests, full
-stream/translator tests, local Fable tool-call and continuation canaries, then a
-short-URL canary before promotion.
+Add a registered-translator regression combining reasoning, text, and two
+fragmented tool calls. Assert unique indexes, stable indexes across item events,
+monotonic sequence numbers, and one `response.completed`. Run focused tests,
+full stream/translator tests, local Fable tool-call and continuation canaries,
+then a short-URL canary before promotion.
+
+CLI candidate builds must remove the dedicated `.next-cli-build` directory
+before compiling. A retained linked-worktree cache reproduced a bundle that
+passed source tests but still contained the old translator.
 
 ## Deployment
 

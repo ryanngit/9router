@@ -320,9 +320,11 @@ export function createSSEStream(options = {}) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
+            streamDoneSent = true;
+            openAIResponsesDoneSent = true;
+          } else if (sourceFormat !== FORMATS.OPENAI_RESPONSES) {
+            streamDoneSent = true;
           }
-          streamDoneSent = true;
-          if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
         }
 
@@ -545,7 +547,7 @@ export function createSSEStream(options = {}) {
           failedTerminalSeen = true;
         }
 
-        if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
+        if (sourceFormat === FORMATS.OPENAI_RESPONSES && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
