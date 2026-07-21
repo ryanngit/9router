@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0535-integration`, branch `local-v0.5.35-upgrade`. Source-only additions not yet live include atomic reservation review waves through `5a9d56c`, Codex post-header SSE keepalive `029d6ce`, Gemini usage authority `cb82d82`, cache-affinity routing through `993c342`, and terminal hardening `c31bf4a`. Live still includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0535-integration`, branch `local-v0.5.35-upgrade`. Source-only additions not yet live include atomic reservation review waves through `5a9d56c`, Codex post-header SSE keepalive `029d6ce`, Gemini usage authority `cb82d82`, cache-affinity routing through `b03a81d`, and terminal hardening `c31bf4a`. Live still includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -1591,6 +1591,10 @@ Deployment/upstream status:
 - The original pre-header heartbeat/cancellation patch above is live. The new
   post-header Codex event extension is source-only at local commit `029d6ce` and
   must not be promoted before the zero-OOM gate ending `2026-07-25 18:55 PDT`.
+- Fresh 2026-07-20 live inspection found no `9router.keepalive` string in the
+  deployed bundle. Current logs contain repeated Codex `client_closed` events at
+  about 124-126 seconds, matching the known client idle timer. This is not proof
+  of a tunnel or provider outage; the post-header extension remains required.
 
 ### P22. Codex cross-model encrypted-history recovery
 
@@ -1806,8 +1810,9 @@ Required invariants:
   completion creates or moves affinity.
 - Scope priority is session plus optional client ID plus API key, then client
   ID plus API key, then API key. Provider and model are always part of the key.
-- Raw session IDs, client IDs, and API keys are never retained or logged;
-  SHA-256 keys index process-local state.
+- Affinity state and affinity logs never retain raw session IDs, client IDs, or
+  API keys; SHA-256 keys index process-local state. Existing API-key storage is
+  unchanged and no affinity table or duplicate identity store is added.
 - State is bounded to 5,000 LRU entries with fixed TTLs: six hours for session,
   30 minutes for client, and five minutes for API-key-only scope.
 - Affinity is a preference, never an availability override. Locks, cooldowns,
@@ -1830,10 +1835,24 @@ Verification/status:
 - Atomic settings API canary added a second provider strategy without changing
   the existing affinity provider settings.
 - Gitleaks scanned all six public commits and found no leaks.
-- Local integration commits are `c31bf4a` and `993c342` on top of the earlier
+- Local integration commits are `c31bf4a`, `993c342`, and `b03a81d` on top of the earlier
   P26 commits `7f3002c` through `6af1459`. Local resolution preserves request
   correlation, atomic token reservations, exact usage details, and private
   routing.
+- First local build canary exposed a parity bug absent from the public branch:
+  session IDs without a stored client fingerprint collapsed to API-key scope.
+  `b03a81d` restores session-only isolation and adds locked/excluded preferred-
+  account tests before the candidate rebuild.
+- Final local build generated 130/130 routes after routing Google Fonts through
+  the existing loopback Go proxy. The linked worktree's symlinked `node_modules`
+  produced an incomplete standalone trace, so QA used loopback `next start`;
+  this build is evidence, not a promotable artifact. Deployment must rebuild
+  from physical dependencies and verify the standalone bundle.
+- Final local canary produced A/A for session 1 and B for session 2. Forced A
+  HTTP 503 fell back and repinned B; after the 30-second lock expired and A
+  recovered, session 1 remained on B. Atomic settings PATCH preserved the
+  affinity provider while adding an unrelated provider strategy. Ports 20129
+  and 20130 were stopped; live 20128 remained PID `638076`.
 - Live `20128`, PM2, `/home/home/.9router`, cloudflared, and tunnel mapping were
   not touched during build, canary, integration, or PR publication.
 

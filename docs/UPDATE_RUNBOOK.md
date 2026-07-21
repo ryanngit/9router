@@ -39,7 +39,7 @@ Source-only candidates as of 2026-07-20:
 - Post-header Codex SSE events are integrated at `029d6ce`; public PR #2666 is
   CLEAN at `dfb0ac2`. Candidate passed a 130-second silent-provider stream.
 - Cache-affinity routing and terminal hardening are integrated through
-  `993c342`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
+  `b03a81d`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
 - These source changes are not live. Do not infer live behavior from source tests.
 
 ## 1. Brainstorm / Analyze
@@ -207,8 +207,9 @@ Targeted manual checks by patch:
 - P25 Responses terminal matrix: completed plus reset, incomplete plus usage, failed SSE, failed JSON, top-level `event:error`, and EOF before terminal. Assert fallback-capable 502 for failures and exact cached/reasoning accounting for incomplete. Live Fable incomplete canary must use `stream:false`, `max_output_tokens:1`, and `reasoning.effort=max`; do not use `none`, because Fable rejects `thinking.type.disabled`.
 - P26 cache affinity: leave disabled for baseline; then enable one isolated
   provider and verify A/A for one session, independent B for another, forced A
-  failure to B, and B after A recovery. Check logs/DB contain no raw API key,
-  client ID, or session ID. Repeat a client cancel after parsed terminal and an
+  failure to B, and B after A recovery. Check affinity logs contain no raw API
+  key, client ID, or session ID, and confirm no affinity table or duplicate raw
+  identity store was added. Repeat a client cancel after parsed terminal and an
   unterminated stream; only the former may pin and save usage.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
