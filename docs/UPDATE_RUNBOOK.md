@@ -17,6 +17,10 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
   verified rollback, and unchanged gateway/proxy configuration.
 - Do not rely on `git status` in `9router-patch` until broken worktree metadata is fixed.
 - Do not push upstream branches from a dirty/broken worktree.
+- Never change API-key token limits, activation, model access, or customer
+  quotas to create a deployment quiet window. Those are customer contracts,
+  not admission-drain controls. Use the active-request gate unchanged and wait
+  for natural quiet until a dedicated connection-draining edge is deployed.
 - Never proactively restart or replace cloudflared during an app upgrade. If local app health passes but the recorded raw tunnel remains down, one guarded recovery is allowed after app rollback gates pass; record the old/new PID and raw URL, then re-register the existing short ID.
 - P17 deployments must run `app/custom-server.js`; `app/server.js` loses trusted tunnel client identity.
 - P19/P20 Grok subscription inference is a strict Responses compatibility boundary. Never restore the old incremental mutators in `grok-cli.js`; request semantics live in `grok-cli-compat.js`.

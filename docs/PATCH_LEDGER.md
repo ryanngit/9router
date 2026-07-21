@@ -2016,10 +2016,18 @@ Upstream and rollout state:
 - Public PR #2666 is `MERGEABLE/CLEAN` at `79be8a1`; its 19-test focused matrix,
   ESLint, diff check, and Gitleaks pass. Private verifier commits `66ab07e` and
   `58bcfa4`, deployment paths, aliases, pools, and DB data remain local.
-- Promotion label `v0540-chat-heartbeat-20260721` uses `MAX_ACTIVE=1` and two
-  five-second quiet gates. It remains blocked while real `Yuki`/`OC` traffic
-  holds 8-14 concurrent Codex streams; no active-stream threshold was weakened
-  and no live swap/restart has occurred for this correction yet.
+- Promotion label `v0540-chat-heartbeat-20260721` used `MAX_ACTIVE=1` and two
+  five-second quiet gates. Real `Yuki`/`OC` traffic held 8-14 concurrent Codex
+  streams, so the gate correctly refused to swap. No live backup, app exchange,
+  or restart occurred for this correction.
+- A temporary attempt to drain new admissions by setting the `Yuki` and `OC`
+  daily token limits to `1` was wrong: clients immediately received
+  `API key daily token limit exceeded (.../1 tokens)`. Both limits were restored
+  to `NULL`, the marker/watchdog were removed, and the queued promotion was
+  cancelled before backup, app exchange, or restart. New requests resumed on
+  live PID `2004259`. Never use customer quota fields as deployment controls.
+  Wait for a natural quiet window until a dedicated connection-draining edge
+  exists.
 
 ## Not Yet Verified As Local Patch
 
