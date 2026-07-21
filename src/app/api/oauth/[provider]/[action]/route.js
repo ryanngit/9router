@@ -222,6 +222,7 @@ export async function GET(request, { params }) {
       const noPkceDeviceProviders = [
         "github",
         "kiro",
+        "kimi",
         "kimi-coding",
         "kilocode",
         "codebuddy-cn",

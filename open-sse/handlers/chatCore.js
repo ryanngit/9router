@@ -338,6 +338,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let responseStartTime;
   const dispatchStartedAt = requestNow();
   recordRequestPhase(requestPhases, "request_before_dispatch_total_ms", timing.requestStartedAt, dispatchStartedAt);
+  // Most executors return their registry format. Cursor AgentService is an
+  // exception: it is decoded by the executor into OpenAI-compatible output.
+  let providerResponseFormat = targetFormat;
   try {
     const result = await measureRequestPhase(requestPhases, "upstream_headers_ms", () =>
       executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions, requestId }));
@@ -346,6 +349,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerUrl = result.url;
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
+    providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     const completedAt = requestNow();
@@ -399,6 +403,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;
+            providerHeaders = retryResult.headers;
+            finalBody = retryResult.transformedBody;
+            providerResponseFormat = retryResult.responseFormat || targetFormat;
           }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {
@@ -451,7 +458,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // True non-streaming response
   if (!stream) {
-    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, trackDone, appendLog });
     streamController.handleComplete();
     return result;
   }
@@ -459,7 +466,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Streaming response
   const { onStreamComplete, onStreamError, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
   onStreamTerminalError = onStreamError;
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, onStreamError, streamDetailId });
+  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, onStreamError, streamDetailId });
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

@@ -4,6 +4,7 @@ import { sanitizeOAuthError } from "../utils/oauthError.js";
 import {
   refreshXaiToken,
   refreshAccessToken,
+  refreshKimiToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshQwenToken,
@@ -19,6 +20,7 @@ import {
 // Re-export all provider refresh functions (preserves public API for all consumers)
 export {
   refreshAccessToken,
+  refreshKimiToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshQwenToken,
@@ -45,7 +47,10 @@ export function isUnrecoverableRefreshError(result) {
 }
 
 export function getRefreshLeadMs(provider) {
-  return REFRESH_LEAD_MS[provider] || TOKEN_EXPIRY_BUFFER_MS;
+  if (REFRESH_LEAD_MS[provider]) return REFRESH_LEAD_MS[provider];
+  // Legacy id after kimi-coding → kimi merge
+  if (provider === "kimi-coding" && REFRESH_LEAD_MS.kimi) return REFRESH_LEAD_MS.kimi;
+  return TOKEN_EXPIRY_BUFFER_MS;
 }
 
 export function parseVertexSaJson(apiKey) {
@@ -136,6 +141,9 @@ const REFRESH_HANDLERS = {
   "grok-cli": (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   gcli: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   "codebuddy-cn": (c, log, proxyOptions) => refreshCodebuddyToken(c.refreshToken, log, proxyOptions),
+  // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
+  kimi: (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
+  "kimi-coding": (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };
