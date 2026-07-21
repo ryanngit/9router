@@ -99,6 +99,52 @@ describe("deferred Responses streaming", () => {
     expect(failed.response.created_at).toEqual(expect.any(Number));
   });
 
+  it("preserves a structured context error code in delayed Responses failures", async () => {
+    const response = createDeferredResponsesResponse(
+      async () => new Response(JSON.stringify({
+        error: {
+          message: "Prompt exceeds the model context window.",
+          code: "context_length_exceeded",
+        },
+      }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+      { keepaliveMs: 60_000, model: "claude-fable-5" },
+    );
+
+    const output = await readAll(response);
+    const failed = JSON.parse(output.split("\n").find((line) => line.startsWith("data: {")).slice(6));
+
+    expect(failed.response.error).toEqual({
+      code: "context_length_exceeded",
+      message: "Prompt exceeds the model context window.",
+    });
+  });
+
+  it("rejects malformed upstream error codes in delayed Responses failures", async () => {
+    const response = createDeferredResponsesResponse(
+      async () => new Response(JSON.stringify({
+        error: {
+          message: "Upstream rejected the request.",
+          code: "bad code\nforged-event",
+        },
+      }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+      { keepaliveMs: 60_000, model: "claude-fable-5" },
+    );
+
+    const output = await readAll(response);
+    const failed = JSON.parse(output.split("\n").find((line) => line.startsWith("data: {")).slice(6));
+
+    expect(failed.response.error).toEqual({
+      code: "upstream_error",
+      message: "Upstream rejected the request.",
+    });
+  });
+
   it("sends Codex event keepalives after provider headers while SSE is idle", async () => {
     let upstreamController;
     const upstream = new ReadableStream({

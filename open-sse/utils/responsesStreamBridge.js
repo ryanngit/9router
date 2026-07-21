@@ -6,16 +6,26 @@ const CONNECTED = encoder.encode(": connected\n\n");
 const KEEPALIVE = encoder.encode(": keepalive\n\n");
 const EVENT_KEEPALIVE = encoder.encode('event: 9router.keepalive\ndata: {"type":"9router.keepalive"}\n\n');
 
-function extractErrorMessage(text, status) {
+const SAFE_ERROR_CODE = /^[A-Za-z0-9_.-]{1,64}$/;
+
+function extractErrorDetails(text, status) {
   try {
     const parsed = JSON.parse(text);
     const value = parsed?.error?.message ?? parsed?.message ?? parsed?.error;
-    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 2000);
-    if (value) return JSON.stringify(value).slice(0, 2000);
+    const rawCode = parsed?.error?.code ?? parsed?.code;
+    const code = typeof rawCode === "string" && SAFE_ERROR_CODE.test(rawCode.trim())
+      ? rawCode.trim()
+      : undefined;
+    if (typeof value === "string" && value.trim()) {
+      return { message: value.trim().slice(0, 2000), code };
+    }
+    if (value) return { message: JSON.stringify(value).slice(0, 2000), code };
   } catch { /* use plain text below */ }
 
   const plain = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  return plain.slice(0, 2000) || `Upstream request failed with HTTP ${status || 502}`;
+  return {
+    message: plain.slice(0, 2000) || `Upstream request failed with HTTP ${status || 502}`,
+  };
 }
 
 /**
@@ -150,9 +160,10 @@ export function createDeferredResponsesResponse(run, {
           if (!contentType.includes("text/event-stream")) {
             const text = await response.text().catch(() => "");
             if (closed) return;
+            const { message, code } = extractErrorDetails(text, response.status);
             settleReady({
               kind: "terminal",
-              bytes: buildResponsesFailureTerminalBytes(extractErrorMessage(text, response.status), { model }),
+              bytes: buildResponsesFailureTerminalBytes(message, { model, code }),
             });
             return;
           }
