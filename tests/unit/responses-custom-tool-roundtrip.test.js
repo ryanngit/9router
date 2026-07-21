@@ -130,6 +130,19 @@ describe("Responses custom tool request translation", () => {
     expect(out._customToolNames).toEqual(new Set(["apply_patch"]));
   });
 
+  it("converts a forced custom choice to the wrapped Chat function", () => {
+    const out = translate({
+      input: "Apply the patch.",
+      tools: [{ type: "custom", name: "apply_patch" }],
+      tool_choice: { type: "custom", name: "apply_patch" },
+    });
+
+    expect(out.tool_choice).toEqual({
+      type: "function",
+      function: { name: "apply_patch" },
+    });
+  });
+
   it("converts custom call and output history to Chat tool messages", () => {
     const out = translate({
       input: [
@@ -195,6 +208,7 @@ describe("Responses custom tool request translation", () => {
         parameters,
         strict: true,
       }],
+      tool_choice: { type: "function", name: "read_file" },
     });
 
     expect(out.tools).toEqual([{
@@ -219,6 +233,10 @@ describe("Responses custom tool request translation", () => {
       { role: "tool", tool_call_id: "call_read", content: "contents" },
       { role: "tool", tool_call_id: "call_missing", content: undefined },
     ]);
+    expect(out.tool_choice).toEqual({
+      type: "function",
+      function: { name: "read_file" },
+    });
     expect(out._customToolNames).toEqual(new Set());
   });
 
