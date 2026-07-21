@@ -552,6 +552,7 @@ function checkBundle() {
   contains("Unpaired tool result", "Claude orphan tool-result salvage");
   contains(": connected", "Responses immediate SSE comment");
   contains(": keepalive", "Responses tunnel keepalive");
+  contains("chatcmpl-9router-keepalive", "Chat tunnel heartbeat");
   contains("upstream_error", "Responses delayed error framing");
   contains("sequence_number", "Responses failure sequence number");
   contains("stream_disconnected", "Responses structured disconnect error");
