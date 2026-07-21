@@ -4,6 +4,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { OPENAI_FINISH, RESPONSES_ITEM, ROLE } from "../../translator/schema/index.js";
 import { extractReasoningText } from "../../translator/concerns/reasoning.js";
+import { unwrapCustomToolArguments } from "../../translator/response/openai-responses.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { getStopReasonOutcome } from "../../utils/responsesStreamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
@@ -103,7 +104,7 @@ export function responsesJsonToOpenAIResponse(jsonResponse, fallbackModel) {
   return response;
 }
 
-export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel) {
+export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel, customToolNames = null) {
   const choice = jsonResponse?.choices?.[0] || {};
   const message = choice.message || {};
   const responseId = String(jsonResponse?.id || `resp_${Date.now()}`);
@@ -135,15 +136,26 @@ export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel) {
     });
   }
   for (const toolCall of toolCalls) {
-    output.push({
-      id: `fc_${toolCall.id || toolCall.function.name}`,
-      type: RESPONSES_ITEM.FUNCTION_CALL,
-      call_id: toolCall.id || `call_${toolCall.function.name}`,
-      name: toolCall.function.name,
-      arguments: typeof toolCall.function.arguments === "string"
-        ? toolCall.function.arguments
-        : JSON.stringify(toolCall.function.arguments || {}),
-    });
+    const name = toolCall.function.name;
+    const callId = toolCall.id || `call_${name}`;
+    const args = typeof toolCall.function.arguments === "string"
+      ? toolCall.function.arguments
+      : JSON.stringify(toolCall.function.arguments || {});
+    output.push(customToolNames instanceof Set && customToolNames.has(name)
+      ? {
+          id: `ctc_${callId}`,
+          type: RESPONSES_ITEM.CUSTOM_TOOL_CALL,
+          call_id: callId,
+          name,
+          input: unwrapCustomToolArguments(args),
+        }
+      : {
+          id: `fc_${toolCall.id || name}`,
+          type: RESPONSES_ITEM.FUNCTION_CALL,
+          call_id: callId,
+          name,
+          arguments: args,
+        });
   }
 
   const finishReason = choice.finish_reason;
@@ -273,7 +285,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ requestId, correlationId, providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ requestId, correlationId, providerResponse, sourceFormat, targetFormat, customToolNames, provider, model, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -300,7 +312,9 @@ export async function handleForcedSSEToJson({ requestId, correlationId, provider
   };
 
   // Codex/Responses API SSE path
-  const isCodexResponsesApi = isResponsesProvider(provider) || sourceFormat === FORMATS.OPENAI_RESPONSES;
+  const isCodexResponsesApi = isResponsesProvider(provider) ||
+    targetFormat === FORMATS.OPENAI_RESPONSES ||
+    (targetFormat == null && sourceFormat === FORMATS.OPENAI_RESPONSES);
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
@@ -437,7 +451,10 @@ export async function handleForcedSSEToJson({ requestId, correlationId, provider
       }
     }
 
-    return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    const finalResponse = sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? openAIJsonToResponsesResponse(parsed, model, customToolNames)
+      : parsed;
+    return { success: true, response: new Response(JSON.stringify(finalResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     saveErrorDetail("Failed to convert streaming response to JSON");

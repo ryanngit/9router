@@ -128,6 +128,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   let translatedBody;
   let toolNameMap;
+  let customToolNames = new Set();
   let translationError = null;
   const translationStartedAt = requestNow();
   try {
@@ -161,6 +162,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translationError = error;
   } finally {
     recordRequestPhase(requestPhases, "translation_ms", translationStartedAt);
+  }
+
+  if (translatedBody) {
+    if (translatedBody._customToolNames instanceof Set) {
+      customToolNames = translatedBody._customToolNames;
+    }
+    delete translatedBody._customToolNames;
   }
 
   if (translationError || !translatedBody) {
@@ -446,13 +454,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { requestId, correlationId: requestCorrelationId, provider, model, body, stream, translatedBody, finalBody, requestTiming: timing, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { requestId, correlationId: requestCorrelationId, provider, model, body, stream, translatedBody, finalBody, requestTiming: timing, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, customToolNames, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
-    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, trackDone, appendLog });
+    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }
 

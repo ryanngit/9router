@@ -64,13 +64,13 @@ function openAICompletionToClaudeMessage(responseBody) {
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
   if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI) {
     return responsesJsonToOpenAIResponse(responseBody);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAIJsonToResponsesResponse(responseBody);
+    return openAIJsonToResponsesResponse(responseBody, undefined, customToolNames);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
@@ -205,7 +205,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ requestId, correlationId, providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ requestId, correlationId, providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -292,7 +292,7 @@ export async function handleNonStreamingResponse({ requestId, correlationId, pro
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: elapsedRequestMilliseconds(requestTiming.requestStartedAt) } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   const outputsResponses = sourceFormat === FORMATS.OPENAI_RESPONSES;
