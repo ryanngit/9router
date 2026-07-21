@@ -2157,6 +2157,11 @@ Upstream and rollout state:
   tool output used indexes `0/1`, one completion, and one `[DONE]`.
   `function_call_output` then returned `LIVE_FABLE_CONTINUATION_OK`, one
   completion, one `[DONE]`, and zero failed events.
+- Public PR #2747 is `OPEN/CLEAN` at `5ff68ef`; it contains only registered
+  Responses index allocation, translated terminal/sentinel handling, and
+  regression coverage. Public PR #2748 is `OPEN/CLEAN` at `ba7d3ab`; it
+  contains only staged Next build cleanup. The private GitHub pool assignment,
+  profile data, aliases, deployment paths, and ledger remain excluded.
 - Rollback app:
   `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-stream-integrity-20260721-20260721T135949Z`.
   Pre-promotion DB backup:
