@@ -9,7 +9,7 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - Live data is `/home/home/.9router`.
 - Live app is `/home/home/.npm-global/lib/node_modules/9router/app`.
 - Live wrapper workspace is `/home/home/.openclaw/workspace-keyra/9router-patch`.
-- Use a clean version-specific worktree for source changes and builds. Current clean source is `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`.
+- Use a clean version-specific worktree for source changes and builds. Current local integration source is `/home/home/.openclaw/workspace-keyra/9router-local-v0535-integration`; public P26 source is `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`.
 - User traffic may be connected through 9Router; avoid restarts until the final deploy step.
 - Active reliability gate forbids 9Router/gateway/Observer promotion before
   `2026-07-25 18:55 PDT`; require zero new service restarts and cgroup OOM kills.
@@ -20,6 +20,9 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - P19/P20 Grok subscription inference is a strict Responses compatibility boundary. Never restore the old incremental mutators in `grok-cli.js`; request semantics live in `grok-cli-compat.js`.
 - P1 OAuth proxy context must remain selected from authorize/device-code through callback, token exchange, and refresh. Fixed-port PKCE secrets belong in POST bodies, never query strings.
 - P25 native Responses has five terminal invariants: completed/incomplete/failed/error are terminal, terminal state survives pipe wrappers, `[DONE]` appears once, failed or unterminated JSON/SSE is not account success, and incomplete usage is billable.
+- P26 cache affinity is opt-in account preference, not sticky availability.
+  First requests use the configured strategy; locks, cooldowns, exclusions, and
+  fallback win; only explicit successful terminal events pin or repin.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
 Current verified live deployment (2026-07-19):
@@ -35,6 +38,8 @@ Source-only candidates as of 2026-07-20:
   local head `cb82d82`; public PR #2454 is CLEAN at `7ed5dff` on v0.5.40.
 - Post-header Codex SSE events are integrated at `029d6ce`; public PR #2666 is
   CLEAN at `dfb0ac2`. Candidate passed a 130-second silent-provider stream.
+- Cache-affinity routing and terminal hardening are integrated through
+  `993c342`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
 - These source changes are not live. Do not infer live behavior from source tests.
 
 ## 1. Brainstorm / Analyze
@@ -60,7 +65,7 @@ cat /home/home/.9router/tunnel/state.json 2>/dev/null || true
 - Check source/config/DB invariants before building:
 
 ```bash
-cd /home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35
+cd /home/home/.openclaw/workspace-keyra/9router-local-v0535-integration
 node scripts/verify-local-patches.mjs \
   --root . \
   --no-bundle \
@@ -135,6 +140,11 @@ Review the diff against the patch ledger:
 - Does xAI sanitize only OpenAI Responses transport while leaving Chat history untouched?
 - Does a completed/incomplete terminal followed by `ECONNRESET` avoid a second `response.failed` and emit one `[DONE]`?
 - Does EOF without any terminal become `response.failed` or fallback-capable HTTP 502 before usage/account success?
+- Does cache affinity remain disabled by default, hash provider/model/session/
+  client/API-key scope, preserve first-request strategy, and repin only after a
+  successful fallback?
+- Can concurrent provider settings changes preserve unrelated providers and
+  unknown fields through one transactional read-merge-write?
 
 Do not mark upstream-ready until:
 
@@ -195,6 +205,11 @@ Targeted manual checks by patch:
   `stream`, invalid JSON, and streaming-error controls. Shared client detection
   and native provider pass-through must remain byte-equivalent.
 - P25 Responses terminal matrix: completed plus reset, incomplete plus usage, failed SSE, failed JSON, top-level `event:error`, and EOF before terminal. Assert fallback-capable 502 for failures and exact cached/reasoning accounting for incomplete. Live Fable incomplete canary must use `stream:false`, `max_output_tokens:1`, and `reasoning.effort=max`; do not use `none`, because Fable rejects `thinking.type.disabled`.
+- P26 cache affinity: leave disabled for baseline; then enable one isolated
+  provider and verify A/A for one session, independent B for another, forced A
+  failure to B, and B after A recovery. Check logs/DB contain no raw API key,
+  client ID, or session ID. Repeat a client cancel after parsed terminal and an
+  unterminated stream; only the former may pin and save usage.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 

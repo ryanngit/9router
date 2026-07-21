@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-upgrade-v0.5.35`, branch `local-v0.5.35-upgrade`. Source-only additions not yet live include atomic reservation review waves through `5a9d56c`, Codex post-header SSE keepalive `029d6ce`, cache-affinity spec/plan `d72b6d1`, and Gemini usage authority `cb82d82`. Live still includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0535-integration`, branch `local-v0.5.35-upgrade`. Source-only additions not yet live include atomic reservation review waves through `5a9d56c`, Codex post-header SSE keepalive `029d6ce`, Gemini usage authority `cb82d82`, cache-affinity routing through `993c342`, and terminal hardening `c31bf4a`. Live still includes reviewed Responses commits `930f502`/`6d6d9a7`, OAuth commits `2cc1b9f`/`8e6499d`/`4839f09`, private Kiro default `9faa373`, and tracker/test follow-ups `e946e87`/`7cb2ed5`.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -1769,6 +1769,74 @@ Verification/status:
 - Regression matrix covers completed plus reset, incomplete plus detailed usage, failed SSE, failed JSON, top-level error, EOF without terminal, and non-stream conversion EOF.
 - Public scope is carried in open PR <https://github.com/decolua/9router/pull/2439>. Clean-base differential and private-data scan passed; remote head is `a62a53a` and GitHub reports `OPEN`/`CLEAN`.
 
+### P26. Provider cache-affinity account routing
+
+Deployment state: source-only. Do not promote before the zero-OOM gate ending
+`2026-07-25 18:55 PDT` and the delayed-provider short-URL canary.
+
+Purpose:
+
+- Improve prompt-cache hit probability by keeping a stable client session on
+  the last account that completed successfully.
+- Preserve first-request round robin, account cooldowns, model locks, account
+  exclusion, and fallback.
+- Avoid claiming provider cache behavior that is not observable: Codex
+  email/workspace affinity is known operationally; GitHub and xAI remain
+  best-effort same-session/account affinity.
+
+Files:
+
+- `src/sse/services/cacheAffinity.js`
+- `src/sse/handlers/chat.js`
+- `src/sse/services/auth.js`
+- `src/shared/utils/providerStrategies.js`
+- `src/lib/db/repos/settingsRepo.js`
+- `src/app/(dashboard)/dashboard/providers/[id]/page.js`
+- `src/app/(dashboard)/dashboard/providers/components/ConnectionsCard.js`
+- `open-sse/handlers/chatCore/{nonStreamingHandler,sseToJsonHandler,streamingHandler}.js`
+- `open-sse/utils/{responsesStreamHelpers,stream,streamHandler}.js`
+- `tests/unit/cache-affinity*.test.js`
+- `tests/unit/chat-cache-affinity.test.js`
+- `tests/unit/provider-{cache-affinity-ui,strategy-settings}.test.js`
+
+Required invariants:
+
+- Feature is disabled by default and enabled independently per provider.
+- A new scope uses the existing account strategy. Only explicit successful
+  completion creates or moves affinity.
+- Scope priority is session plus optional client ID plus API key, then client
+  ID plus API key, then API key. Provider and model are always part of the key.
+- Raw session IDs, client IDs, and API keys are never retained or logged;
+  SHA-256 keys index process-local state.
+- State is bounded to 5,000 LRU entries with fixed TTLs: six hours for session,
+  30 minutes for client, and five minutes for API-key-only scope.
+- Affinity is a preference, never an availability override. Locks, cooldowns,
+  exclusions, disabled accounts, and fallback remain authoritative.
+- Successful fallback repins the scope. Failed, cancelled, truncated, and
+  unterminated streams never pin or save successful usage.
+- Provider settings use one atomic read-merge-write transaction. Concurrent UI
+  saves are serialized, preserve unknown provider fields, and refetch confirmed
+  state only when the latest save fails.
+
+Verification/status:
+
+- Public v0.5.40 branch has six commits from `a5dcc41` through `f93d8aa`.
+  Upstream PR <https://github.com/decolua/9router/pull/2736> is open and clean.
+- Isolated production build generated 130/130 routes. Focused matrix passed
+  37/37; wider relevant stream/terminal matrix passed 180/180.
+- Two-account canary produced A/A for one session and B for an independent
+  session. Forced A HTTP 503 fell back and repinned B; after A recovered, the
+  first session remained on B.
+- Atomic settings API canary added a second provider strategy without changing
+  the existing affinity provider settings.
+- Gitleaks scanned all six public commits and found no leaks.
+- Local integration commits are `c31bf4a` and `993c342` on top of the earlier
+  P26 commits `7f3002c` through `6af1459`. Local resolution preserves request
+  correlation, atomic token reservations, exact usage details, and private
+  routing.
+- Live `20128`, PM2, `/home/home/.9router`, cloudflared, and tunnel mapping were
+  not touched during build, canary, integration, or PR publication.
+
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
 Baseline and merge:
@@ -1850,6 +1918,8 @@ Run before every 9Router update:
 - Compare upstream `cli/cli.js` with the local tunnel-preserving wrapper; do not replace it blindly.
 - Check `pm2 env 0 | rg 'NINE_ROUTER_BEST_GPT'`; target must be `cx/gpt-5.6-sol`, effort `max`, and service tier `default`.
 - Confirm `src/app/api/usage/stream/route.js` does not import or call `getUsageStats`.
+- Confirm P26 remains opt-in, bounded to 5,000 entries, hashes every identity,
+  and calls `rememberCacheAffinity` only from terminal success.
 
 Run after every update/deploy:
 
@@ -1866,6 +1936,13 @@ Run after every update/deploy:
 - Observe quota countdown for at least 70 seconds through the short URL; it must decrement once per real second and refresh once.
 - Confirm PM2 `pm_exec_path` ends in `app/custom-server.js` and live DB contains `apiKeyClients`.
 - Send one API-key request with `X-9Router-Client-ID`; verify one Usage > API Key Clients row and matching usage tokens without storing the full IP.
+- With affinity enabled on an isolated provider, send two requests with one
+  session ID and one request with another. Verify first-session reuse,
+  independent first-request rotation, fallback repin, and no raw identity in
+  logs or SQLite.
+- Run a provider that delays more than 30 seconds after headers through the
+  short URL. Verify Codex receives heartbeat events until terminal completion
+  and no `idle timeout waiting for SSE` or false account lock occurs.
 - Re-run the verifier against source, bundle, and DB.
 - Open Usage once and confirm `/api/usage/stream` emits only realtime fields without blocking `/api/health`.
 - Save the backup path and tunnel URL in this ledger if they changed.
