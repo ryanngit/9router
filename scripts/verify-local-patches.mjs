@@ -350,7 +350,9 @@ function checkSource() {
   mustContain("open-sse/executors/github.js", "estimateInputTokens(transformedBody)", "GitHub Claude bounded token preflight");
   mustContain("open-sse/executors/github.js", "context_length_exceeded", "GitHub Claude explicit context error");
   mustContain("open-sse/utils/error.js", "code ?? errorInfo.code", "upstream error code preservation");
+  mustContain("open-sse/utils/error.js", "code: parsed.code ?? structuredCode", "executor structured error-code fallback");
   mustContain("tests/unit/github-responses-routing.test.js", "rejects an oversized Fable prompt before creating a message", "GitHub Claude prompt-limit regression test");
+  mustContain("tests/unit/github-responses-routing.test.js", "preserves context_length_exceeded through client error wrapping", "GitHub Claude wrapped-error regression test");
   mustContain("src/app/api/v1/responses/route.js", "createDeferredResponsesResponse(", "Responses route returns deferred SSE");
   mustContain("src/app/api/v1/responses/route.js", "body?.stream !== true", "Responses explicit-stream gate");
   mustContain("src/app/api/v1/responses/route.js", "model: body?.model,", "Responses failure model propagation");
@@ -360,6 +362,7 @@ function checkSource() {
   mustContain("open-sse/handlers/chatCore/streamingHandler.js", "sourceFormat === FORMATS.OPENAI", "Chat-only heartbeat gate");
   mustContain("open-sse/handlers/chatCore/streamingHandler.js", "withOpenAIChatKeepalive(transformedBody", "Chat heartbeat stream wiring");
   mustContain("open-sse/utils/responsesStreamBridge.js", "buildResponsesFailureTerminalBytes", "Responses delayed error framing");
+  mustContain("open-sse/utils/responsesStreamBridge.js", "SAFE_ERROR_CODE", "Responses safe upstream error-code forwarding");
   mustContain("open-sse/utils/responsesStreamBridge.js", "const state = await ready", "Responses pull-based upstream bridge");
   mustContain("open-sse/utils/responsesStreamBridge.js", "cancelWork(parentSignal?.reason || \"client closed\", true)", "Responses parent abort closes downstream");
   mustContain("open-sse/utils/responsesStreamHelpers.js", "sequence_number: sequenceNumber", "Responses failure sequence number");
@@ -390,6 +393,7 @@ function checkSource() {
   mustContain("tests/unit/responses-early-stream.test.js", "preserves fragmented provider SSE bytes without inserting keepalives", "Responses fragmented SSE regression test");
   mustContain("tests/unit/responses-early-stream.test.js", "reads one provider chunk per downstream pull", "Responses backpressure regression test");
   mustContain("tests/unit/responses-early-stream.test.js", "does not start provider work for an already-aborted request", "Responses pre-abort regression test");
+  mustContain("tests/unit/responses-early-stream.test.js", "preserves a structured context error code in delayed Responses failures", "Responses delayed error-code regression test");
   mustContain("tests/unit/chat-stream-heartbeat.test.js", "emits a valid empty Chat chunk while provider output is idle", "Chat heartbeat payload regression test");
   mustContain("tests/unit/chat-stream-heartbeat.test.js", "does not insert a keepalive inside a fragmented SSE event", "Chat fragmented SSE regression test");
   mustContain("tests/unit/chat-stream-heartbeat.test.js", "emits keepalives through the production Chat streaming handler", "Chat heartbeat integration test");
@@ -602,6 +606,7 @@ function checkBundle() {
   contains("codex/", "Codex app client detection");
   contains("chatcmpl-9router-keepalive", "Chat tunnel heartbeat");
   contains("upstream_error", "Responses delayed error framing");
+  contains("^[A-Za-z0-9_.-]{1,64}$", "Responses safe upstream error-code forwarding");
   contains("sequence_number", "Responses failure sequence number");
   contains("stream_disconnected", "Responses structured disconnect error");
   contains("Responses stream closed before a terminal event", "Responses missing-terminal conversion");
