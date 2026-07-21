@@ -2,6 +2,9 @@
 import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 import { elapsedRequestMilliseconds, requestNow } from "./requestTiming.js";
+import { chatChunkSse } from "./sse.js";
+
+const heartbeatEncoder = new TextEncoder();
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -114,6 +117,89 @@ export function createStreamController({ externalSignal, onDisconnect, onError, 
   }
 
   return streamController;
+}
+
+export function withOpenAIChatKeepalive(source, { keepaliveMs = 25_000, model = "unknown" } = {}) {
+  const reader = source.getReader();
+  const boundary = { atBoundary: true, lineHasData: false, trailingCr: false };
+  let timer = null;
+  let closed = false;
+  let lastOutputAt = Date.now();
+
+  const cleanup = () => {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+  };
+
+  const observe = (bytes) => {
+    for (const byte of bytes) {
+      if (byte === 13) {
+        boundary.atBoundary = !boundary.lineHasData;
+        boundary.lineHasData = false;
+        boundary.trailingCr = true;
+      } else if (byte === 10) {
+        if (boundary.trailingCr) boundary.trailingCr = false;
+        else {
+          boundary.atBoundary = !boundary.lineHasData;
+          boundary.lineHasData = false;
+        }
+      } else {
+        boundary.atBoundary = false;
+        boundary.lineHasData = true;
+        boundary.trailingCr = false;
+      }
+    }
+  };
+
+  return new ReadableStream({
+    start(controller) {
+      timer = setInterval(() => {
+        if (closed || Date.now() - lastOutputAt < keepaliveMs) return;
+        if (!boundary.atBoundary || boundary.trailingCr || controller.desiredSize <= 0) return;
+        try {
+          controller.enqueue(heartbeatEncoder.encode(chatChunkSse({
+            id: "chatcmpl-9router-keepalive",
+            created: Math.floor(Date.now() / 1000),
+            model,
+            delta: {},
+          })));
+          lastOutputAt = Date.now();
+        } catch {
+          closed = true;
+          cleanup();
+        }
+      }, keepaliveMs);
+    },
+
+    async pull(controller) {
+      if (closed) return;
+      try {
+        const { value, done } = await reader.read();
+        if (closed) return;
+        if (done) {
+          closed = true;
+          cleanup();
+          controller.close();
+          return;
+        }
+        observe(value);
+        lastOutputAt = Date.now();
+        controller.enqueue(value);
+      } catch (error) {
+        if (closed) return;
+        closed = true;
+        cleanup();
+        controller.error(error);
+      }
+    },
+
+    cancel(reason) {
+      closed = true;
+      cleanup();
+      return reader.cancel(reason);
+    },
+  });
 }
 
 /**
