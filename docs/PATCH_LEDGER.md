@@ -7,7 +7,7 @@ This file tracks local 9Router changes that must survive updates. Treat it as th
 Current live facts:
 
 - Live wrapper workspace: `/home/home/.openclaw/workspace-keyra/9router-patch`
-- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0540-integration`, branch `local-v0.5.40-integration`, runtime code head `2ec49db`. Merge commit `717c275` applies published v0.5.40 over the tracked local patch history. Live runs the reviewed `2ec49db` bundle; later ledger-only commits do not change it.
+- Current source: `/home/home/.openclaw/workspace-keyra/9router-local-v0540-integration`, branch `local-v0.5.40-integration`, runtime code head `46cbe24`. Merge commit `717c275` applies published v0.5.40 over the tracked local patch history. Live runs the reviewed `46cbe24` bundle; later verifier/ledger-only commits do not change it.
 - Live data: `/home/home/.9router`
 - Live app bundle: `/home/home/.npm-global/lib/node_modules/9router/app` -> `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app`
 - PM2 app: `9router`
@@ -22,8 +22,8 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://accept-notified-earrings-gotta.trycloudflare.com`.
-- Current cloudflared PID: `2216695`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://palmer-insider-getting-promise.trycloudflare.com`.
+- Current cloudflared PID: `2468357`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
 - The 2026-07-19 combined promotion retained that policy; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2` after live canaries.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
@@ -32,11 +32,11 @@ Current live facts:
 - Active `grok-cli` device-code profile `songoku200794@gmail.com` is X Premium+ with Grok Code access and dedicated residential proxy pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `http://127.0.0.1:18889`.
 - All GitHub Copilot profiles use that same residential pool on `18889`. The shared `18888` pool returned trade-restricted/HTML token-refresh failures; both active GitHub profiles refresh and test valid on `18889`.
 - Private live alias `grok-4.5 -> grok-cli/grok-4.5` bypasses the separate expired xAI API OAuth profile. Keep this alias private; upstream source intentionally preserves bare `grok-4.5 -> xai`.
-- Current PM2 PID after the Fable stream-integrity promotion: `2216464`.
-- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-stream-integrity-20260721-20260721T135949Z`.
-- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-v0540-fable-stream-integrity-20260721-20260721T135949Z/data.sqlite`.
+- Current PM2 PID after the Fable context-guard promotion: `2468145`.
+- Latest live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-context-cutover-20260721-20260721T224739Z`.
+- Latest pre-promotion DB backup: `/home/home/.9router/db/backups/pre-v0540-fable-context-cutover-20260721-20260721T224739Z/data.sqlite`.
 - Latest pre-GitHub-pool DB backup: `/home/home/.9router/db/backups/pre-github-residential-pool-20260721T140531Z/data.sqlite`.
-- Active Codex config references `/home/home/.openclaw/codex-9router-model-catalog.json` and currently selects `claude-fable-5` with effort `max`. This client selection is independent of the endpoint-wide best-GPT route for incoming `gpt-*` models.
+- Active Linux Codex config references `/home/home/.openclaw/codex-9router-model-catalog.json` and currently selects `gpt-5.6-sol` with effort `max`. This client selection is independent of the endpoint-wide best-GPT route for incoming `gpt-*` models.
 - Previous live rollback app from Claude pairing: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-claude-pairing-max2-20260717T033932Z-20260717T034004Z`.
 - Previous DB backup from Claude pairing: `/home/home/.9router/db/backups/pre-claude-pairing-max2-20260717T033932Z-20260717T034004Z/data.sqlite`.
 - Previous `0.5.35` live rollback app: `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0.5.35-live-max1-20260716T210305Z-20260716T210331Z`.
@@ -2247,6 +2247,72 @@ restart. Running PM2 PID is `2392590`; tunnel PID is `2392792`.
   requires an exact custom call plus `custom_tool_call_output` through every
   active GitHub profile; ordinary `function_call` coverage cannot substitute.
 
+### P28. GitHub Claude context guard and model downshift
+
+Deployment state: live on `0.5.40`. Runtime code head is `46cbe24`; promotion
+label `v0540-fable-context-cutover-20260721` completed at
+`2026-07-21T22:49:09Z`.
+
+- Phone-to-PC synchronization was healthy: the Fable prompt appeared in the
+  desktop thread. Request `19ffabfd-0b09-4bbd-94f6-174cac0cface` then reached
+  9Router with 280 messages and 247,910 prompt tokens. GitHub Fable accepts at
+  most 200,000 prompt tokens, but 9Router sent the oversized request, treated
+  its empty stream as success, and stored `[Empty streaming response]`.
+- Copilot's live model catalog reports 264,000 total, 200,000 prompt, and
+  64,000 output tokens for Fable 5 and Opus 4.8. These provider-specific limits
+  replace the inappropriate 1M Anthropic capability on the GitHub path only;
+  other Claude providers retain their own limits.
+- Commit `74ac1d5` adds static and live-catalog capability normalization plus a
+  bounded exact `/v1/messages/count_tokens` preflight for large GitHub Claude
+  requests. Requests estimated below half the prompt limit keep one upstream
+  generation call. Large requests use a 10-second count timeout and return
+  `context_length_exceeded` before generation when over 200,000.
+- Commits `9b32be6` and `46cbe24` preserve safe structured error codes through
+  executor parsing and the delayed Responses SSE bridge. Oversized streams now
+  produce one schema-complete `response.failed`, exact
+  `error.code=context_length_exceeded`, one `[DONE]`, and no false account lock
+  or empty-success usage row. Commit `f332109` makes future source/bundle checks
+  fail if this chain disappears.
+- Linux and Windows catalogs set Fable 5 and Opus 4.8 to
+  `context_window=max_context_window=210527`,
+  `effective_context_window_percent=95`, and
+  `auto_compact_token_limit=185000`. Codex therefore exposes exactly 200,000
+  effective tokens and compacts before GitHub's prompt boundary. Codex clamps a
+  larger global `model_context_window` to catalog `max_context_window`, but the
+  app/CLI must restart after catalog edits because model catalogs load at
+  process startup.
+- Red tests reproduced both losses: delayed Responses changed the code to
+  `upstream_error`, then the real GitHub executor changed it to `bad_request`.
+  Final focused/broader matrix passes 75/75. Earlier full unit comparison was
+  1,869 passed with the same 58 unrelated existing failures. Standalone build
+  compiled, type-checked, generated 130 routes, bundled MITM, and produced a
+  58 MB candidate. Source/bundle/catalog/DB verification reports zero failures
+  and zero warnings.
+- Isolated candidate bound only `127.0.0.1:20129`. A 361,080-token synthetic
+  prompt was rejected before generation with the exact structured code. Both
+  active GitHub profiles independently passed plain max-reasoning output,
+  forced Responses custom-tool output, and `custom_tool_call_output`
+  continuation: six successful requests with correct account isolation and
+  cache accounting. Profile activation state was restored, candidate HOME was
+  securely removed, and port `20129` was released.
+- Natural zero-active drain fluctuated between three and six active Codex
+  requests. User-authorized downtime used `MAX_ACTIVE=6` with
+  `ALLOW_ACTIVE_CUTOVER=1`; the gate observed three, created an integrity-checked
+  SQLite backup, exchanged only `cli/app`, restarted PM2 once, and retained
+  rollback through local health and full invariant checks.
+- PM2 is online at PID `2468145`; cloudflared recovered under PID `2468357`
+  with raw URL `https://palmer-insider-getting-promise.trycloudflare.com`.
+  Local, raw, and `https://rkeyra9.abc-tunnel.us` health pass; live DB integrity
+  is `ok`; ports `18888` and `18889` remained unchanged.
+- Public short-URL QA rejected the 361,080-token prompt in 9.885 seconds with
+  exact `context_length_exceeded` and then completed a small Fable/max request
+  in 10.045 seconds with `LIVE_FABLE_CONTEXT_OK`, `response.completed`, one
+  `[DONE]`, and no failed event.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-context-cutover-20260721-20260721T224739Z`.
+  DB backup:
+  `/home/home/.9router/db/backups/pre-v0540-fable-context-cutover-20260721-20260721T224739Z/data.sqlite`.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
@@ -2297,6 +2363,14 @@ Run after every update/deploy:
   unique monotonic output indexes, exactly one `response.completed`, exactly
   one `[DONE]`, and a successful continuation through every active GitHub
   profile. Repeat one ordinary function control.
+- Confirm Fable 5 and Opus 4.8 advertise 264,000 total, 200,000 prompt, and
+  64,000 output tokens on the GitHub path. Send one small control and assert no
+  token-count preflight. Send one prompt above 200,000 and require exact
+  `/v1/messages/count_tokens` rejection, `context_length_exceeded`, one
+  `response.failed`, one `[DONE]`, no generation call, and no account lock.
+- Confirm every Codex catalog keeps GitHub Fable/Opus effective context at or
+  below 200,000 and auto-compaction below that limit. Restart each Codex
+  app/CLI after catalog replacement before testing a GPT-to-Fable downshift.
 - Re-run the verifier against source, bundle, and DB.
 - Open Usage once and confirm `/api/usage/stream` emits only realtime fields without blocking `/api/health`.
 - Save the backup path and tunnel URL in this ledger if they changed.

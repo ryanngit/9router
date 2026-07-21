@@ -30,6 +30,11 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
   bridge. Wrapping them as Chat functions is internal only: provider requests
   receive `{input:string}`, clients receive `custom_tool_call` plus plain-string
   input, and internal metadata never reaches provider payloads or usage details.
+- P28 GitHub Claude limits are Copilot transport limits, not Anthropic marketing
+  limits. Fable 5 and Opus 4.8 use 200,000 prompt, 64,000 output, and 264,000
+  total tokens. Large requests must use bounded `/v1/messages/count_tokens`
+  preflight and return structured `context_length_exceeded`; never store an
+  empty successful stream for an oversized prompt.
 - Keep `Codex/<version>` heartbeat recognition route-local in
   `/v1/responses`. Adding it to `detectClientTool()` changes native-passthrough
   behavior and still loses to `X-Initiator: user` detector precedence.
@@ -40,21 +45,21 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 
 Current verified live deployment (2026-07-21):
 
-- Version `0.5.40`; PM2 PID `2115168`; restart count 13; entrypoint
+- Version `0.5.40`; PM2 PID `2468145`; restart count 16; entrypoint
   `app/custom-server.js`; Sol/max/default policy remains saved in
   `/home/home/.pm2/dump.pm2`.
-- Cloudflared PID `2115378`; raw URL
-  `https://gorgeous-bare-lung-beer.trycloudflare.com`; short URL
+- Cloudflared PID `2468357`; raw URL
+  `https://palmer-insider-getting-promise.trycloudflare.com`; short URL
   `https://rkeyra9.abc-tunnel.us`.
 - Rollback app
-  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-codex-route-heartbeat-20260721-20260721T103823Z`;
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-context-cutover-20260721-20260721T224739Z`;
   DB backup
-  `/home/home/.9router/db/backups/pre-v0540-codex-route-heartbeat-20260721-20260721T103823Z/data.sqlite`.
+  `/home/home/.9router/db/backups/pre-v0540-fable-context-cutover-20260721-20260721T224739Z/data.sqlite`.
 - Promotion status
-  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-codex-route-heartbeat-20260721.status`
-  is `succeeded`; exact-header delayed Responses QA, live short-URL Codex
-  canary, local/raw/short health, both DB integrity checks, key-limit invariants,
-  and full source/live-bundle/DB verifier passed.
+  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-fable-context-cutover-20260721.status`
+  is `succeeded`; exact GitHub Claude context rejection, small Fable/max
+  completion, local/raw/short health, DB integrity, key-limit invariants, and
+  full source/live-bundle/DB verifier passed.
 
 Source and upstream state as of 2026-07-21:
 
@@ -66,9 +71,10 @@ Source and upstream state as of 2026-07-21:
   shared-detector implementation from `cec2e68`.
 - Cache-affinity routing and terminal hardening are integrated through
   `b03a81d`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
-- Local v0.5.40 integration is `863db8f`; its rebuilt route-heartbeat candidate
-  passed source/bundle/live-DB verification and isolated delayed-header QA, then
-  promotion status `v0540-codex-route-heartbeat-20260721` made it live.
+- Local v0.5.40 runtime code head is `46cbe24`; GitHub Claude prompt limits,
+  bounded exact counting, and structured Responses errors passed isolated and
+  live short-domain QA before promotion label
+  `v0540-fable-context-cutover-20260721` made it live.
 - All 21 open public PRs were checked against v0.5.40: 19 received normal merge
   updates, two already contained v0.5.40, and all 21 report `MERGEABLE/CLEAN`.
   Full heads/tests are recorded in
@@ -253,6 +259,16 @@ Targeted manual checks by patch:
   for each live profile so cache affinity cannot reuse the first account:
   `node scripts/probe-fable-custom-tool-roundtrip.mjs --base "$BASE" --api-key-id "$API_KEY_ID" --expect-connection "$CONNECTION_ID"`.
   Never disable live profiles merely to force this canary.
+- P28 GitHub Claude context: verify live `/models` normalizes Fable 5 and Opus
+  4.8 to `contextWindow=264000`, `maxPrompt=200000`, and `maxOutput=64000`.
+  Small requests must make one generation call without token-count preflight.
+  A synthetic request above 200,000 prompt tokens must call
+  `/v1/messages/count_tokens`, skip generation, and emit one Responses
+  `response.failed` with `error.code=context_length_exceeded` plus `[DONE]`.
+  Repeat plain max-reasoning, forced custom-tool, and custom-tool continuation
+  through every active GitHub profile. Codex catalogs must use an effective
+  context no larger than 200,000 and compact below that boundary; reload each
+  Codex app/CLI process after catalog edits because catalogs load at startup.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 
