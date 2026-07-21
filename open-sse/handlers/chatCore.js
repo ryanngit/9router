@@ -427,7 +427,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
+    const { statusCode, message, resetsAtMs, code } = await parseUpstreamError(providerResponse, executor);
     const completedAt = requestNow();
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
@@ -451,7 +451,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
     streamController.handleComplete();
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, code);
   }
 
   const sharedCtx = { requestId, correlationId: requestCorrelationId, provider, model, body, stream, translatedBody, finalBody, requestTiming: timing, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, customToolNames, reqTag, log };

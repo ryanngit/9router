@@ -36,12 +36,25 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking-agentic")).toMatchObject(claudeSonnet5Expected);
   });
 
-  it("reports GitHub Claude Fable 5 as an adaptive-thinking model", () => {
+  it("reports GitHub Claude Fable 5 with Copilot prompt and output limits", () => {
     expect(getCapabilitiesForModel("github", "claude-fable-5")).toMatchObject({
-      contextWindow: 1000000,
-      maxOutput: 128000,
+      contextWindow: 264000,
+      maxPrompt: 200000,
+      maxOutput: 64000,
       thinkingFormat: "claude-adaptive",
       reasoning: true,
+    });
+  });
+
+  it("keeps Copilot Opus limits provider-specific", () => {
+    expect(getCapabilitiesForModel("github", "claude-opus-4.8")).toMatchObject({
+      contextWindow: 264000,
+      maxPrompt: 200000,
+      maxOutput: 64000,
+    });
+    expect(getCapabilitiesForModel("kiro", "claude-opus-4.8")).toMatchObject({
+      contextWindow: 1000000,
+      maxOutput: 128000,
     });
   });
 

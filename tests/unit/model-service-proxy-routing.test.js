@@ -86,7 +86,26 @@ describe("live model service proxy routing", () => {
     mocks.proxyAwareFetch
       .mockResolvedValueOnce(jsonResponse({ error: "expired" }, 401))
       .mockResolvedValueOnce(jsonResponse({
-        data: [{ id: "copilot-model", capabilities: { type: "chat" }, policy: { state: "enabled" } }],
+        data: [{
+          id: "claude-fable-5",
+          name: "Claude Fable 5",
+          capabilities: {
+            type: "chat",
+            limits: {
+              max_context_window_tokens: 264000,
+              max_prompt_tokens: 200000,
+              max_output_tokens: 64000,
+            },
+            supports: {
+              adaptive_thinking: true,
+              parallel_tool_calls: true,
+              reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
+              tool_calls: true,
+              vision: true,
+            },
+          },
+          policy: { state: "enabled" },
+        }],
       }));
     mocks.refreshCopilotToken.mockResolvedValue({ token: "new-copilot-token", expiresAt: 12345 });
 
@@ -95,7 +114,18 @@ describe("live model service proxy routing", () => {
       providerSpecificData: { copilotToken: "old-copilot-unique" },
     }, { forceRefresh: true, proxyOptions: proxyRoute, log: console });
 
-    expect(result.models).toEqual([{ id: "copilot-model", name: "copilot-model" }]);
+    expect(result.models).toEqual([{
+      id: "claude-fable-5",
+      name: "Claude Fable 5",
+      capabilities: expect.objectContaining({
+        contextWindow: 264000,
+        maxPrompt: 200000,
+        maxOutput: 64000,
+        reasoning: true,
+        tools: true,
+        vision: true,
+      }),
+    }]);
     expect(mocks.proxyAwareFetch.mock.calls.every((call) => call.at(-1) === proxyRoute)).toBe(true);
     expect(mocks.refreshCopilotToken).toHaveBeenCalledWith("github-access-unique", console, proxyRoute);
   });

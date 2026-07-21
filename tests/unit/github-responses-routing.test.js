@@ -8,6 +8,7 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { GithubExecutor } from "../../open-sse/executors/github.js";
 import { resolveTransport, supportsNativeResponses } from "../../open-sse/services/provider.js";
+import { createErrorResult, parseUpstreamError } from "../../open-sse/utils/error.js";
 
 const { executeMock, proxyFetchMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
@@ -193,6 +194,64 @@ describe("GitHub request correlation", () => {
     expect(proxyFetchMock).toHaveBeenCalledTimes(1);
     expect(proxyFetchMock.mock.calls[0][1].headers["x-request-id"])
       .toBe("019f7fa1-0d8d-7000-8000-000000000001");
+  });
+});
+
+describe("GitHub Claude prompt-limit preflight", () => {
+  it("rejects an oversized Fable prompt before creating a message", async () => {
+    proxyFetchMock.mockResolvedValueOnce(new Response(
+      JSON.stringify({ input_tokens: 200001 }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ));
+    const exec = new GithubExecutor();
+
+    const result = await exec.executeWithMessagesEndpoint({
+      model: "claude-fable-5",
+      body: { messages: [{ role: "user", content: "x".repeat(400000) }] },
+      stream: true,
+      credentials: { copilotToken: "test-token" },
+      log: { debug: vi.fn(), warn: vi.fn() },
+    });
+
+    expect(proxyFetchMock).toHaveBeenCalledTimes(1);
+    expect(proxyFetchMock.mock.calls[0][0]).toBe("https://api.githubcopilot.com/v1/messages/count_tokens");
+    expect(result.response.status).toBe(400);
+    expect(await result.response.json()).toMatchObject({
+      error: { code: "context_length_exceeded" },
+    });
+  });
+
+  it("does not add preflight latency to small Fable prompts", async () => {
+    proxyFetchMock.mockResolvedValueOnce(new Response("bad request", { status: 400 }));
+    const exec = new GithubExecutor();
+
+    await exec.executeWithMessagesEndpoint({
+      model: "claude-fable-5",
+      body: { messages: [{ role: "user", content: "hello" }] },
+      stream: true,
+      credentials: { copilotToken: "test-token" },
+      log: { debug: vi.fn(), warn: vi.fn() },
+    });
+
+    expect(proxyFetchMock).toHaveBeenCalledTimes(1);
+    expect(proxyFetchMock.mock.calls[0][0]).toBe("https://api.githubcopilot.com/v1/messages");
+  });
+
+  it("preserves context_length_exceeded through client error wrapping", async () => {
+    const upstream = new Response(JSON.stringify({
+      error: {
+        message: "Prompt is 200001 tokens; maximum is 200000.",
+        type: "invalid_request_error",
+        code: "context_length_exceeded",
+      },
+    }), { status: 400, headers: { "content-type": "application/json" } });
+
+    const parsed = await parseUpstreamError(upstream);
+    const result = createErrorResult(parsed.statusCode, parsed.message, undefined, parsed.code);
+
+    expect(await result.response.json()).toMatchObject({
+      error: { code: "context_length_exceeded" },
+    });
   });
 });
 

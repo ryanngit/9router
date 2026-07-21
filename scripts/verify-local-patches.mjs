@@ -168,12 +168,37 @@ function checkExternalConfig() {
   }
   const models = Array.isArray(catalog?.models) ? catalog.models : [];
   const bySlug = new Map(models.map((model) => [model?.slug, model]));
-  if (models.length === 12 && bySlug.size === models.length) pass("Codex catalog: 12 unique models");
-  else fail(`Codex catalog expected 12 unique models, got ${models.length} rows/${bySlug.size} slugs`);
+  const requiredSlugs = [
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "codex-auto-review",
+    "claude-opus-4.8",
+    "claude-fable-5",
+    "grok-4.5",
+  ];
+  if (bySlug.size === models.length && requiredSlugs.every((slug) => bySlug.has(slug))) {
+    pass(`Codex catalog: ${models.length} unique models with required set`);
+  } else {
+    fail(`Codex catalog missing required models or contains duplicate slugs: ${models.length} rows/${bySlug.size} slugs`);
+  }
 
-  for (const slug of ["claude-opus-4.8", "claude-fable-5", "grok-build-0.1", "grok-4.5"]) {
+  for (const slug of ["claude-opus-4.8", "claude-fable-5", "grok-4.5"]) {
     if (bySlug.has(slug)) pass(`Codex catalog custom model: ${slug}`);
     else fail(`Codex catalog missing custom model: ${slug}`);
+  }
+
+  for (const slug of ["claude-opus-4.8", "claude-fable-5"]) {
+    const model = bySlug.get(slug);
+    const effectiveWindow = Math.floor(
+      Number(model?.context_window) * Number(model?.effective_context_window_percent) / 100,
+    );
+    const valid = model?.context_window === 210527
+      && model?.max_context_window === 210527
+      && model?.auto_compact_token_limit === 185000
+      && effectiveWindow === 200000;
+    if (valid) pass(`Codex catalog Copilot prompt limit: ${slug}`);
+    else fail(`Codex catalog Copilot prompt limit mismatch: ${slug}`);
   }
 
   const expectedGpt = {
@@ -309,9 +334,12 @@ function checkSource() {
   mustContain("open-sse/services/model.js", "\"claude-fable-5\": \"gh/claude-fable-5\"", "built-in Claude Fable 5 alias");
   mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-opus-4.8\"", "GitHub registry Claude Opus 4.8");
   mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-fable-5\"", "GitHub registry Claude Fable 5");
+  mustContain("open-sse/providers/registry/github.js", "https://api.githubcopilot.com/v1/messages/count_tokens", "GitHub Claude token-count endpoint");
   mustContain("open-sse/providers/capabilities.js", "*claude*fable*\",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: \"claude-adaptive\"", "Claude Fable adaptive thinking");
+  mustContain("open-sse/providers/capabilities.js", "maxPrompt: 200000", "GitHub Claude 200K prompt limit");
   mustContain("open-sse/translator/formats/claude.js", "Unpaired tool result", "Claude orphan tool-result salvage");
   mustContain("open-sse/services/copilotModels.js", "api.githubcopilot.com/models", "Copilot live model catalog");
+  mustContain("open-sse/services/copilotModels.js", "limits.max_prompt_tokens", "Copilot live prompt-limit normalization");
   mustContain("open-sse/services/copilotStatus.js", "free_limited_copilot", "Copilot free profile classification");
   mustContain("open-sse/services/provider.js", "supportsNativeResponses(provider, model)", "model-aware native Responses capability");
   mustContain("open-sse/services/provider.js", "if (provider !== \"github\") return true", "GitHub-specific native Responses guard");
@@ -319,6 +347,10 @@ function checkSource() {
   mustContain("open-sse/handlers/responsesHandler.js", "supportsNativeResponses(modelInfo?.provider, modelInfo?.model)", "Responses bridge uses model-aware capability");
   mustContain("open-sse/handlers/chatCore.js", "resolveTransport(provider, modelTargetFormat || sourceFormat, model)", "transport resolution includes model");
   mustContain("open-sse/executors/github.js", "supportsNativeResponses(\"github\", model)", "GitHub executor shares Responses policy");
+  mustContain("open-sse/executors/github.js", "estimateInputTokens(transformedBody)", "GitHub Claude bounded token preflight");
+  mustContain("open-sse/executors/github.js", "context_length_exceeded", "GitHub Claude explicit context error");
+  mustContain("open-sse/utils/error.js", "code ?? errorInfo.code", "upstream error code preservation");
+  mustContain("tests/unit/github-responses-routing.test.js", "rejects an oversized Fable prompt before creating a message", "GitHub Claude prompt-limit regression test");
   mustContain("src/app/api/v1/responses/route.js", "createDeferredResponsesResponse(", "Responses route returns deferred SSE");
   mustContain("src/app/api/v1/responses/route.js", "body?.stream !== true", "Responses explicit-stream gate");
   mustContain("src/app/api/v1/responses/route.js", "model: body?.model,", "Responses failure model propagation");
@@ -561,6 +593,8 @@ function checkBundle() {
   contains("retrying same account without", "Codex same-account encrypted-content retry");
   contains("claude-opus-4.8", "Claude Opus 4.8");
   contains("claude-fable-5", "Claude Fable 5");
+  contains("/v1/messages/count_tokens", "GitHub Claude token-count endpoint");
+  contains("context_length_exceeded", "GitHub Claude explicit context error");
   matches(/claude.{0,24}fable.{0,180}claude-adaptive/i, "Claude Fable adaptive thinking");
   contains("Unpaired tool result", "Claude orphan tool-result salvage");
   contains(": connected", "Responses immediate SSE comment");
