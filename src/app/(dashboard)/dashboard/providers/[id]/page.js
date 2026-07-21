@@ -13,6 +13,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { updateProviderStrategy } from "@/shared/utils/providerStrategies";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -363,20 +364,11 @@ export default function ProviderDetailPage() {
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       const current = settingsData.providerStrategies || {};
 
-      // Build override: null strategy means remove override, use global
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") {
-        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      }
-      if (cacheAffinityEnabled) override.cacheAffinityEnabled = true;
-
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) {
-        delete updated[providerId];
-      } else {
-        updated[providerId] = override;
-      }
+      const updated = updateProviderStrategy(current, providerId, {
+        strategy,
+        stickyLimit,
+        cacheAffinityEnabled,
+      });
 
       await fetch("/api/settings", {
         method: "PATCH",
@@ -1462,6 +1454,7 @@ export default function ProviderDetailPage() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Cache affinity</span>
                 <Toggle
+                  aria-label="Cache affinity"
                   checked={providerCacheAffinity}
                   onChange={handleCacheAffinityToggle}
                 />
