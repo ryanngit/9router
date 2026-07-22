@@ -18,7 +18,33 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
+
+  if (typeof chunk.model === "string" && chunk.model) state.model = chunk.model;
+  if (chunk.usage && typeof chunk.usage === "object") {
+    const inputTokens = chunk.usage.input_tokens ?? chunk.usage.prompt_tokens;
+    const outputTokens = chunk.usage.output_tokens ?? chunk.usage.completion_tokens;
+    const totalTokens = chunk.usage.total_tokens ?? inputTokens + outputTokens;
+    if ([inputTokens, outputTokens, totalTokens]
+      .every((value) => Number.isInteger(value) && value >= 0)) {
+      state.responseUsage = {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens,
+      };
+      const inputDetails = chunk.usage.input_tokens_details ?? chunk.usage.prompt_tokens_details;
+      const outputDetails = chunk.usage.output_tokens_details ?? chunk.usage.completion_tokens_details;
+      if (inputDetails && typeof inputDetails === "object") {
+        state.responseUsage.input_tokens_details = { ...inputDetails };
+      }
+      if (outputDetails && typeof outputDetails === "object") {
+        state.responseUsage.output_tokens_details = { ...outputDetails };
+      }
+    }
+  }
   
+  // ponytail: A choices-empty usage chunk arriving after completion cannot amend
+  // the sent terminal; delay completion to stream flush if a required transport
+  // is observed using that ordering.
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -173,15 +199,17 @@ function closeReasoning(state, emit) {
       part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }
     });
 
+    const item = {
+      id: state.reasoningId,
+      type: RESPONSES_ITEM.REASONING,
+      summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }]
+    };
     emit("response.output_item.done", {
       type: "response.output_item.done",
       output_index: state.reasoningIndex,
-      item: {
-        id: state.reasoningId,
-        type: RESPONSES_ITEM.REASONING,
-        summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }]
-      }
+      item
     });
+    state.responseOutput[state.reasoningIndex] = item;
   }
 }
 
@@ -247,16 +275,18 @@ function closeMessage(state, emit, idx) {
       part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }
     });
 
+    const item = {
+      id: msgId,
+      type: RESPONSES_ITEM.MESSAGE,
+      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }],
+      role: ROLE.ASSISTANT
+    };
     emit("response.output_item.done", {
       type: "response.output_item.done",
       output_index: outputIndex,
-      item: {
-        id: msgId,
-        type: RESPONSES_ITEM.MESSAGE,
-        content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }],
-        role: ROLE.ASSISTANT
-      }
+      item
     });
+    state.responseOutput[outputIndex] = item;
   }
 }
 
@@ -369,17 +399,19 @@ function closeToolCall(state, emit, idx) {
         output_index: state.funcOutputIndexes[idx],
         input
       });
+      const item = {
+        id: `ctc_${callId}`,
+        type: RESPONSES_ITEM.CUSTOM_TOOL_CALL,
+        input,
+        call_id: callId,
+        name: state.funcNames[idx] || ""
+      };
       emit("response.output_item.done", {
         type: "response.output_item.done",
         output_index: state.funcOutputIndexes[idx],
-        item: {
-          id: `ctc_${callId}`,
-          type: RESPONSES_ITEM.CUSTOM_TOOL_CALL,
-          input,
-          call_id: callId,
-          name: state.funcNames[idx] || ""
-        }
+        item
       });
+      state.responseOutput[outputIndex] = item;
     } else {
       emit("response.function_call_arguments.done", {
         type: "response.function_call_arguments.done",
@@ -388,17 +420,19 @@ function closeToolCall(state, emit, idx) {
         arguments: args
       });
 
+      const item = {
+        id: `fc_${callId}`,
+        type: RESPONSES_ITEM.FUNCTION_CALL,
+        arguments: args,
+        call_id: callId,
+        name: state.funcNames[idx] || ""
+      };
       emit("response.output_item.done", {
         type: "response.output_item.done",
         output_index: outputIndex,
-        item: {
-          id: `fc_${callId}`,
-          type: RESPONSES_ITEM.FUNCTION_CALL,
-          arguments: args,
-          call_id: callId,
-          name: state.funcNames[idx] || ""
-        }
+        item
       });
+      state.responseOutput[outputIndex] = item;
     }
 
     state.funcItemDone[idx] = true;
@@ -417,7 +451,10 @@ function sendCompleted(state, emit) {
         created_at: state.created,
         status: "completed",
         background: false,
-        error: null
+        error: null,
+        model: state.model || null,
+        output: state.responseOutput.filter(Boolean),
+        ...(state.responseUsage ? { usage: state.responseUsage } : {})
       }
     });
   }

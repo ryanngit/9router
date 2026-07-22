@@ -77,7 +77,18 @@ describe("Chat-to-Responses output item indexes", () => {
           { index: 0, function: { arguments: "1}" } },
           { index: 1, function: { arguments: "2}" } },
         ],
-      }, "tool_calls"),
+      }),
+      {
+        id: "chatcmpl-fable-index",
+        model: "claude-fable-5",
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+        usage: {
+          prompt_tokens: 12,
+          completion_tokens: 1,
+          total_tokens: 13,
+          prompt_tokens_details: { cached_tokens: 2 },
+        },
+      },
     ]);
     const added = events
       .filter(({ event }) => event === "response.output_item.added")
@@ -104,6 +115,61 @@ describe("Chat-to-Responses output item indexes", () => {
       events.map((_, index) => index + 1),
     );
     expect(events.filter(({ event }) => event === "response.completed")).toHaveLength(1);
+
+    const completed = events.find(({ event }) => event === "response.completed")?.data.response;
+    expect(completed.model).toBe("claude-fable-5");
+    expect(completed.output.map((item) => item.type)).toEqual([
+      "reasoning",
+      "message",
+      "function_call",
+      "function_call",
+    ]);
+    expect(completed.usage).toEqual({
+      input_tokens: 12,
+      input_tokens_details: { cached_tokens: 2 },
+      output_tokens: 1,
+      total_tokens: 13,
+    });
+  });
+
+  it("carries Claude model, output, and cache-aware usage into the terminal", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    state.created = 1;
+    const chunks = [
+      {
+        type: "message_start",
+        message: {
+          id: "msg_terminal",
+          model: "claude-fable-5",
+          usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 2 },
+        },
+      },
+      { type: "content_block_start", index: 0, content_block: { type: "text" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "OK" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ];
+    const events = chunks.flatMap((chunk) => translateResponse(
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI_RESPONSES,
+      chunk,
+      state,
+    ));
+    const response = events.find(({ event }) => event === "response.completed")?.data.response;
+
+    expect(response.model).toBe("claude-fable-5");
+    expect(response.output).toMatchObject([{
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "OK" }],
+    }]);
+    expect(response.usage).toEqual({
+      input_tokens: 12,
+      input_tokens_details: { cached_tokens: 2 },
+      output_tokens: 1,
+      total_tokens: 13,
+    });
   });
 
   it("preserves unique indexes through the production SSE pipeline", async () => {

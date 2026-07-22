@@ -262,6 +262,8 @@ export function initState(sourceFormat, customToolNames = null) {
       funcItemDone: {},
       funcOutputIndexes: {},
       customToolNames: customToolNames instanceof Set ? customToolNames : new Set(),
+      responseOutput: [],
+      responseUsage: null,
       completedSent: false
     };
   }
