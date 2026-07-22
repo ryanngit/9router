@@ -199,6 +199,9 @@ if (rows[0].inputType !== "string") throw new Error(`Provider custom input schem
 
 console.log(JSON.stringify({
   ok: true,
+  continuation: true,
+  ordinaryFunction: true,
+  persistence: true,
   connectionId,
   callId: customItem.call_id,
   customEvents: first.events.filter(event => event.type.startsWith("response.custom_tool_call_input.")).length,
