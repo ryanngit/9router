@@ -22,8 +22,8 @@ Current live facts:
 - P2 GPT-5.6 unsupported-tier and estimator-latency correction was promoted on 2026-07-13 PDT; isolated credential-bearing QA data was removed before deploy.
 - Port: `20128`
 - Current known short tunnel base: `https://rkeyra9.abc-tunnel.us`
-- Current known raw tunnel base: `https://palmer-insider-getting-promise.trycloudflare.com`.
-- Current cloudflared PID: `2468357`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
+- Current known raw tunnel base: `https://enough-qualified-chocolate-structure.trycloudflare.com`.
+- Current cloudflared PID: `2588922`; it is a child of PM2's 9Router PID, so an ungated PM2 restart can kill the tunnel.
 - Current best-GPT PM2 policy: enabled, target `cx/gpt-5.6-sol`, reasoning `max`, service tier `default`.
 - The 2026-07-19 combined promotion retained that policy; `pm2 save` persisted it in `/home/home/.pm2/dump.pm2` after live canaries.
 - Global outbound proxy remains `http://127.0.0.1:18888`; `outboundNoProxy` is empty.
@@ -1777,8 +1777,7 @@ Verification/status:
 
 ### P26. Provider cache-affinity account routing
 
-Deployment state: source-only. Do not promote before the zero-OOM gate ending
-`2026-07-25 18:55 PDT` and the delayed-provider short-URL canary.
+Deployment state: live on `0.5.40`; public PR remains open.
 
 Purpose:
 
@@ -1821,6 +1820,13 @@ Required invariants:
   exclusions, disabled accounts, and fallback remain authoritative.
 - Successful fallback repins the scope. Failed, cancelled, truncated, and
   unterminated streams never pin or save successful usage.
+- Cache affinity intentionally does not rotate successful user sessions merely
+  to activate idle Codex quota windows. Pools that need every Codex window
+  started early must enable `codexAutoPing.connections[connectionId]` for each
+  active OAuth profile. Auto-ping sends an out-of-band tiny request and must not
+  change user-session affinity or fallback state.
+- Adding or re-enabling a Codex profile requires checking its auto-ping entry;
+  the setting is per connection and does not enroll future profiles implicitly.
 - Provider settings use one atomic read-merge-write transaction. Concurrent UI
   saves are serialized, preserve unknown provider fields, and refetch confirmed
   state only when the latest save fails.
@@ -1857,6 +1863,18 @@ Verification/status:
   and 20130 were stopped; live 20128 remained PID `638076`.
 - Live `20128`, PM2, `/home/home/.9router`, cloudflared, and tunnel mapping were
   not touched during build, canary, integration, or PR publication.
+- P26 was later promoted in the live `0.5.40` bundle. On 2026-07-21,
+  `nouvoigoiheuxi-1846@trendteam.dedyn.io` exposed the quota-window interaction:
+  its first selected stream ended `client_closed` after 124 seconds and created
+  no successful usage row, while affinity kept established sessions on their
+  existing accounts. `codexAutoPing` was absent from the live DB and every
+  retained DB backup, so this was missing configuration, not update loss.
+- Auto-ping was enabled for all nine active Codex OAuth profiles and the
+  scheduler logged `scheduler started`. The same profile then completed 18
+  requests; its live quota probe reported 2/100 used, 98 remaining, reset at
+  `2026-07-29T04:14:16Z`. Focused auto-ping tests passed 19/19.
+- Runtime-setting backup before activation:
+  `/home/home/.9router/db/data.sqlite.bak-codex-autoping-20260721-2113`.
 
 ## v0.5.35 Upgrade Audit (2026-07-16)
 
@@ -2322,6 +2340,86 @@ label `v0540-fable-context-cutover-20260721` completed at
   `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-context-cutover-20260721-20260721T224739Z`.
   DB backup:
   `/home/home/.9router/db/backups/pre-v0540-fable-context-cutover-20260721-20260721T224739Z/data.sqlite`.
+
+### P29. Process-start runtime bootstrap
+
+Deployment state: live on `0.5.40`. Promotion label
+`v0540-runtime-bootstrap-active3-20260721` completed at
+`2026-07-22T04:47:12Z`.
+
+- Root cause: background services were imported only by the root dashboard
+  layout. Static and API-only startup could serve inference without evaluating
+  that layout, so tunnel auto-resume, watchdogs, and quota auto-ping remained
+  inactive after PM2 restart. A settings PATCH started auto-ping only because
+  that route explicitly called `configureQuotaAutoPing`.
+- `custom-server.js` now sends a loopback `GET /api/init` after the HTTP server
+  reaches `listening`. `src/app/api/init/route.js` imports the existing guarded
+  bootstrap. Heavy startup remains deferred and init-probe failure logs without
+  stopping the HTTP server.
+- Red tests independently reproduced both missing boundaries. Focused local
+  matrix passed 22/22; clean upstream matrix passed 39/39 with dashboard guard
+  and quota auto-ping coverage. ESLint and `git diff --check` passed.
+- Standalone build generated 130 routes and a 58 MB candidate. Isolated port
+  `20129` became healthy and logged `[AutoPing] scheduler started` without any
+  dashboard or manual init request. Tunnel/MITM were disabled in the isolated
+  DB; no canary cloudflared process started. Credential-bearing canary data was
+  removed after shutdown.
+- Live traffic never reached zero. User-approved bounded downtime used
+  `MAX_ACTIVE=3`; two snapshots passed at three active requests. Promotion made
+  an integrity-checked DB backup, atomically exchanged `cli/app`, restarted PM2
+  once, and retained rollback through source/live/DB verification.
+- New process independently logged auto-ping start and tunnel auto-resume.
+  Local, raw, and short health returned HTTP 200. Six Sol requests completed
+  after cutover. Codex auto-ping coverage remained 9/9; `nouvoigoiheuxi` quota
+  reported 15/100 used, 85 remaining, reset `2026-07-29T04:14:18Z`.
+- First rollout exposed an ops race: the old promotion script waited only ten
+  seconds after cloudflared PID loss, then called tunnel enable while automatic
+  bootstrap was still reconnecting. It recovered, but
+  `9router-ops/safe-promote-app.sh` now waits its full 60 probes before guarded
+  enable so future deploys do not double-spawn cloudflared.
+- Public PR <https://github.com/decolua/9router/pull/2764> is `OPEN/CLEAN` at
+  head `5c54205`. Public scope contains only startup hook, init-route bootstrap,
+  and two regression tests.
+- Source and bundle verifier now require both startup boundaries. DB verifier
+  fails when active Codex OAuth profile IDs are missing from auto-ping settings.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-runtime-bootstrap-active3-20260721-20260722T044631Z`.
+  DB backup:
+  `/home/home/.9router/db/backups/pre-v0540-runtime-bootstrap-active3-20260721-20260722T044631Z/data.sqlite`.
+
+### P30. Cloudflared child PID ownership
+
+Deployment state: live on `0.5.40`. Promotion label
+`v0540-tunnel-pid-active3-20260721` completed at `2026-07-22T05:04:05Z`.
+
+- P29 rollout briefly overlapped automatic tunnel recovery with the promotion
+  script's guarded enable. Child A exited after child B had saved its PID, but
+  both cloudflared exit handlers unconditionally cleared global process state
+  and the shared PID file. Watchdog then saw a healthy child as absent and
+  rotated Quick Tunnel URLs every 120-second cooldown.
+- `clearPid(expectedPid)` now unlinks only when the PID file still belongs to
+  that child. Both cloudflared exit handlers clear in-memory ownership only
+  when the exiting child is still current and release only `child.pid`.
+  Explicit disable retains unconditional cleanup.
+- Red test reproduced PID 100 deleting successor PID 200. Final focused matrix
+  passes 49/49; ownership regression passes 2/2; ESLint and diff checks pass.
+  Standalone build generated 130 routes and a 58 MB candidate; full candidate
+  verifier returned zero failures and warnings.
+- Bounded live promotion again used `MAX_ACTIVE=3`, backed up SQLite, atomically
+  exchanged the app, and restarted PM2 once. Updated promotion logic waited for
+  automatic bootstrap and did not issue a competing tunnel enable.
+- PM2 is online at PID `2588779`; cloudflared PID file and live process both
+  remain `2588922`. Raw URL
+  `https://enough-qualified-chocolate-structure.trycloudflare.com` and short URL
+  both return HTTP 200. PID, process, and raw URL remained unchanged for five
+  minutes across four watchdog intervals, with no watchdog restart/degraded
+  event.
+- Public PR <https://github.com/decolua/9router/pull/2765> is `OPEN/CLEAN` at
+  head `e22c5bf` and contains only child-owned PID cleanup plus regression tests.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-tunnel-pid-active3-20260721-20260722T050308Z`.
+  DB backup:
+  `/home/home/.9router/db/backups/pre-v0540-tunnel-pid-active3-20260721-20260722T050308Z/data.sqlite`.
 
 ## Not Yet Verified As Local Patch
 

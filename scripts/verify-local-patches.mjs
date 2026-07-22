@@ -509,6 +509,10 @@ function checkSource() {
 
   mustContain("cli/scripts/build-cli.js", "client-ip.js", "trusted client-IP helper bundle copy");
   mustContain("custom-server.js", "resolveTrustedClientIp", "trusted client-IP server wrapper");
+  mustContain("custom-server.js", "/api/init", "runtime bootstrap startup probe");
+  mustContain("src/app/api/init/route.js", "@/shared/services/bootstrap", "runtime bootstrap init route");
+  mustContain("src/lib/tunnel/cloudflare/pid.js", "expectedPid", "cloudflared PID ownership guard");
+  mustContain("src/lib/tunnel/cloudflare/cloudflared.js", "clearPid(child.pid)", "cloudflared child-specific PID release");
   mustContain("client-ip.js", "CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
   mustContain("src/lib/db/schema.js", "apiKeyClients", "API-key client activity schema");
   mustContain("src/sse/handlers/chat.js", "trackApiKeyClientActivity", "API-key client observation");
@@ -660,6 +664,7 @@ function checkBundle() {
   contains("additional_tools", "Responses Lite additional_tools handling");
   matches(/parallel_tool_calls\s*=\s*!1.{0,120}reasoning\.context\s*=\s*["']all_turns["']/, "Responses Lite parallel tool contract");
   contains("If-None-Match", "console conditional polling");
+  contains("[Bootstrap] init probe failed", "runtime bootstrap startup probe");
   contains("CLOUDFLARE_CROSS_ZONE_WORKER_IP", "short-tunnel IP validation");
   contains("apiKeyClients", "API-key client activity storage");
   contains("API Key Clients", "API-key clients usage view");
@@ -745,6 +750,23 @@ function checkDb() {
   `);
   if (invalidLimits?.[0]?.count === 0) pass("db API-key daily token limits are valid");
   else fail(`db invalid API-key daily token limits: ${invalidLimits?.[0]?.count ?? "query failed"}`);
+
+  const codexAutoPing = runSqlite(`
+    select
+      count(*) as activeCount,
+      sum(case
+        when json_extract(s.data, '$.codexAutoPing.connections."' || pc.id || '"') = 1 then 1
+        else 0
+      end) as enabledCount
+    from providerConnections pc
+    cross join settings s
+    where pc.provider='codex' and pc.authType='oauth' and pc.isActive=1;
+  `)?.[0];
+  if (codexAutoPing && codexAutoPing.activeCount === codexAutoPing.enabledCount) {
+    pass(`db Codex auto-ping covers ${codexAutoPing.activeCount} active OAuth profile(s)`);
+  } else {
+    fail(`db Codex auto-ping coverage mismatch: ${codexAutoPing?.enabledCount ?? "?"}/${codexAutoPing?.activeCount ?? "?"}`);
+  }
 }
 
 async function checkHealth() {

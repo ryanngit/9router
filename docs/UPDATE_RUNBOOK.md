@@ -41,25 +41,38 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
 - P26 cache affinity is opt-in account preference, not sticky availability.
   First requests use the configured strategy; locks, cooldowns, exclusions, and
   fallback win; only explicit successful terminal events pin or repin.
+- For Codex pools expected to start every rolling quota window early, preserve
+  one true `codexAutoPing.connections[connectionId]` entry per active OAuth
+  profile. Auto-ping handles window activation out of band; do not weaken
+  affinity or rotate live user sessions for quota priming. Enroll newly added or
+  re-enabled profiles explicitly.
+- P29 runtime bootstrap is process-owned, not dashboard-owned. The custom HTTP
+  server probes `/api/init` after listening; that route imports the guarded
+  bootstrap. API-only startup must still start watchdogs, tunnel recovery, and
+  configured quota auto-ping.
+- P30 cloudflared exit cleanup is child-owned. A stale child may not clear a
+  successor PID file or successor in-memory process reference.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
-Current verified live deployment (2026-07-21):
+Current verified live deployment (2026-07-22):
 
-- Version `0.5.40`; PM2 PID `2468145`; restart count 16; entrypoint
+- Version `0.5.40`; PM2 PID `2588779`; restart count 19; entrypoint
   `app/custom-server.js`; Sol/max/default policy remains saved in
   `/home/home/.pm2/dump.pm2`.
-- Cloudflared PID `2468357`; raw URL
-  `https://palmer-insider-getting-promise.trycloudflare.com`; short URL
+- Cloudflared PID `2588922`; raw URL
+  `https://enough-qualified-chocolate-structure.trycloudflare.com`; short URL
   `https://rkeyra9.abc-tunnel.us`.
+- Codex auto-ping is enabled for all nine active OAuth profiles so cache
+  affinity cannot leave rolling quota windows unstarted. Runtime-setting backup:
+  `/home/home/.9router/db/data.sqlite.bak-codex-autoping-20260721-2113`.
 - Rollback app
-  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-fable-context-cutover-20260721-20260721T224739Z`;
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-tunnel-pid-active3-20260721-20260722T050308Z`;
   DB backup
-  `/home/home/.9router/db/backups/pre-v0540-fable-context-cutover-20260721-20260721T224739Z/data.sqlite`.
+  `/home/home/.9router/db/backups/pre-v0540-tunnel-pid-active3-20260721-20260722T050308Z/data.sqlite`.
 - Promotion status
-  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-fable-context-cutover-20260721.status`
-  is `succeeded`; exact GitHub Claude context rejection, small Fable/max
-  completion, local/raw/short health, DB integrity, key-limit invariants, and
-  full source/live-bundle/DB verifier passed.
+  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-tunnel-pid-active3-20260721.status`
+  is `succeeded`; child PID ownership, local/raw/short health, DB integrity,
+  9/9 Codex auto-ping coverage, and full source/live-bundle/DB verifier passed.
 
 Source and upstream state as of 2026-07-21:
 
@@ -71,6 +84,10 @@ Source and upstream state as of 2026-07-21:
   shared-detector implementation from `cec2e68`.
 - Cache-affinity routing and terminal hardening are integrated through
   `b03a81d`; public PR #2736 is CLEAN at `f93d8aa` on v0.5.40.
+- Process-start runtime bootstrap is live; public PR #2764 is CLEAN at
+  `5c54205`. Preserve both the post-listen init probe and init-route bootstrap.
+- Child-owned cloudflared PID cleanup is live; public PR #2765 is CLEAN at
+  `e22c5bf`. Preserve conditional `clearPid(child.pid)` in both exit handlers.
 - Local v0.5.40 runtime code head is `46cbe24`; GitHub Claude prompt limits,
   bounded exact counting, and structured Responses errors passed isolated and
   live short-domain QA before promotion label
@@ -98,7 +115,13 @@ npm view 9router version dist-tags --json
 pm2 describe 9router | sed -n '1,80p'
 curl -fsS http://127.0.0.1:20128/api/health
 cat /home/home/.9router/tunnel/state.json 2>/dev/null || true
+sqlite3 -noheader /home/home/.9router/db/data.sqlite \
+  "SELECT json_extract(data,'$.codexAutoPing') FROM settings WHERE id=1;" | jq .
 ```
+
+For a Codex pool using early window activation, compare enabled auto-ping IDs
+against active OAuth connections before and after promotion. Counts and IDs must
+match; disabled/non-OAuth profiles must remain excluded.
 
 - Check source/config/DB invariants before building:
 
@@ -269,6 +292,16 @@ Targeted manual checks by patch:
   through every active GitHub profile. Codex catalogs must use an effective
   context no larger than 200,000 and compact below that boundary; reload each
   Codex app/CLI process after catalog edits because catalogs load at startup.
+- P29 runtime bootstrap: start an isolated standalone server with a dummy
+  auto-ping connection and tunnel/MITM disabled. Without opening dashboard or
+  calling init manually, require local health plus exactly one
+  `[AutoPing] scheduler started`. Source and bundle must retain the post-listen
+  `/api/init` probe; the init route must import the guarded bootstrap.
+- P30 tunnel PID ownership: save successor PID B, run stale cleanup for PID A,
+  and require B to remain. Both cloudflared exit handlers must conditionally
+  clear the current child reference and call `clearPid(child.pid)`. After live
+  restart, observe PID file, process, and raw URL across at least three watchdog
+  intervals with zero watchdog restart.
 - P23 correlation: one candidate request-detail ID must equal the gateway/Observer `correlation_id` on start, selection, failover, and terminal events. Force one executor retry and verify every upstream attempt keeps that value; force account fallback and verify the next account gets a distinct provider-attempt ID.
 - P24 request logs: with request logging enabled in an isolated HOME, credential-bearing client/provider headers must be `[REDACTED]`, correlation headers must remain visible, inputs must remain unchanged, and newly created directories/files must be `0700`/`0600`. Logging disabled must create nothing.
 
@@ -298,8 +331,10 @@ For runtime source changes:
 5. Exchange candidate and live app directories.
 6. Start/reload PM2 once with `app/custom-server.js` as `pm_exec_path`.
 7. Poll local health for up to 90 seconds before deciding rollback.
-8. Verify short and recorded raw tunnel health without restarting cloudflared.
-9. Confirm cloudflared PID is unchanged. If guarded recovery was required because recorded raw health failed, record the PID/URL change and verify raw plus short mapping instead.
+8. Give process-start bootstrap up to 120 seconds to restore raw and short
+   tunnel health. Do not call tunnel enable while auto-resume is running.
+9. If automatic recovery misses that deadline, call one guarded tunnel enable.
+   Record any PID/URL change and verify raw plus short mapping before success.
 10. Update only `cli/package.json` version after successful app health if retaining the local wrapper.
 
 When this control conversation uses the same 9Router path, keep live untouched through source review, build, isolated QA, differential, and rollback rehearsal. Promote all runtime commits together with one PM2 restart; never use feature-by-feature live restarts.
