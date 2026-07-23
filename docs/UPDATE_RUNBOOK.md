@@ -54,14 +54,13 @@ Use this before updating, patching, deploying, or preparing upstream PRs. The go
   successor PID file or successor in-memory process reference.
 - Do not replace the local `cli/cli.js` with upstream blindly. Current wrapper intentionally preserves tunnel processes; upstream `0.5.30` wrapper can terminate them.
 
-Current verified live deployment (2026-07-22):
+Current verified live deployment (2026-07-23):
 
-- Version `0.5.40`; PM2 PID `2588779`; restart count 19; entrypoint
+- Version `0.5.40`; PM2 PID `3369492`; restart count 20; entrypoint
   `app/custom-server.js`; Sol/max/default policy remains saved in
   `/home/home/.pm2/dump.pm2`.
-- Cloudflared PID `2588922`; raw URL
-  `https://enough-qualified-chocolate-structure.trycloudflare.com`; short URL
-  `https://rkeyra9.abc-tunnel.us`.
+- Cloudflared PID `3369646`; raw and short health pass. Short URL remains
+  `https://rkeyra9.abc-tunnel.us`; private raw value stays in tunnel state.
 - As of the finalized `2026-07-23` current-set transaction, Codex auto-ping is
   enabled for all 10 active, credential-complete OAuth profiles. This count is
   transaction evidence, not a permanent fleet-size assumption. Newly added or
@@ -72,15 +71,21 @@ Current verified live deployment (2026-07-22):
   retained rollback is operator-only and must not run while inspection remains
   `INTENDED`.
 - Rollback app
-  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-tunnel-pid-active3-20260721-20260722T050308Z`;
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-phase1c-terminal-completeness-v4-20260723-20260723T152846Z`;
   DB backup
-  `/home/home/.9router/db/backups/pre-v0540-tunnel-pid-active3-20260721-20260722T050308Z/data.sqlite`.
+  `/home/home/.9router/db/backups/pre-phase1c-terminal-completeness-v4-20260723-20260723T152846Z/data.sqlite`.
 - Promotion status
-  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-tunnel-pid-active3-20260721.status`
+  `/home/home/.openclaw/workspace-keyra/9router-ops/phase1c-terminal-completeness-v4-20260723.status`
   is `succeeded`; child PID ownership, local/raw/short health, DB integrity,
-  9/9 Codex auto-ping coverage, and full source/live-bundle/DB verifier passed.
+  current-set Codex auto-ping coverage, and full source/live-bundle/DB verifier
+  passed. Live provider proof for translated terminal completeness remains a
+  separate Phase 1C gate.
 
-Source and upstream state as of 2026-07-21:
+Source and upstream state as of 2026-07-23:
+
+- Current local head is `fc442d2`; runtime behavior commit `e045562` completes
+  translated Responses model/output/usage. The docs-only head also pins the
+  reviewed V4 promotion helper hashes.
 
 - Atomic API-key reservations and Gemini usage authority are integrated through
   local head `cb82d82`; public PR #2454 is CLEAN at `7ed5dff` on v0.5.40.

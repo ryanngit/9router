@@ -2458,6 +2458,69 @@ deployment or lifecycle behavior change.
   remain explicit operator enrollment. No upstream PR applies to this private
   state-only operation.
 
+### Phase 1C translated Responses terminal completeness
+
+Deployment state: live on `0.5.40` under label
+`phase1c-terminal-completeness-v4-20260723` at
+`2026-07-23T15:29:20Z`. Runtime behavior commit is `e045562`; current docs-only
+source head is `fc442d2`.
+
+- Deterministic Claude to Chat to Responses reproduction emitted one
+  `response.completed` but omitted terminal `model`, `output`, and `usage` even
+  though request-local translator state contained exact values. This blocked
+  strict live Fable usage validation and later history reuse.
+- Two terminal-completeness assertions failed before the fix and passed after.
+  Focused tests passed `3/3`; broader translator/terminal tests passed `56/56`.
+  Syntax, changed-file ESLint, diff checks, TypeScript, 130-route build, and
+  MITM bundle passed. Independent source review returned spec PASS, quality
+  APPROVED, findings `0/0/0`.
+- Fix retains completed items by allocated output index, carries exact
+  normalized request-local usage, and preserves the existing one-shot terminal
+  guard. It does not change routing, fallback, cancellation, context, model,
+  reasoning, tools, cache, or usage formulas.
+- Isolated credential-free candidate bound only `127.0.0.1:20129`, started no
+  tunnel, and emitted one completion plus one `[DONE]` with terminal model,
+  output, and exact `12/1/13` usage including two cached tokens. Candidate tree
+  SHA-256 is
+  `7f862901d9724ba6ba9c6ea3c71438ca81075d2abc4f8907437f60b1b58098ef`.
+- Promotion helper hardening closed CLI-token argv exposure, private modes,
+  DB-backup integrity/hash, named-PM2 lookup, raw-tunnel logging, TOCTOU,
+  failure-status, dual-lock, PM2-FD inheritance, and GNU empty-file predicate
+  defects. V4 helper/test SHA-256 values are
+  `dcc4ab66f0f503b0d981003332fc061073162eb7a2f796f903e4326177434920`
+  and `0f5846e4ed1075a9f92ce2b73c555deeaf50ec64ee1f99a591ebdd73df03a4cd`;
+  independent review is PASS/APPROVED `0/0/0`.
+- First detached launch stopped before its log because GNU stat reports an
+  empty regular lock as `regular empty file`; no live action ran. Second launch
+  stopped after a zero-byte private log because controller PATH omitted the
+  bundled `rg`; no live action ran. A strict `MAX_ACTIVE=1` waiter then ran for
+  7m38s and was stopped before backup because traffic stayed 2-6.
+- Binding bounded-downtime authority permitted `MAX_ACTIVE=4` with
+  `ALLOW_ACTIVE_CUTOVER=1`. Helper observed pre-backup `4/4`, created and
+  verified SQLite backup, re-gated after resumed traffic, atomically exchanged
+  the app, and restarted only 9Router once. Local app plus full verifier passed
+  by `15:29:20Z`; raw/short health passed by `15:31:14Z` after child tunnel
+  recovery. Gateway and Observer PIDs/restarts stayed unchanged.
+- Live tree equals candidate SHA-256. Previous tree SHA-256 is
+  `d496358828b11240fa612cfd38f05f3638fdf876d97bd65de884aa8ada113558`.
+  Fresh independent source/live/DB verifier is zero failures/warnings; local,
+  raw, short, SQLite, versions, listeners, no-handoff, Sol/max/default policy,
+  exact `18889=true_residential AND us`, and promotion-log privacy checks pass.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-phase1c-terminal-completeness-v4-20260723-20260723T152846Z`.
+  DB backup:
+  `/home/home/.9router/db/backups/pre-phase1c-terminal-completeness-v4-20260723-20260723T152846Z/data.sqlite`,
+  SHA-256
+  `9953fbba359a3626dfa6df16bf3cdc918d6cb14f7d495a8fd0506aea4954ca30`.
+- Sanitized deployment evidence:
+  `/home/home/.openclaw/gateway/evidence/phases-1-10/20260722T065306Z/phase-1/translator-deploy-20260723T152846Z/summary.txt`.
+- Live provider proof is pending. Do not mark Phase 1C complete or infer
+  near-limit/model-switch success from isolated candidate evidence.
+
+Public upstream status: no new PR yet. Add this generic terminal-completeness
+fix to the owning existing Responses translation PR only after bounded live
+proof; exclude private runner, profiles, pools, routes, paths, and evidence.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
