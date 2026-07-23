@@ -349,11 +349,13 @@ When this control conversation uses the same 9Router path, keep live untouched t
 
 Canonical promotion helper for current verified source:
 
-> Hardening review passed on 2026-07-23: spec PASS, quality APPROVED, findings
-> 0/0/0. Reviewed helper SHA-256 is
-> `88bbcc81d8102ef5927ba765183fd4c881bb935a650c592fd90fe6922be14ffc`;
+> Hardening plus empty-file follow-up review passed on 2026-07-23: spec PASS,
+> quality APPROVED, findings 0/0/0. Reviewed helper SHA-256 is
+> `dcc4ab66f0f503b0d981003332fc061073162eb7a2f796f903e4326177434920`;
 > runnable regression SHA-256 is
-> `9abdfae5b6c362dc704adbc05e23eb22e1bedad1fa6d401773853ba0d5070644`.
+> `0f5846e4ed1075a9f92ce2b73c555deeaf50ec64ee1f99a591ebdd73df03a4cd`.
+> Follow-up review SHA-256 is
+> `081437c12d1e521e161d9d65795f249da65ad52b54eaf15990eb5a421600d303`.
 > Before every use, rerun the regression and require both files to remain
 > owner `home:home`, mode 0700, executable, and hash-identical. The helper uses
 > stdin-only token transport, verified SQLite backup, private evidence, both
