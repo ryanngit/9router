@@ -2421,6 +2421,43 @@ Deployment state: live on `0.5.40`. Promotion label
   DB backup:
   `/home/home/.9router/db/backups/pre-v0540-tunnel-pid-active3-20260721-20260722T050308Z/data.sqlite`.
 
+### Phase 1C current-set Codex auto-ping reconciliation (private operation; no patch ID)
+
+Deployment state: finalized `DONE` on `0.5.40` at
+`2026-07-23T11:49:01Z`. This was one private DB-field reconciliation, not an app
+deployment or lifecycle behavior change.
+
+- Fresh transaction-bound membership was 10 active Codex OAuth profiles, all
+  credential-complete. Preimage field had 23 entries/12 true with five current
+  entries missing and 18 stale extras. One native database-scoped transaction
+  committed exactly the current 10-member all-true field.
+- The fixed apply latch is consumed. Apply ran exactly once and must never be
+  retried. Finalize ran exactly once. No automatic rollback exists.
+- Postcheck verifier returned zero failures and warnings; live and backup
+  SQLite integrity are `ok`; scheduler remained 30 starts, zero stops/start
+  failures, last started. No 9Router/gateway restart, route change, provider
+  request, manual scheduler tick, or profile status/quota polling occurred.
+- Private source/self-test SHA-256 values are
+  `314607374101ccc807cf87e2865cbc4572a3e773e078f5933048658dd8353e08` and
+  `830c632522a55ed1facfac98727b01004291f55dcf146b33fd70d2d1eb2df9bd`.
+  Membership and intended-field SHA-256 values are
+  `5c2854e6a36858348f502c424f243a5b1d95a0984a9b13ae19e3714c84ca0b1d`
+  and `581e90b3aa388868011c9ebbcd7a57ae28924a3e5c11d2fc9fc2f320f56452b7`.
+- Backup bundle:
+  `/home/home/.9router/db/backups/phase-1c-current-set-autoping-20260723T113137Z`.
+  Backup SHA-256 is
+  `9546b6ff6cd7996c8be0368259d1b5d3f9ac9f8e3eb2325f4d890143f8ac35c2`.
+  Operator-only rollback command is
+  `bash /home/home/.9router/db/backups/phase-1c-current-set-autoping-20260723T113137Z/rollback.sh`.
+  Do not invoke it while inspection classifies live state `INTENDED`.
+- Sanitized operation evidence is under
+  `/home/home/.openclaw/gateway/evidence/phases-1-10/20260722T065306Z/phase-1/current-set-autoping-20260723T113137Z`;
+  fresh closure evidence is
+  `phase-1/endstate-current-set-20260723T121818Z/summary.json`.
+- No future default-on behavior was added. Newly added or re-enabled profiles
+  remain explicit operator enrollment. No upstream PR applies to this private
+  state-only operation.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.

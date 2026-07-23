@@ -1,6 +1,6 @@
 # 9Router Update Runbook
 
-Last updated: 2026-07-21
+Last updated: 2026-07-23
 
 Use this before updating, patching, deploying, or preparing upstream PRs. The goal is minimal downtime and no rediscovery of fragile behavior.
 
@@ -62,9 +62,15 @@ Current verified live deployment (2026-07-22):
 - Cloudflared PID `2588922`; raw URL
   `https://enough-qualified-chocolate-structure.trycloudflare.com`; short URL
   `https://rkeyra9.abc-tunnel.us`.
-- Codex auto-ping is enabled for all nine active OAuth profiles so cache
-  affinity cannot leave rolling quota windows unstarted. Runtime-setting backup:
-  `/home/home/.9router/db/data.sqlite.bak-codex-autoping-20260721-2113`.
+- As of the finalized `2026-07-23` current-set transaction, Codex auto-ping is
+  enabled for all 10 active, credential-complete OAuth profiles. This count is
+  transaction evidence, not a permanent fleet-size assumption. Newly added or
+  re-enabled profiles remain explicit operator enrollment.
+- Current private reconciliation bundle:
+  `/home/home/.9router/db/backups/phase-1c-current-set-autoping-20260723T113137Z`.
+  Report status is `DONE`; apply and finalize are permanently consumed. The
+  retained rollback is operator-only and must not run while inspection remains
+  `INTENDED`.
 - Rollback app
   `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-tunnel-pid-active3-20260721-20260722T050308Z`;
   DB backup
@@ -88,6 +94,8 @@ Source and upstream state as of 2026-07-21:
   `5c54205`. Preserve both the post-listen init probe and init-route bootstrap.
 - Child-owned cloudflared PID cleanup is live; public PR #2765 is CLEAN at
   `e22c5bf`. Preserve conditional `clearPid(child.pid)` in both exit handlers.
+- Current-set auto-ping reconciliation is private DB state only and has no
+  upstream PR. No default-on profile lifecycle behavior was added.
 - Local v0.5.40 runtime code head is `46cbe24`; GitHub Claude prompt limits,
   bounded exact counting, and structured Responses errors passed isolated and
   live short-domain QA before promotion label
@@ -340,6 +348,11 @@ For runtime source changes:
 When this control conversation uses the same 9Router path, keep live untouched through source review, build, isolated QA, differential, and rollback rehearsal. Promote all runtime commits together with one PM2 restart; never use feature-by-feature live restarts.
 
 Canonical promotion helper for current verified source:
+
+> **Temporary block:** do not invoke the helper below until its test-first
+> hardening closes token-in-argv, ambient-umask, unverified-backup, fixed PM2-ID,
+> and raw-tunnel-log defects. Source QA and isolated candidates may proceed;
+> live promotion may not.
 
 ```bash
 /home/home/.openclaw/workspace-keyra/9router-ops/safe-promote-app.sh \
