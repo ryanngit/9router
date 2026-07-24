@@ -294,6 +294,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
 
   let onStreamTerminalError = null;
+  let terminalSuccessClaimed = false;
   const streamController = createStreamController({
     externalSignal,
     onDisconnect: (reason) => {
@@ -301,7 +302,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       const error = new Error("Stream disconnected");
       error.name = "AbortError";
       onStreamTerminalError?.(error);
-      if (onDisconnect) onDisconnect(reason);
+      if (onDisconnect) {
+        // Responses bridge aborts before inner-reader cancel. Defer only owner
+        // cleanup so a parsed terminal can synchronously claim usage authority.
+        queueMicrotask(() => {
+          if (!terminalSuccessClaimed) onDisconnect(reason);
+        });
+      }
     },
     onError: (error) => {
       trackPendingRequest(model, provider, connectionId, false);
@@ -472,7 +479,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Streaming response
-  const { onStreamComplete, onStreamError, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
+  const {
+    onStreamComplete: persistStreamComplete,
+    onStreamError,
+    streamDetailId,
+  } = buildOnStreamComplete({ ...sharedCtx });
+  const onStreamComplete = (...args) => {
+    if (args[3]?.terminalSuccess === true) terminalSuccessClaimed = true;
+    return persistStreamComplete(...args);
+  };
   onStreamTerminalError = onStreamError;
   return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, onStreamError, streamDetailId });
 }

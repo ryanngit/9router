@@ -15,6 +15,10 @@ const modelMocks = vi.hoisted(() => ({
 const dispatchMocks = vi.hoisted(() => ({
   handleChatCore: vi.fn(),
 }));
+const executorMocks = vi.hoisted(() => ({ execute: vi.fn() }));
+const reservationReleaseMocks = vi.hoisted(() => ({ call: vi.fn() }));
+const affinityMocks = vi.hoisted(() => ({ remember: vi.fn() }));
+const requestLoggerMocks = vi.hoisted(() => ({ create: vi.fn() }));
 const tokenMocks = vi.hoisted(() => ({
   checkAndRefreshToken: vi.fn(),
   resolveRefreshProxyOptions: vi.fn(() => ({})),
@@ -30,6 +34,32 @@ vi.mock("@/sse/services/auth.js", async (importOriginal) => ({
 vi.mock("@/sse/services/model.js", () => modelMocks);
 vi.mock("open-sse/handlers/chatCore.js", () => dispatchMocks);
 vi.mock("@/sse/services/tokenRefresh.js", () => tokenMocks);
+vi.mock("@/lib/db/index.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    releaseApiKeyUsageReservation: (...args) => {
+      reservationReleaseMocks.call(...args);
+      return actual.releaseApiKeyUsageReservation(...args);
+    },
+  };
+});
+vi.mock("../../open-sse/executors/index.js", () => ({
+  getExecutor: () => ({
+    noAuth: true,
+    execute: executorMocks.execute,
+  }),
+}));
+vi.mock("../../open-sse/utils/requestLogger.js", () => ({
+  createRequestLogger: requestLoggerMocks.create,
+}));
+vi.mock("@/sse/services/cacheAffinity.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    rememberCacheAffinity: affinityMocks.remember,
+  };
+});
 
 const originalDataDir = process.env.DATA_DIR;
 const originalBestGptEnabled = process.env.NINE_ROUTER_BEST_GPT_ENABLED;
@@ -40,6 +70,8 @@ let limitedApiKey;
 let rawDb;
 let unlimitedApiKey;
 let postChat;
+let actualHandleChatCore;
+let postResponses;
 let FORMATS;
 let handleForcedSSEToJson;
 let translateRequest;
@@ -129,6 +161,128 @@ function forcedResponsesFailure(kind) {
   return new Response(events.join("\n"), { headers: { "content-type": "text/event-stream" } });
 }
 
+const streamEncoder = new TextEncoder();
+const streamDecoder = new TextDecoder();
+
+function controlledSseResponse(payload) {
+  let controllerRef;
+  const cancel = vi.fn();
+  const response = new Response(new ReadableStream({
+    start(controller) {
+      controllerRef = controller;
+      controller.enqueue(streamEncoder.encode(payload));
+    },
+    cancel,
+  }), { headers: { "content-type": "text/event-stream" } });
+  return {
+    response,
+    cancel,
+    fail(error = new Error("ECONNRESET")) {
+      controllerRef.error(error);
+    },
+  };
+}
+
+function installActualStreamingDispatch({ payload, responseFormat }) {
+  const upstream = controlledSseResponse(payload);
+  let providerSignal;
+  executorMocks.execute.mockImplementation(async (options) => {
+    providerSignal = options.signal;
+    return {
+      response: upstream.response,
+      url: "https://provider.invalid/v1/stream",
+      headers: {},
+      transformedBody: options.body,
+      responseFormat,
+    };
+  });
+  dispatchMocks.handleChatCore.mockImplementation((options) => (
+    actualHandleChatCore(options)
+  ));
+  return {
+    ...upstream,
+    get providerSignal() {
+      return providerSignal;
+    },
+  };
+}
+
+function directPartialSse() {
+  return `data: ${JSON.stringify({
+    id: "chatcmpl-cancel-partial",
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta: { content: "partial" }, finish_reason: null }],
+  })}\n\n`;
+}
+
+function directTerminalSse() {
+  return `data: ${JSON.stringify({
+    id: "chatcmpl-cancel-terminal",
+    object: "chat.completion.chunk",
+    choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+    usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+  })}\n\n`;
+}
+
+function responsesPartialSse() {
+  return [
+    "event: response.output_text.delta",
+    `data: ${JSON.stringify({
+      type: "response.output_text.delta",
+      output_index: 0,
+      content_index: 0,
+      delta: "partial",
+    })}`,
+    "",
+    "",
+  ].join("\n");
+}
+
+function responsesTerminalSse({
+  usage = { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+  omitUsage = false,
+} = {}) {
+  const response = {
+    id: "resp-cancel-terminal",
+    object: "response",
+    created_at: 1,
+    status: "completed",
+    model: "gpt-5.6-sol",
+    output: [],
+  };
+  if (!omitUsage) response.usage = usage;
+  return [
+    "event: response.completed",
+    `data: ${JSON.stringify({ type: "response.completed", response })}`,
+    "",
+    "",
+  ].join("\n");
+}
+
+async function createLimitedKey(name) {
+  return db.createApiKey(name, "machine-test", 1_000_000);
+}
+
+function reservationCountFor(keyId) {
+  return rawDb.get(
+    "SELECT COUNT(*) AS count FROM apiKeyUsageReservations WHERE apiKeyId = ?",
+    [keyId],
+  ).count;
+}
+
+function usageCountFor(key) {
+  return rawDb.get(
+    "SELECT COUNT(*) AS count FROM usageHistory WHERE apiKey = ?",
+    [key],
+  ).count;
+}
+
+async function readChunk(reader) {
+  const { value, done } = await reader.read();
+  expect(done).toBe(false);
+  return streamDecoder.decode(value);
+}
+
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-chat-limit-"));
   process.env.DATA_DIR = tempDir;
@@ -158,6 +312,10 @@ beforeAll(async () => {
   ({ FORMATS } = await import("../../open-sse/translator/formats.js"));
   ({ translateRequest } = await import("../../open-sse/translator/index.js"));
   ({ handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js"));
+  ({ handleChatCore: actualHandleChatCore } = await vi.importActual(
+    "../../open-sse/handlers/chatCore.js"
+  ));
+  ({ POST: postResponses } = await import("@/app/api/v1/responses/route.js"));
   ({ POST: postChat } = await import("@/app/api/v1/chat/completions/route.js"));
 }, 60_000);
 
@@ -173,6 +331,20 @@ afterAll(() => {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  executorMocks.execute.mockReset();
+  reservationReleaseMocks.call.mockClear();
+  affinityMocks.remember.mockClear();
+  requestLoggerMocks.create.mockReset().mockImplementation(async () => ({
+    logClientRawRequest: vi.fn(),
+    logRawRequest: vi.fn(),
+    logTargetRequest: vi.fn(),
+    logProviderResponse: vi.fn(),
+    logConvertedResponse: vi.fn(),
+    logError: vi.fn(),
+    appendProviderChunk: vi.fn(),
+    appendConvertedChunk: vi.fn(),
+    appendOpenAIChunk: vi.fn(),
+  }));
   authMocks.clearAccountError.mockReset().mockResolvedValue(undefined);
   authMocks.getProviderCredentials.mockReset().mockResolvedValue(credentials());
   authMocks.markAccountUnavailable.mockReset().mockResolvedValue({ shouldFallback: false, cooldownMs: 0 });
@@ -193,6 +365,7 @@ beforeEach(async () => {
     providerThinking: {},
     cavemanEnabled: false,
     ponytailEnabled: false,
+    providerStrategies: {},
   });
 });
 
@@ -627,6 +800,290 @@ describe("POST /v1/chat/completions daily token admission", () => {
       { action: "insert" },
       { action: "delete" },
     ]);
+  });
+
+  it("releases only the owning reservation on direct Chat reader cancellation", async () => {
+    const key = await createLimitedKey("direct-preterminal-cancel");
+    await db.updateSettings({
+      providerStrategies: { openai: { cacheAffinityEnabled: true } },
+    });
+    const upstream = installActualStreamingDispatch({
+      payload: directPartialSse(),
+      responseFormat: FORMATS.OPENAI,
+    });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o",
+        messages: [{ role: "user", content: "hello" }],
+        max_tokens: 1,
+        stream: true,
+      }),
+    }));
+    const reader = response.body.getReader();
+    expect(await readChunk(reader)).toContain('"content":"partial"');
+    expect(reservationCountFor(key.id)).toBe(1);
+
+    await reader.cancel("client_closed");
+    await vi.waitFor(() => expect(reservationReleaseMocks.call).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(reservationCountFor(key.id)).toBe(0));
+    await vi.waitFor(() => expect(upstream.cancel).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(upstream.providerSignal.aborted).toBe(true), {
+      timeout: 1_500,
+    });
+
+    expect(usageCountFor(key.key)).toBe(0);
+    expect(authMocks.markAccountUnavailable).not.toHaveBeenCalled();
+    expect(authMocks.clearAccountError).not.toHaveBeenCalled();
+    expect(affinityMocks.remember).not.toHaveBeenCalled();
+    expect(rawDb.all("SELECT action FROM reservationAudit")).toEqual([
+      { action: "insert" },
+      { action: "delete" },
+    ]);
+  });
+
+  it("releases only the owning reservation on Responses bridge cancellation", async () => {
+    const key = await createLimitedKey("responses-preterminal-cancel");
+    await db.updateSettings({
+      providerStrategies: { codex: { cacheAffinityEnabled: true } },
+    });
+    const upstream = installActualStreamingDispatch({
+      payload: responsesPartialSse(),
+      responseFormat: FORMATS.OPENAI_RESPONSES,
+    });
+
+    const response = await postResponses(new Request("http://localhost/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "codex/gpt-5.6-sol",
+        input: [{ role: "user", content: "hello" }],
+        max_output_tokens: 1,
+        stream: true,
+      }),
+    }));
+    const reader = response.body.getReader();
+    expect(await readChunk(reader)).toBe(": connected\n\n");
+    expect(await readChunk(reader)).toContain("response.output_text.delta");
+    expect(reservationCountFor(key.id)).toBe(1);
+
+    await reader.cancel("client_closed");
+    await vi.waitFor(() => expect(upstream.providerSignal.aborted).toBe(true));
+    await vi.waitFor(() => expect(upstream.cancel).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(reservationReleaseMocks.call).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(reservationCountFor(key.id)).toBe(0));
+
+    expect(usageCountFor(key.key)).toBe(0);
+    expect(authMocks.markAccountUnavailable).not.toHaveBeenCalled();
+    expect(authMocks.clearAccountError).not.toHaveBeenCalled();
+    expect(affinityMocks.remember).not.toHaveBeenCalled();
+  });
+
+  it("starts standalone disconnect release once when owner callback repeats", async () => {
+    let onDisconnect;
+    dispatchMocks.handleChatCore.mockImplementation(async (options) => {
+      onDisconnect = options.onDisconnect;
+      return successResult();
+    });
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${limitedApiKey.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model: "openai/gpt-4o", messages: [], max_tokens: 1 }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(onDisconnect).toBeTypeOf("function");
+    onDisconnect({ reason: "client_closed" });
+    onDisconnect({ reason: "client_closed" });
+    await vi.waitFor(() => expect(reservationReleaseMocks.call).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => {
+      expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(0);
+    });
+    expect(usageCountFor(limitedApiKey.key)).toBe(0);
+  });
+
+  it("keeps fusion disconnect callbacks scoped to their owning reservations", async () => {
+    await db.updateSettings({ comboStrategy: "fusion" });
+    modelMocks.getComboModels.mockImplementation(async (modelStr) => (
+      modelStr === "fusion-cancel" ? ["openai/panel-one", "openai/panel-two"] : null
+    ));
+    dispatchMocks.handleChatCore.mockImplementation(async ({ modelInfo }) => (
+      successResult(`answer from ${modelInfo.model}`)
+    ));
+
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${limitedApiKey.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model: "fusion-cancel", messages: [], max_tokens: 1 }),
+    }));
+
+    expect(response.status).toBe(200);
+    const options = dispatchMocks.handleChatCore.mock.calls.map(([value]) => value);
+    const reservationIds = options.map((value) => value.usageReservationId);
+    expect(reservationIds).toHaveLength(3);
+    expect(new Set(reservationIds).size).toBe(3);
+    expect(options.every((value) => typeof value.onDisconnect === "function")).toBe(true);
+
+    options[0].onDisconnect({ reason: "client_closed" });
+    await vi.waitFor(() => expect(reservationReleaseMocks.call).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => {
+      expect(rawDb.get("SELECT COUNT(*) AS count FROM apiKeyUsageReservations").count).toBe(2);
+    });
+    expect(rawDb.all("SELECT id FROM apiKeyUsageReservations ORDER BY id")
+      .map(({ id }) => id)).toEqual(reservationIds.slice(1).sort());
+  });
+
+  it("keeps direct Chat terminal authority ahead of standalone release", async () => {
+    const key = await createLimitedKey("direct-terminal-cancel");
+    const upstream = installActualStreamingDispatch({
+      payload: directTerminalSse(),
+      responseFormat: FORMATS.OPENAI,
+    });
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o",
+        messages: [{ role: "user", content: "hello" }],
+        max_tokens: 1,
+        stream: true,
+      }),
+    }));
+    const reader = response.body.getReader();
+    const wire = await readChunk(reader);
+    expect(wire).toContain('"finish_reason":"stop"');
+    expect(wire).not.toContain("event: response.completed");
+    expect(reservationCountFor(key.id)).toBe(1);
+
+    await reader.cancel("client_closed");
+    await vi.waitFor(() => expect(usageCountFor(key.key)).toBe(1));
+    await vi.waitFor(() => expect(reservationCountFor(key.id)).toBe(0));
+
+    expect(reservationReleaseMocks.call).not.toHaveBeenCalled();
+    expect(upstream.providerSignal.aborted).toBe(false);
+    expect(rawDb.get(
+      "SELECT promptTokens, completionTokens FROM usageHistory WHERE apiKey = ?",
+      [key.key],
+    )).toEqual({ promptTokens: 2, completionTokens: 1 });
+  });
+
+  it("keeps Responses terminal authority when bridge abort happens first", async () => {
+    const key = await createLimitedKey("responses-terminal-cancel");
+    const upstream = installActualStreamingDispatch({
+      payload: responsesTerminalSse(),
+      responseFormat: FORMATS.OPENAI_RESPONSES,
+    });
+    const response = await postResponses(new Request("http://localhost/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "codex/gpt-5.6-sol",
+        input: [{ role: "user", content: "hello" }],
+        max_output_tokens: 1,
+        stream: true,
+      }),
+    }));
+    const reader = response.body.getReader();
+    expect(await readChunk(reader)).toBe(": connected\n\n");
+    expect(await readChunk(reader)).toContain("event: response.completed");
+    expect(reservationCountFor(key.id)).toBe(1);
+
+    await reader.cancel("client_closed");
+    await vi.waitFor(() => expect(upstream.providerSignal.aborted).toBe(true));
+    await vi.waitFor(() => expect(usageCountFor(key.key)).toBe(1));
+    await vi.waitFor(() => expect(reservationCountFor(key.id)).toBe(0));
+
+    expect(reservationReleaseMocks.call).not.toHaveBeenCalled();
+    expect(rawDb.get(
+      "SELECT promptTokens, completionTokens FROM usageHistory WHERE apiKey = ?",
+      [key.key],
+    )).toEqual({ promptTokens: 2, completionTokens: 1 });
+    expect(rawDb.all("SELECT action FROM reservationAudit")).toEqual([
+      { action: "insert" },
+      { action: "delete" },
+    ]);
+  });
+
+  it("retains terminal reservation when authoritative Responses usage is absent", async () => {
+    const key = await createLimitedKey("responses-terminal-no-usage");
+    installActualStreamingDispatch({
+      payload: responsesTerminalSse({ omitUsage: true }),
+      responseFormat: FORMATS.OPENAI_RESPONSES,
+    });
+    const response = await postResponses(new Request("http://localhost/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "codex/gpt-5.6-sol",
+        input: [{ role: "user", content: "hello" }],
+        max_output_tokens: 1,
+        stream: true,
+      }),
+    }));
+    const reader = response.body.getReader();
+    await readChunk(reader);
+    await readChunk(reader);
+    await reader.cancel("client_closed");
+    await vi.waitFor(() => expect(authMocks.clearAccountError).toHaveBeenCalledTimes(1));
+
+    expect(reservationReleaseMocks.call).not.toHaveBeenCalled();
+    expect(reservationCountFor(key.id)).toBe(1);
+    expect(usageCountFor(key.key)).toBe(0);
+  });
+
+  it("retains reservation on upstream reset without downstream cancellation", async () => {
+    const key = await createLimitedKey("direct-upstream-reset");
+    const upstream = installActualStreamingDispatch({
+      payload: directPartialSse(),
+      responseFormat: FORMATS.OPENAI,
+    });
+    const response = await postChat(new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key.key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-4o",
+        messages: [{ role: "user", content: "hello" }],
+        max_tokens: 1,
+        stream: true,
+      }),
+    }));
+    const reader = response.body.getReader();
+    expect(await readChunk(reader)).toContain('"content":"partial"');
+    upstream.fail();
+    while (!(await reader.read()).done) {}
+    await Promise.resolve();
+
+    expect(reservationReleaseMocks.call).not.toHaveBeenCalled();
+    expect(reservationCountFor(key.id)).toBe(1);
+    expect(usageCountFor(key.key)).toBe(0);
+    expect(authMocks.markAccountUnavailable).not.toHaveBeenCalled();
   });
 
   it.each([

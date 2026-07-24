@@ -344,6 +344,16 @@ async function handleSingleModelChat(
   const admissionTiming = snapshotRequestTiming(requestTiming);
 
   let preserveUsageReservation = false;
+  let disconnectReleaseStarted = false;
+  const onDisconnect = usageReservationId
+    ? () => {
+        if (disconnectReleaseStarted) return;
+        disconnectReleaseStarted = true;
+        releaseApiKeyUsageReservation(usageReservationId).catch(() => {
+          log.warn("AUTH", "Failed to release API key usage reservation after client disconnect");
+        });
+      }
+    : undefined;
   try {
     while (true) {
       if (externalSignal?.aborted) return errorResponse(499, "Request aborted");
@@ -421,6 +431,7 @@ async function handleSingleModelChat(
         pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
         onPxpipeEvent: appendPxpipeEvent,
         externalSignal,
+        onDisconnect,
         providerThinking,
         requestTiming: cloneRequestTiming(attemptTiming),
         correlationId,
