@@ -173,8 +173,8 @@ function checkExternalConfig() {
     "gpt-5.6-terra",
     "gpt-5.6-luna",
     "codex-auto-review",
-    "claude-opus-4.8",
-    "claude-fable-5",
+    "cc/claude-opus-5",
+    "cc/claude-fable-5",
     "grok-4.5",
   ];
   if (bySlug.size === models.length && requiredSlugs.every((slug) => bySlug.has(slug))) {
@@ -183,22 +183,25 @@ function checkExternalConfig() {
     fail(`Codex catalog missing required models or contains duplicate slugs: ${models.length} rows/${bySlug.size} slugs`);
   }
 
-  for (const slug of ["claude-opus-4.8", "claude-fable-5", "grok-4.5"]) {
+  for (const slug of ["cc/claude-opus-5", "cc/claude-fable-5", "grok-4.5"]) {
     if (bySlug.has(slug)) pass(`Codex catalog custom model: ${slug}`);
     else fail(`Codex catalog missing custom model: ${slug}`);
   }
 
-  for (const slug of ["claude-opus-4.8", "claude-fable-5"]) {
+  for (const slug of ["cc/claude-opus-5", "cc/claude-fable-5"]) {
     const model = bySlug.get(slug);
+    const efforts = new Set(model?.supported_reasoning_levels?.map((level) => level.effort));
     const effectiveWindow = Math.floor(
       Number(model?.context_window) * Number(model?.effective_context_window_percent) / 100,
     );
-    const valid = model?.context_window === 210527
-      && model?.max_context_window === 210527
-      && model?.auto_compact_token_limit === 185000
-      && effectiveWindow === 200000;
-    if (valid) pass(`Codex catalog Copilot prompt limit: ${slug}`);
-    else fail(`Codex catalog Copilot prompt limit mismatch: ${slug}`);
+    const valid = model?.context_window === 1000000
+      && model?.max_context_window === 1000000
+      && model?.auto_compact_token_limit === 900000
+      && effectiveWindow === 950000
+      && ["low", "medium", "high", "max"].every((effort) => efforts.has(effort))
+      && model?.default_service_tier == null;
+    if (valid) pass(`Codex catalog direct Claude metadata: ${slug}`);
+    else fail(`Codex catalog direct Claude metadata mismatch: ${slug}`);
   }
 
   const expectedGpt = {
@@ -277,6 +280,8 @@ function checkSource() {
   mustContain("open-sse/services/usage/claude.js", "credentialKey(accessToken)", "Claude credential-hash usage cache");
   mustContain("src/shared/services/quotaAutoPing.js", "shouldPingInactiveSession", "Claude guarded inactive-window auto-ping");
   mustContain("src/shared/services/quotaAutoPing.js", "hasAvailableWeeklyQuota", "Claude weekly auto-ping gate");
+  mustContain("src/sse/services/auth.js", "isConnectionEligibleForModel", "Claude subscription entitlement selection");
+  mustContain("src/sse/services/auth.js", "profile.hasClaudePro === true && profile.hasClaudeMax !== true", "Claude Fable Pro exclusion");
   mustContain("open-sse/providers/capabilities.js", '"claude-opus-4-6":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 200000', "Claude Opus 4.6 base context");
   mustContain("open-sse/providers/capabilities.js", '"claude-sonnet-4-6": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 200000', "Claude Sonnet 4.6 base context");
   mustContain("open-sse/providers/shared.js", 'CLAUDE_CLI_VERSION = "2.1.220"', "Claude Code client version");
@@ -372,6 +377,8 @@ function checkSource() {
   mustContain("open-sse/executors/github.js", "context_length_exceeded", "GitHub Claude explicit context error");
   mustContain("open-sse/utils/error.js", "code ?? errorInfo.code", "upstream error code preservation");
   mustContain("open-sse/utils/error.js", "code: parsed.code ?? structuredCode", "executor structured error-code fallback");
+  mustContain("open-sse/translator/response/openai-responses.js", "cached_tokens: inputDetails.cached_tokens ?? 0", "Responses terminal cached-token compatibility");
+  mustContain("open-sse/translator/response/openai-responses.js", "inputDetails.cache_write_tokens ?? inputDetails.cache_creation_tokens", "Claude cache-write usage alias");
   mustContain("tests/unit/github-responses-routing.test.js", "rejects an oversized Fable prompt before creating a message", "GitHub Claude prompt-limit regression test");
   mustContain("tests/unit/github-responses-routing.test.js", "preserves context_length_exceeded through client error wrapping", "GitHub Claude wrapped-error regression test");
   mustContain("src/app/api/v1/responses/route.js", "createDeferredResponsesResponse(", "Responses route returns deferred SSE");
@@ -396,7 +403,7 @@ function checkSource() {
   mustContain("open-sse/utils/stream.js", "!openAIResponsesTerminalSeen", "Responses streaming EOF terminal guard");
   mustContain("open-sse/translator/index.js", "nextOutputIndex: 0", "Responses translated output-index state");
   mustContain("open-sse/translator/response/openai-responses.js", "state.funcOutputIndexes[idx] = outputIndex", "Responses translated item-index allocation");
-  mustContain("open-sse/utils/stream.js", "sourceFormat === FORMATS.OPENAI_RESPONSES && !openAIResponsesDoneSent", "translated Responses DONE sentinel");
+  mustContain("open-sse/utils/stream.js", "(sourceFormat === FORMATS.OPENAI_RESPONSES || sourceFormat === FORMATS.OPENAI) && !openAIResponsesDoneSent && !streamDoneSent", "translated Responses DONE sentinel");
   mustContain("tests/unit/responses-transformer-item-index.test.js", "preserves unique indexes through the production SSE pipeline", "translated Responses item-index regression test");
   mustContain("open-sse/translator/request/openai-responses.js", "result._customToolNames = customToolNames", "Responses custom tool request metadata");
   mustContain("open-sse/translator/request/openai-responses.js", "properties: { input: { type: \"string\" } }", "Responses custom tool Chat wrapper");

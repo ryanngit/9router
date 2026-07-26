@@ -2745,6 +2745,37 @@ Post-promotion Claude OAuth canary on 2026-07-26:
   Claude Code's full system prompt or tool catalog into Codex-translated
   requests.
 
+Direct Codex catalog and entitlement correction on 2026-07-26:
+
+- Live entitlement probes through Go gateway port `18888` proved
+  `claude-fable-5` and `claude-opus-5` on all three Max 20x profiles. The Pro
+  profile accepts Opus 5 but rejects Fable 5 with HTTP 429 `Usage credits are
+  required for this model.`
+- Account selection excludes only profiles explicitly classified as Pro-only
+  from Fable 5. Unknown, Team, and Enterprise profiles remain eligible so
+  incomplete metadata cannot disable valid subscriptions. Existing account
+  fallback and exclusion behavior remains unchanged.
+- Linux and Windows Codex catalogs use provider-qualified
+  `cc/claude-fable-5` and `cc/claude-opus-5`. Both advertise Anthropic's 1M
+  context, 128K maximum output, `low|medium|high|max` adaptive effort, a 900K
+  auto-compaction threshold, and no unverified fast tier. Bare
+  `claude-fable-5` and `claude-opus-4.8` remain private GitHub aliases in the
+  live DB and are intentionally absent from the direct catalog.
+- Removed global `model_context_window` and `model_auto_compact_token_limit`
+  from `/home/home/.codex/config.toml`; those 372K-era overrides silently
+  capped every catalog model, including direct Claude.
+- A real Codex Fable request exposed a terminal Responses incompatibility:
+  Claude supplied only `cache_creation_tokens`, while Codex requires
+  `input_tokens_details.cached_tokens` whenever that object exists. The
+  translator now supplies zero when cache reads are absent and aliases Claude
+  cache creation to `cache_write_tokens` without discarding provider fields.
+  The later assistant-prefill error was a retry symptom after Codex rejected
+  the malformed first terminal, not the primary failure.
+- Reapply gates: direct Claude catalog entries must retain the 1M/900K/95%
+  metadata and four effort levels; source and bundle must contain Fable Pro
+  exclusion plus terminal cache aliases; live Codex Fable and Opus probes must
+  exit zero without reconnect or assistant-prefill errors.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
