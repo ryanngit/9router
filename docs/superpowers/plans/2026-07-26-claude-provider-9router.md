@@ -35,8 +35,16 @@
 
 - [ ] **Step 1: Write failing OAuth/profile tests**
 
-Use synthetic profile data and assert exact endpoint, bearer/beta/version headers,
-proxy propagation, non-fatal profile failure, and mapped fields:
+Use synthetic profile data and assert exact endpoint, bearer/JSON/no-cache
+headers, proxy propagation, non-fatal profile failure, and mapped fields. Also
+assert these Claude Code `2.1.220` registry values verbatim:
+
+```text
+authorize: https://claude.com/cai/oauth/authorize
+token: https://platform.claude.com/v1/oauth/token
+scopes: org:create_api_key user:profile user:inference
+        user:sessions:claude_code user:mcp_servers user:file_upload
+```
 
 ```js
 const profile = {
@@ -93,9 +101,10 @@ postExchange: async (tokens, proxyOptions) => {
     const response = await fetch("https://api.anthropic.com/api/oauth/profile", {
       headers: {
         Authorization: `Bearer ${tokens.access_token}`,
-        "anthropic-beta": "oauth-2025-04-20",
-        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
       },
+      signal: AbortSignal.timeout(10_000),
       proxyOptions,
     });
     return { profile: response.ok ? await response.json() : null };
@@ -307,9 +316,25 @@ Expected: FAIL for incomplete/incorrect registry or Haiku metadata.
 
 - [ ] **Step 3: Apply official values only**
 
-Use Claude Code `2.1.220` and official model docs evidence. Store runtime limits
-in capabilities, not duplicate UI constants. Represent conditional 1M access in
-model description/metadata rather than claiming unconditional availability.
+Use this verified Claude Code `2.1.220` and current API table. Store runtime
+limits in capabilities, not duplicate UI constants:
+
+| ID | Context | Max output |
+|---|---:|---:|
+| `claude-fable-5` | 1,000,000 | 128,000 |
+| `claude-opus-5` | 1,000,000 | 128,000 |
+| `claude-sonnet-5` | 1,000,000 | 128,000 |
+| `claude-opus-4-8` | 1,000,000 | 128,000 |
+| `claude-opus-4-7` | 1,000,000 | 128,000 |
+| `claude-opus-4-6` | 1,000,000 | 128,000 |
+| `claude-sonnet-4-6` | 1,000,000 | 128,000 |
+| `claude-sonnet-4-5-20250929` | 200,000 | 64,000 |
+| `claude-haiku-4-5-20251001` | 200,000 | 64,000 |
+
+Current Anthropic API contract needs no 1M beta header. Subscription entitlement
+still varies: Opus 1M is included for Max/Team/Enterprise, while Sonnet 4.6 1M
+can require usage credits. Describe entitlement conditions without reducing
+verified API limits. Keep private bare GitHub aliases unchanged.
 
 - [ ] **Step 4: Verify GREEN and alias regression**
 

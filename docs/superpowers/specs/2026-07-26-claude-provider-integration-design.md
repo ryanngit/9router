@@ -45,8 +45,11 @@ fallback behavior.
 
 ### OAuth And Identity
 
-- Update Claude authorize, token, refresh, scopes, and callback parameters to
-  current official Claude Code behavior.
+- Use Claude Code `2.1.220` authorize
+  `https://claude.com/cai/oauth/authorize`, token
+  `https://platform.claude.com/v1/oauth/token`, and default scopes
+  `org:create_api_key user:profile user:inference user:sessions:claude_code
+  user:mcp_servers user:file_upload`.
 - Add a best-effort `postExchange` profile fetch through the OAuth session's
   selected proxy.
 - Persist only fields needed for identity and operations:
@@ -92,9 +95,13 @@ fallback behavior.
 
 - Registry and `/v1/models/info` expose context and output metadata from one
   capability source.
-- Model IDs and limits must be backed by current official Claude Code or model
-  discovery evidence. Server-controlled or beta-only 1M context is labeled as
-  conditional rather than unconditional.
+- Expose verified direct API models: Fable 5, Opus 5, Sonnet 5, Opus 4.8/4.7/4.6,
+  Sonnet 4.6/4.5, and Haiku 4.5. Fable/Opus 5/Sonnet 5/Opus 4.x/Sonnet 4.6 use
+  1M context and 128K maximum output; Sonnet 4.5 and Haiku 4.5 use 200K context
+  and 64K maximum output.
+- Current API 1M limits need no beta header. Describe subscription entitlement
+  conditions separately: Opus 1M is included for Max/Team/Enterprise, while
+  Sonnet 4.6 1M can require usage credits.
 - Private bare-model routing aliases remain unchanged.
 
 ### Count Tokens
