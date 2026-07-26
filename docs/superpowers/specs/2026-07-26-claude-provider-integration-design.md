@@ -114,8 +114,10 @@ fallback behavior.
 
 ## Go Gateway Design
 
-- Add private `18888` route entries for Anthropic API traffic with existing `dc`
-  policy and `sticky: auth`. OAuth browser navigation remains browser-direct.
+- Add private `18888` route entries for Anthropic API traffic with current
+  combined `dc` plus `true_residential` policy and `sticky: auth`. Keep `18889`
+  residential plus US isolation unchanged. OAuth browser navigation remains
+  browser-direct.
 - Add `api.anthropic.com` to MITM only on the default listener.
 - Preserve method, path, query, request body, bearer/x-api-key auth,
   `anthropic-version`, `anthropic-beta`, SSE bytes, status, request ID, and all
