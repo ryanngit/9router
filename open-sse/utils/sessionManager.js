@@ -136,7 +136,7 @@ function extractAntigravitySession(body) {
 
 export function extractClientSessionId(headers, body, scope = "", { includeRequestId = true } = {}) {
     const claude = extractClaudeCodeSession(body?.metadata?.user_id);
-    if (claude) return `claude:${claude}`;
+    if (claude) return scope === "claude" ? claude : `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
     if (antigravity) return `antigravity:${antigravity}`;
     for (const key of SESSION_HEADER_KEYS) {
