@@ -10,8 +10,8 @@ const models = [
   ["claude-sonnet-5", "Claude Sonnet 5", 1000000, 128000, "claude-adaptive"],
   ["claude-opus-4-8", "Claude Opus 4.8", 1000000, 128000, "claude-adaptive"],
   ["claude-opus-4-7", "Claude Opus 4.7", 1000000, 128000, "claude-adaptive"],
-  ["claude-opus-4-6", "Claude Opus 4.6", 1000000, 128000, "claude-adaptive"],
-  ["claude-sonnet-4-6", "Claude Sonnet 4.6", 1000000, 128000, "claude-adaptive"],
+  ["claude-opus-4-6", "Claude Opus 4.6", 200000, 128000, "claude-adaptive"],
+  ["claude-sonnet-4-6", "Claude Sonnet 4.6", 200000, 128000, "claude-adaptive"],
   ["claude-sonnet-4-5-20250929", "Claude Sonnet 4.5", 200000, 64000, "claude-budget"],
   ["claude-haiku-4-5-20251001", "Claude Haiku 4.5", 200000, 64000, "claude-budget"],
 ];
@@ -35,10 +35,17 @@ describe("direct Claude Code model metadata", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("describes subscription entitlement without a obsolete 1M beta requirement", () => {
+  it("qualifies optional 1M access for 4.6 models", () => {
+    const opus46 = claude.models.find((model) => model.id === "claude-opus-4-6");
     const sonnet46 = claude.models.find((model) => model.id === "claude-sonnet-4-6");
-    expect(sonnet46.description).toMatch(/usage credits/i);
-    for (const id of ["claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6"]) {
+    expect(opus46.description).toMatch(/200K default context/i);
+    expect(opus46.description).toMatch(/optional upstream 1M.*explicit beta\/mode.*entitlement/i);
+    expect(sonnet46.description).toMatch(/200K default context/i);
+    expect(sonnet46.description).toMatch(/optional upstream 1M.*explicit beta\/mode.*usage credits/i);
+  });
+
+  it("describes native 1M subscription entitlement", () => {
+    for (const id of ["claude-opus-5", "claude-opus-4-8", "claude-opus-4-7"]) {
       expect(claude.models.find((model) => model.id === id)?.description)
         .toMatch(/Max.*Team.*Enterprise/i);
     }
@@ -60,6 +67,22 @@ describe("direct Claude Code model metadata", () => {
       contextWindow: 1000000,
       capabilities: {
         contextWindow: 1000000,
+        maxOutput: 128000,
+        thinkingFormat: "claude-adaptive",
+      },
+    });
+  });
+
+  it.each(["claude-opus-4-6", "claude-sonnet-4-6"])("exposes 200K base context for %s through models info", async (id) => {
+    const { GET } = await import("../../src/app/api/v1/models/info/route.js");
+    const response = await GET(new Request(`http://localhost/v1/models/info?id=cc/${id}`));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      id: `cc/${id}`,
+      contextWindow: 200000,
+      capabilities: {
+        contextWindow: 200000,
         maxOutput: 128000,
         thinkingFormat: "claude-adaptive",
       },
