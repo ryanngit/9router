@@ -145,9 +145,11 @@ async function fetchClaudeUsage(accessToken, proxyOptions, key) {
     }
 
     if (oauthResponse.status === 404 || oauthResponse.status === 405) {
-      const value = await getClaudeUsageLegacy(accessToken, proxyOptions);
-      setCache(key, { value, expiresAt: Date.now() + SUCCESS_TTL_MS, retryAt: 0 });
-      return value;
+      const legacy = await getClaudeUsageLegacy(accessToken, proxyOptions);
+      if (legacy.cacheable) {
+        setCache(key, { value: legacy.value, expiresAt: Date.now() + SUCCESS_TTL_MS, retryAt: 0 });
+      }
+      return legacy.value;
     }
 
     return { message: `Claude connected. Usage endpoint returned HTTP ${oauthResponse.status}.` };
@@ -209,22 +211,43 @@ async function getClaudeUsageLegacy(accessToken, proxyOptions = null) {
         if (usageResponse.ok) {
           const usage = await usageResponse.json();
           return {
-            plan: settings.plan || "Unknown",
-            organization: settings.organization_name,
-            quotas: usage,
+            cacheable: true,
+            value: {
+              plan: settings.plan || "Unknown",
+              organization: settings.organization_name,
+              quotas: usage,
+            },
           };
         }
+
+        return {
+          cacheable: false,
+          value: {
+            plan: settings.plan || "Unknown",
+            organization: settings.organization_name,
+            message: "Claude connected. Usage details require admin access.",
+          },
+        };
       }
 
       return {
-        plan: settings.plan || "Unknown",
-        organization: settings.organization_name,
-        message: "Claude connected. Usage details require admin access.",
+        cacheable: true,
+        value: {
+          plan: settings.plan || "Unknown",
+          organization: settings.organization_name,
+          message: "Claude connected. Usage details require admin access.",
+        },
       };
     }
 
-    return { message: "Claude connected. Usage API requires admin permissions." };
+    return {
+      cacheable: false,
+      value: { message: "Claude connected. Usage API requires admin permissions." },
+    };
   } catch (error) {
-    return { message: `Claude connected. Unable to fetch usage: ${sanitizeOAuthError(error)}`.slice(0, 240) };
+    return {
+      cacheable: false,
+      value: { message: `Claude connected. Unable to fetch usage: ${sanitizeOAuthError(error)}`.slice(0, 240) },
+    };
   }
 }

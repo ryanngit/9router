@@ -199,4 +199,19 @@ describe("Claude OAuth usage", () => {
     expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
     expect(proxyAwareFetch.mock.calls[1][0]).toBe("https://api.anthropic.com/v1/settings");
   });
+
+  it("does not cache transient legacy failures", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse({}, 404))
+      .mockResolvedValueOnce(jsonResponse({}, 503))
+      .mockResolvedValueOnce(jsonResponse({}, 404))
+      .mockResolvedValueOnce(jsonResponse({ plan: "Max" }));
+
+    const failed = await getClaudeUsage("legacy-retry-token");
+    const retried = await getClaudeUsage("legacy-retry-token");
+
+    expect(failed.message).toMatch(/admin permissions/i);
+    expect(retried).toMatchObject({ plan: "Max" });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(4);
+  });
 });
