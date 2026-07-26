@@ -7,6 +7,13 @@ function definedEntries(value) {
   return Object.fromEntries(Object.entries(value || {}).filter(([, field]) => field !== undefined));
 }
 
+function profileFailureReason(extra, prefix = "profile") {
+  const status = Number(extra?.profileStatus);
+  if (Number.isInteger(status) && status >= 100 && status <= 599) return `${prefix}_http_${status}`;
+  if (extra?.profileStatus === "request_failed") return `${prefix}_request_failed`;
+  return `${prefix}_unavailable`;
+}
+
 export function parseClaudeProfileBackfillArgs(argv = process.argv.slice(2), cwd = process.cwd()) {
   const apply = argv.includes("--apply");
   const dataDirIndex = argv.indexOf("--data-dir");
@@ -26,6 +33,7 @@ export async function backfillClaudeProfiles({
   connections,
   resolveProxy,
   postExchange,
+  refreshCredentials,
   mapTokens,
   updateConnection,
   adapter,
@@ -62,16 +70,55 @@ export async function backfillClaudeProfiles({
         fail("proxy_unavailable");
         continue;
       }
-      const extra = await postExchange({ access_token: connection.accessToken }, proxyOptions);
+      let accessToken = connection.accessToken;
+      let extra = await postExchange({ access_token: accessToken }, proxyOptions);
+      if (
+        !extra?.profile
+        && apply
+        && Number(extra?.profileStatus) === 401
+        && connection.refreshToken
+        && refreshCredentials
+      ) {
+        let refreshed;
+        try {
+          refreshed = await refreshCredentials(connection.refreshToken, null, proxyOptions);
+        } catch {
+          fail("profile_refresh_failed");
+          continue;
+        }
+        if (!refreshed?.accessToken) {
+          fail("profile_refresh_failed");
+          continue;
+        }
+
+        const credentialUpdate = {
+          accessToken: refreshed.accessToken,
+          refreshToken: refreshed.refreshToken || connection.refreshToken,
+        };
+        if (refreshed.expiresIn !== undefined) {
+          credentialUpdate.expiresIn = refreshed.expiresIn;
+          const expiresIn = Number(refreshed.expiresIn);
+          if (Number.isFinite(expiresIn) && expiresIn > 0) {
+            credentialUpdate.expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+          }
+        } else if (refreshed.expiresAt) {
+          credentialUpdate.expiresAt = refreshed.expiresAt;
+        }
+        await updateConnection(connection.id, credentialUpdate);
+
+        accessToken = refreshed.accessToken;
+        extra = await postExchange({ access_token: accessToken }, proxyOptions);
+        if (!extra?.profile) {
+          fail(profileFailureReason(extra, "profile_retry"));
+          continue;
+        }
+      }
       if (!extra?.profile) {
-        const status = Number(extra?.profileStatus);
-        fail(Number.isInteger(status) && status >= 100 && status <= 599
-          ? `profile_http_${status}`
-          : extra?.profileStatus === "request_failed" ? "profile_request_failed" : "profile_unavailable");
+        fail(profileFailureReason(extra));
         continue;
       }
 
-      const mapped = mapTokens({ access_token: connection.accessToken }, extra);
+      const mapped = mapTokens({ access_token: accessToken }, extra);
       const providerSpecificData = {
         ...(connection.providerSpecificData || {}),
         ...definedEntries(mapped.providerSpecificData),
@@ -110,6 +157,7 @@ async function main() {
   const { getAdapter } = await jiti.import(path.join(root, "src/lib/db/driver.js"));
   const { resolveConnectionProxyConfig } = await jiti.import(path.join(root, "src/lib/network/connectionProxy.js"));
   const { getProvider } = await jiti.import(path.join(root, "src/lib/oauth/providers.js"));
+  const { refreshClaudeOAuthToken } = await jiti.import(path.join(root, "open-sse/services/tokenRefresh/providers.js"));
   const adapter = await getAdapter();
 
   const provider = getProvider("claude");
@@ -118,6 +166,7 @@ async function main() {
     connections,
     resolveProxy: resolveConnectionProxyConfig,
     postExchange: provider.postExchange,
+    refreshCredentials: refreshClaudeOAuthToken,
     mapTokens: provider.mapTokens,
     updateConnection: db.updateProviderConnection,
     adapter,
