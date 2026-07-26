@@ -100,12 +100,37 @@ export function normalizeClaudeUsage(data) {
   };
 }
 
+function parseRetryAfterMs(value, now) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const seconds = Number(text);
+  if (Number.isFinite(seconds)) return seconds >= 0 ? seconds * 1000 : null;
+  const resetAt = Date.parse(text);
+  return Number.isFinite(resetAt) ? Math.max(0, resetAt - now) : null;
+}
+
+function parseResetHeaderMs(value, now) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const numeric = Number(text);
+  const resetAt = Number.isFinite(numeric)
+    ? (numeric < 1e12 ? numeric * 1000 : numeric)
+    : Date.parse(text);
+  return Number.isFinite(resetAt) && resetAt > now && resetAt <= 8.64e15
+    ? resetAt - now
+    : null;
+}
+
 function retryAfterMs(response, now = Date.now()) {
-  const value = response.headers.get("retry-after");
-  if (!value) return RETRY_MIN_MS;
-  const seconds = Number(value);
-  const parsed = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now;
-  return Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, Number.isFinite(parsed) ? parsed : RETRY_MIN_MS));
+  let parsed = parseRetryAfterMs(response.headers.get("retry-after"), now);
+  if (parsed === null) {
+    response.headers.forEach((value, name) => {
+      if (!/^anthropic-ratelimit-.+-reset$/i.test(name)) return;
+      const candidate = parseResetHeaderMs(value, now);
+      if (candidate !== null && (parsed === null || candidate > parsed)) parsed = candidate;
+    });
+  }
+  return Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, parsed ?? RETRY_MIN_MS));
 }
 
 async function fetchClaudeUsage(accessToken, proxyOptions, key) {

@@ -159,22 +159,75 @@ describe("Claude OAuth usage", () => {
       .mockResolvedValueOnce(jsonResponse(
         { error: "rate limited" },
         429,
-        { "Retry-After": "600" },
-      ));
+        {
+          "Retry-After": "600",
+          "anthropic-ratelimit-unified-reset": "2026-07-26T00:30:00Z",
+        },
+      ))
+      .mockResolvedValueOnce(jsonResponse(inactiveUsage));
 
     const fresh = await getClaudeUsage("rate-token");
     vi.advanceTimersByTime(66_000);
     const stale = await getClaudeUsage("rate-token");
     vi.advanceTimersByTime(60_000);
     const cooled = await getClaudeUsage("rate-token");
+    vi.advanceTimersByTime(541_000);
+    const retried = await getClaudeUsage("rate-token");
 
     expect(stale).toEqual(fresh);
     expect(cooled).toEqual(fresh);
-    expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
+    expect(retried).toEqual(fresh);
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(3);
     expect(proxyAwareFetch.mock.calls.map(([url]) => url)).toEqual([
       "https://api.anthropic.com/api/oauth/usage",
       "https://api.anthropic.com/api/oauth/usage",
+      "https://api.anthropic.com/api/oauth/usage",
     ]);
+  });
+
+  it.each([
+    ["RFC3339", "2026-07-26T00:10:00Z"],
+    ["numeric epoch", String(Date.parse("2026-07-26T00:10:00Z") / 1000)],
+  ])("honors a reset-only %s cooldown", async (_format, resetAt) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-26T00:00:00Z"));
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(
+        { error: "rate limited" },
+        429,
+        { "anthropic-ratelimit-tokens-reset": resetAt },
+      ))
+      .mockResolvedValueOnce(jsonResponse(inactiveUsage));
+
+    await getClaudeUsage(`reset-only-${_format}`);
+    vi.advanceTimersByTime(9 * 60_000);
+    await getClaudeUsage(`reset-only-${_format}`);
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(60_001);
+    await getClaudeUsage(`reset-only-${_format}`);
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the minimum cooldown when reset headers are malformed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-26T00:00:00Z"));
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(
+        { error: "rate limited" },
+        429,
+        { "anthropic-ratelimit-tokens-reset": "not-a-reset" },
+      ))
+      .mockResolvedValueOnce(jsonResponse(inactiveUsage));
+
+    await getClaudeUsage("malformed-reset-token");
+    vi.advanceTimersByTime(179_999);
+    await getClaudeUsage("malformed-reset-token");
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(2);
+    await getClaudeUsage("malformed-reset-token");
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
   });
 
   it("surfaces 401 for route-level refresh without legacy fallback", async () => {
