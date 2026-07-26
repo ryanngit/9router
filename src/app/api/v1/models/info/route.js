@@ -16,7 +16,7 @@ const KIND_ENDPOINT = {
 
 const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);
 
-function buildInfo({ alias, providerId, model, kind, providerInfo }) {
+export function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   const out = {
     id: `${alias}/${model.id}`,
     name: model.name || model.id,
@@ -27,9 +27,7 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   if (model.params) out.params = model.params;
   if (kind === "llm") {
     const runtimeCapabilities = getCapabilitiesForModel(providerId, model.id);
-    out.capabilities = model.capabilities && !Array.isArray(model.capabilities)
-      ? { ...runtimeCapabilities, ...model.capabilities }
-      : runtimeCapabilities;
+    out.capabilities = model.capabilities || runtimeCapabilities;
     out.contextWindow = model.contextWindow ?? runtimeCapabilities.contextWindow;
   } else if (model.capabilities) {
     out.capabilities = model.capabilities;

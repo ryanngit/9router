@@ -38,6 +38,10 @@ describe("direct Claude Code model metadata", () => {
   it("describes subscription entitlement without a obsolete 1M beta requirement", () => {
     const sonnet46 = claude.models.find((model) => model.id === "claude-sonnet-4-6");
     expect(sonnet46.description).toMatch(/usage credits/i);
+    for (const id of ["claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6"]) {
+      expect(claude.models.find((model) => model.id === id)?.description)
+        .toMatch(/Max.*Team.*Enterprise/i);
+    }
     expect(claude.models.map((model) => model.description || "").join(" ")).not.toMatch(/context-1m-2025-08-07/);
   });
 
@@ -59,6 +63,20 @@ describe("direct Claude Code model metadata", () => {
         maxOutput: 128000,
         thinkingFormat: "claude-adaptive",
       },
+    });
+  });
+
+  it("preserves existing array capabilities in models info", async () => {
+    const { buildInfo } = await import("../../src/app/api/v1/models/info/route.js");
+
+    expect(buildInfo({
+      alias: "cc",
+      providerId: "claude",
+      kind: "llm",
+      model: { id: "claude-opus-5", name: "Claude Opus 5", capabilities: ["legacy-cap"] },
+    })).toMatchObject({
+      contextWindow: 1000000,
+      capabilities: ["legacy-cap"],
     });
   });
 });
