@@ -1,8 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { backfillClaudeProfiles } from "../../scripts/backfill-claude-profiles.mjs";
+import {
+  backfillClaudeProfiles,
+  parseClaudeProfileBackfillArgs,
+} from "../../scripts/backfill-claude-profiles.mjs";
 
 describe("Claude profile backfill", () => {
+  it("requires an explicit copied data directory for CLI dry-run", () => {
+    expect(() => parseClaudeProfileBackfillArgs([], "/workspace"))
+      .toThrow(/dry-run.*--data-dir/i);
+    expect(parseClaudeProfileBackfillArgs(["--data-dir", "copied-db"], "/workspace"))
+      .toEqual({ apply: false, dataDir: "/workspace/copied-db" });
+    expect(parseClaudeProfileBackfillArgs(["--apply"], "/workspace"))
+      .toEqual({ apply: true, dataDir: null });
+  });
+
+  it("rejects process-scoped apply before any backfill work", async () => {
+    const resolveProxy = vi.fn();
+    const postExchange = vi.fn();
+    const updateConnection = vi.fn();
+
+    await expect(backfillClaudeProfiles({
+      connections: [{ id: "one", provider: "claude", authType: "oauth", name: "Account 1", accessToken: "token" }],
+      resolveProxy,
+      postExchange,
+      mapTokens: vi.fn(),
+      updateConnection,
+      adapter: { transactionScope: "process" },
+      apply: true,
+    })).rejects.toThrow(/process-safe|native|sql\.js/i);
+
+    expect(resolveProxy).not.toHaveBeenCalled();
+    expect(postExchange).not.toHaveBeenCalled();
+    expect(updateConnection).not.toHaveBeenCalled();
+  });
+
   it("uses selected proxy, replaces placeholder label, and preserves custom name", async () => {
     const proxy = { connectionProxyEnabled: true, connectionProxyUrl: "http://proxy.test:18888" };
     const resolveProxy = vi.fn().mockResolvedValue(proxy);

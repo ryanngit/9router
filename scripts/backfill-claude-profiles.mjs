@@ -7,14 +7,33 @@ function definedEntries(value) {
   return Object.fromEntries(Object.entries(value || {}).filter(([, field]) => field !== undefined));
 }
 
+export function parseClaudeProfileBackfillArgs(argv = process.argv.slice(2), cwd = process.cwd()) {
+  const apply = argv.includes("--apply");
+  const dataDirIndex = argv.indexOf("--data-dir");
+  let dataDir = null;
+  if (dataDirIndex !== -1) {
+    const value = argv[dataDirIndex + 1];
+    if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
+    dataDir = path.resolve(cwd, value);
+  }
+  if (!apply && !dataDir) {
+    throw new Error("Claude profile backfill dry-run requires an explicit copied/offline --data-dir");
+  }
+  return { apply, dataDir };
+}
+
 export async function backfillClaudeProfiles({
   connections,
   resolveProxy,
   postExchange,
   mapTokens,
   updateConnection,
+  adapter,
   apply = false,
 }) {
+  if (apply && adapter?.transactionScope === "process") {
+    throw new Error("Claude profile backfill --apply requires a native process-safe database adapter; sql.js is unsupported");
+  }
   const result = {
     scanned: connections.length,
     eligible: 0,
@@ -79,13 +98,8 @@ export async function backfillClaudeProfiles({
 
 async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const dataDirIndex = process.argv.indexOf("--data-dir");
-  if (dataDirIndex !== -1) {
-    const value = process.argv[dataDirIndex + 1];
-    if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
-    process.env.DATA_DIR = path.resolve(value);
-  }
-  const apply = process.argv.includes("--apply");
+  const { apply, dataDir } = parseClaudeProfileBackfillArgs();
+  if (dataDir) process.env.DATA_DIR = dataDir;
   const jiti = createJiti(import.meta.url, {
     alias: {
       "@": path.join(root, "src"),
@@ -93,9 +107,10 @@ async function main() {
     },
   });
   const db = await jiti.import(path.join(root, "src/lib/db/index.js"));
+  const { getAdapter } = await jiti.import(path.join(root, "src/lib/db/driver.js"));
   const { resolveConnectionProxyConfig } = await jiti.import(path.join(root, "src/lib/network/connectionProxy.js"));
   const { getProvider } = await jiti.import(path.join(root, "src/lib/oauth/providers.js"));
-  await db.initDb();
+  const adapter = await getAdapter();
 
   const provider = getProvider("claude");
   const connections = await db.getProviderConnections({ provider: "claude" });
@@ -105,6 +120,7 @@ async function main() {
     postExchange: provider.postExchange,
     mapTokens: provider.mapTokens,
     updateConnection: db.updateProviderConnection,
+    adapter,
     apply,
   });
   process.stdout.write(
