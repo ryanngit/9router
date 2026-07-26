@@ -2775,6 +2775,31 @@ Direct Codex catalog and entitlement correction on 2026-07-26:
   metadata and four effort levels; source and bundle must contain Fable Pro
   exclusion plus terminal cache aliases; live Codex Fable and Opus probes must
   exit zero without reconnect or assistant-prefill errors.
+- Runtime commits: `62e701f` normalizes Responses cache details and
+  `230c329` excludes known Pro-only profiles from Fable. `5de6786` repairs the
+  upstream Read-tool test fixture to include the terminal chunk required by
+  buffered sanitization; `d33a379` updates local verifier/ledger contracts.
+- Focused Claude/Responses matrix passed 114/114; changed-file ESLint,
+  `git diff --check`, source verification, candidate bundle verification, and
+  final live bundle/DB/health verification passed. The only verifier warning is
+  deliberate Codex auto-ping opt-in coverage at 1/9.
+- Isolated candidate Codex probes returned exact `CATALOG_FABLE_OK` and
+  `CATALOG_OPUS_OK` with exit zero. Final post-9Router and post-gateway probes
+  returned exact `FINAL_FABLE_OK` and `FINAL_OPUS_OK`, no reconnect, no new
+  prefill/cached-token errors, and correct cache read/write fields.
+- Linux and Windows catalog JSON is semantically identical. Fable selected Max
+  profiles only. Opus selected both Pro and Max profiles across canaries, so
+  Max quota remains usable for Opus after its Fable-specific weekly bucket.
+- Safe promotion label `v0540-claude-codex-terminal-20260726` succeeded. DB
+  backup:
+  `/home/home/.9router/db/backups/pre-v0540-claude-codex-terminal-20260726-20260726T224748Z/data.sqlite`
+  with SHA-256
+  `23368dcc21a02ab97283dd1fc50f51e8b5b61c51f72394ded698210b769bd1c6`.
+  Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-claude-codex-terminal-20260726-20260726T224748Z`.
+- Live PM2 PID is `187881`; cloudflared PID is `188027`. App restart rotated
+  the raw quick-tunnel process, then the existing short ID was re-registered.
+  Local, raw, and `https://rkeyra9.abc-tunnel.us/api/health` all pass.
 
 ## Not Yet Verified As Local Patch
 
