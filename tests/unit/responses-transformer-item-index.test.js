@@ -172,6 +172,36 @@ describe("Chat-to-Responses output item indexes", () => {
     });
   });
 
+  it("emits Codex-compatible cache details when Claude only creates cache", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    const events = [
+      chatChunk({ content: "OK" }),
+      {
+        id: "chatcmpl-fable-index",
+        model: "claude-fable-5",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: {
+          prompt_tokens: 20,
+          completion_tokens: 1,
+          total_tokens: 21,
+          prompt_tokens_details: { cache_creation_tokens: 18 },
+        },
+      },
+    ].flatMap((chunk) => translateResponse(
+      FORMATS.OPENAI,
+      FORMATS.OPENAI_RESPONSES,
+      chunk,
+      state,
+    ));
+
+    const completed = events.find(({ event }) => event === "response.completed")?.data.response;
+    expect(completed.usage.input_tokens_details).toEqual({
+      cached_tokens: 0,
+      cache_creation_tokens: 18,
+      cache_write_tokens: 18,
+    });
+  });
+
   it("preserves unique indexes through the production SSE pipeline", async () => {
     const text = await translateProductionStream([
       chatChunk({ reasoning_content: "planning" }),

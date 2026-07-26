@@ -34,7 +34,14 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
       const inputDetails = chunk.usage.input_tokens_details ?? chunk.usage.prompt_tokens_details;
       const outputDetails = chunk.usage.output_tokens_details ?? chunk.usage.completion_tokens_details;
       if (inputDetails && typeof inputDetails === "object") {
-        state.responseUsage.input_tokens_details = { ...inputDetails };
+        state.responseUsage.input_tokens_details = {
+          ...inputDetails,
+          cached_tokens: inputDetails.cached_tokens ?? 0,
+        };
+        const cacheWriteTokens = inputDetails.cache_write_tokens ?? inputDetails.cache_creation_tokens;
+        if (cacheWriteTokens != null) {
+          state.responseUsage.input_tokens_details.cache_write_tokens = cacheWriteTokens;
+        }
       }
       if (outputDetails && typeof outputDetails === "object") {
         state.responseUsage.output_tokens_details = { ...outputDetails };
