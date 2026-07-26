@@ -40,6 +40,18 @@ function connection(id, locked = false) {
   };
 }
 
+function claudeConnection(id, providerSpecificData, priority) {
+  return {
+    id,
+    provider: "claude",
+    authType: "oauth",
+    accessToken: `${id}-token`,
+    name: id,
+    priority,
+    providerSpecificData,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   dbMocks.getSettings.mockResolvedValue({ fallbackStrategy: "fill-first", providerStrategies: {} });
@@ -73,5 +85,40 @@ describe("cache affinity selector fallback", () => {
     );
 
     expect(result.connectionId).toBe("account-b");
+  });
+});
+
+describe("Claude subscription model eligibility", () => {
+  it("skips a known Pro-only profile for Fable 5", async () => {
+    dbMocks.getProviderConnections.mockResolvedValue([
+      claudeConnection("pro", { hasClaudePro: true, hasClaudeMax: false }, 1),
+      claudeConnection("max", { hasClaudePro: false, hasClaudeMax: true }, 2),
+    ]);
+
+    const result = await getProviderCredentials("claude", null, "claude-fable-5");
+
+    expect(result.connectionId).toBe("max");
+  });
+
+  it("keeps a known Pro-only profile eligible for Opus 5", async () => {
+    dbMocks.getProviderConnections.mockResolvedValue([
+      claudeConnection("pro", { hasClaudePro: true, hasClaudeMax: false }, 1),
+      claudeConnection("max", { hasClaudePro: false, hasClaudeMax: true }, 2),
+    ]);
+
+    const result = await getProviderCredentials("claude", null, "claude-opus-5");
+
+    expect(result.connectionId).toBe("pro");
+  });
+
+  it("keeps unclassified profiles eligible for Fable fallback discovery", async () => {
+    dbMocks.getProviderConnections.mockResolvedValue([
+      claudeConnection("unknown", {}, 1),
+      claudeConnection("max", { hasClaudePro: false, hasClaudeMax: true }, 2),
+    ]);
+
+    const result = await getProviderCredentials("claude", null, "claude-fable-5");
+
+    expect(result.connectionId).toBe("unknown");
   });
 });

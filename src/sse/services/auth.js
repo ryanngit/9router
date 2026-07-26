@@ -8,6 +8,12 @@ import * as log from "../utils/logger.js";
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
+function isConnectionEligibleForModel(connection, provider, model) {
+  if (provider !== "claude" || model !== "claude-fable-5") return true;
+  const profile = connection.providerSpecificData || {};
+  return !(profile.hasClaudePro === true && profile.hasClaudeMax !== true);
+}
+
 /**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
@@ -74,6 +80,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (!isConnectionEligibleForModel(c, providerId, model)) return false;
       return true;
     });
 
