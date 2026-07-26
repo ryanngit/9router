@@ -27,7 +27,7 @@ vi.mock("@/shared/constants/config", () => ({
         settingsKey: "claudeAutoPing",
         quotaKey: "session (5h)",
         pingInactiveSession: true,
-        minPingIntervalMs: 18000000,
+        inactiveMinPingIntervalMs: 18000000,
         pingModel: "claude-haiku-4-5-20251001",
         pingText: "hi",
         pingMaxTokens: 1,
@@ -467,8 +467,10 @@ describe("quota auto-ping", () => {
   });
 
   it("starts an inactive Claude session once and drains the response", async () => {
-    const responseText = vi.fn().mockResolvedValue("");
+    const order = [];
+    const responseText = vi.fn(async () => { order.push("drain"); return ""; });
     deps.proxyAwareFetch.mockResolvedValue({ ok: true, text: responseText });
+    deps.updateProviderConnection.mockImplementation(async () => { order.push("db"); });
     deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (
       provider === "claude" ? [{ id: "claude-1", provider: "claude", authType: "oauth", accessToken: "token" }] : []
@@ -484,9 +486,13 @@ describe("quota auto-ping", () => {
 
     expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
     expect(responseText).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["drain", "db"]);
     expect(deps.updateProviderConnection).toHaveBeenCalledWith("claude-1", expect.objectContaining({
       lastPingAt: "2026-01-01T12:00:00.000Z",
     }));
+    const update = deps.updateProviderConnection.mock.calls[0][1];
+    expect(update).not.toHaveProperty("lastPingedResetAt");
+    expect(update).not.toHaveProperty("lastPingedResetKey");
   });
 
   it("does not start inactive Claude session without weekly quota", async () => {
@@ -520,6 +526,23 @@ describe("quota auto-ping", () => {
     expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
   });
 
+  it("treats exhausted weekly session-scoped quota as blocking", async () => {
+    deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "claude" ? [{ id: "claude-1", provider: "claude", authType: "oauth", accessToken: "token" }] : []
+    ));
+    getClaudeUsage.mockResolvedValue({
+      quotas: {
+        "session (5h)": { used: 0, total: 100, remaining: 100, resetAt: null },
+        "weekly session Fable (7d)": { used: 100, total: 100, remaining: 0, resetAt: null },
+      },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
   it("does not repeat inactive Claude ping inside five hours", async () => {
     deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (
@@ -543,5 +566,49 @@ describe("quota auto-ping", () => {
     await runQuotaAutoPingTick(deps, state);
 
     expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not apply inactive five-hour guard to active reset ping", async () => {
+    deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "claude"
+        ? [{
+            id: "claude-1",
+            provider: "claude",
+            authType: "oauth",
+            accessToken: "token",
+            lastPingAt: "2026-01-01T11:00:00.000Z",
+          }]
+        : []
+    ));
+    getClaudeUsage.mockResolvedValue({
+      quotas: { "session (5h)": { used: 0, total: 100, remaining: 100, resetAt: "2026-01-01T11:59:00.000Z" } },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates accepted inactive ping when DB persistence fails", async () => {
+    deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "claude" ? [{ id: "claude-1", provider: "claude", authType: "oauth", accessToken: "token" }] : []
+    ));
+    deps.updateProviderConnection
+      .mockRejectedValueOnce(new Error("synthetic DB failure"))
+      .mockResolvedValueOnce(undefined);
+    getClaudeUsage.mockResolvedValue({
+      quotas: {
+        "session (5h)": { used: 0, total: 100, remaining: 100, resetAt: null },
+        "weekly Fable (7d)": { used: 0, total: 100, remaining: 100, resetAt: null },
+      },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+    vi.setSystemTime(new Date("2026-01-01T12:16:00.000Z"));
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
   });
 });

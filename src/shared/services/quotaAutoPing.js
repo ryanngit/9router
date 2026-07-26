@@ -32,6 +32,7 @@ const g = (global.__quotaAutoPing ??= {
   running: false,
   resetCache: {},
   failureCache: {},
+  pingCache: {},
 });
 
 function cacheKey(provider, connectionId) {
@@ -70,9 +71,14 @@ function isQuotaExhausted(quota) {
   return total !== null && total > 0 && used !== null && used >= total;
 }
 
-function wasPingedRecently(connection, intervalMs, nowMs = Date.now()) {
+function wasPingedRecently(connection, intervalMs, nowMs = Date.now(), inMemoryPingAt = null) {
   if (!intervalMs) return false;
-  const lastPingAtMs = new Date(connection.lastPingAt).getTime();
+  const persistedPingAt = new Date(connection.lastPingAt).getTime();
+  const memoryPingAt = toFiniteNumber(inMemoryPingAt, Number.NEGATIVE_INFINITY);
+  const lastPingAtMs = Math.max(
+    Number.isFinite(persistedPingAt) ? persistedPingAt : Number.NEGATIVE_INFINITY,
+    memoryPingAt,
+  );
   return Number.isFinite(lastPingAtMs) && nowMs - lastPingAtMs < intervalMs;
 }
 
@@ -85,18 +91,19 @@ function hasExhaustedBlockingQuota(quotas, sessionKey) {
   return Object.entries(quotas || {}).some(([name, quota]) => isBlockingQuotaName(name, sessionKey) && isQuotaExhausted(quota));
 }
 
-function hasWeeklyQuota(quotas) {
-  return Object.keys(quotas || {}).some((name) => String(name).toLowerCase().startsWith("weekly"));
+function hasAvailableWeeklyQuota(quotas) {
+  const weekly = Object.entries(quotas || {})
+    .filter(([name]) => String(name).toLowerCase().startsWith("weekly"));
+  return weekly.length > 0 && weekly.every(([, weeklyQuota]) => !isQuotaExhausted(weeklyQuota));
 }
 
-function shouldPingInactiveSession(connection, providerConfig, quotas, quota, now) {
+function shouldPingInactiveSession(connection, providerConfig, quotas, quota, now, inMemoryPingAt) {
   return providerConfig.pingInactiveSession === true
     && quota
     && !quota.resetAt
     && !isQuotaExhausted(quota)
-    && hasWeeklyQuota(quotas)
-    && !hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)
-    && !wasPingedRecently(connection, providerConfig.minPingIntervalMs, now);
+    && hasAvailableWeeklyQuota(quotas)
+    && !wasPingedRecently(connection, providerConfig.inactiveMinPingIntervalMs, now, inMemoryPingAt);
 }
 
 function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
@@ -226,7 +233,14 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   const quota = quotas?.[providerConfig.quotaKey];
   const resetAt = quota?.resetAt;
   const now = Date.now();
-  const inactiveSession = shouldPingInactiveSession(connection, providerConfig, quotas, quota, now);
+  const inactiveSession = shouldPingInactiveSession(
+    connection,
+    providerConfig,
+    quotas,
+    quota,
+    now,
+    state.pingCache?.[key],
+  );
   let resetKey = null;
   if (resetAt) {
     state.resetCache[key] = resetAt;
@@ -238,7 +252,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
 
     // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
     if (!shouldPingForReset(providerConfig, cachedReset, resetAt, now)) return;
-    if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
+    if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now, state.pingCache?.[key])) return;
     if (lastPingedResetKey === resetKey) return;
   } else if (!inactiveSession) {
     return;
@@ -252,12 +266,15 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     return;
   }
 
-  delete state.failureCache[key];
+  const pingedAt = Date.now();
+  (state.pingCache ??= {})[key] = pingedAt;
   await deps.updateProviderConnection(connection.id, {
     ...(resetAt ? { lastPingedResetAt: resetAt, lastPingedResetKey: resetKey } : {}),
-    lastPingAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    lastPingAt: new Date(pingedAt).toISOString(),
+    updatedAt: new Date(pingedAt).toISOString(),
   });
+  delete state.failureCache[key];
+  delete state.pingCache[key];
   console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (${resetAt ? `reset ${resetAt}` : "inactive session"})`);
 }
 

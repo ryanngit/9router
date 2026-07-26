@@ -74,7 +74,7 @@ export const QUOTA_AUTOPING_CONFIG = {
       settingsKey: "claudeAutoPing",    // preserve existing settings contract
       quotaKey: "session (5h)",         // quota key returned by usage handler
       pingInactiveSession: true,
-      minPingIntervalMs: 5 * 60 * 60 * 1000,
+      inactiveMinPingIntervalMs: 5 * 60 * 60 * 1000,
       pingModel: "claude-haiku-4-5-20251001",
       pingText: "hi",
       pingMaxTokens: 1,
