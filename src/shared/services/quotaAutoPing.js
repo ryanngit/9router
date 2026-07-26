@@ -85,6 +85,20 @@ function hasExhaustedBlockingQuota(quotas, sessionKey) {
   return Object.entries(quotas || {}).some(([name, quota]) => isBlockingQuotaName(name, sessionKey) && isQuotaExhausted(quota));
 }
 
+function hasWeeklyQuota(quotas) {
+  return Object.keys(quotas || {}).some((name) => String(name).toLowerCase().startsWith("weekly"));
+}
+
+function shouldPingInactiveSession(connection, providerConfig, quotas, quota, now) {
+  return providerConfig.pingInactiveSession === true
+    && quota
+    && !quota.resetAt
+    && !isQuotaExhausted(quota)
+    && hasWeeklyQuota(quotas)
+    && !hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)
+    && !wasPingedRecently(connection, providerConfig.minPingIntervalMs, now);
+}
+
 function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
   if (providerConfig.pingWhenResetAtSlides) {
     return Boolean(cachedReset) && getResetDriftMs(cachedReset, resetAt) >= (providerConfig.resetAtDriftMs || 0);
@@ -108,7 +122,12 @@ async function sendClaudePing(connection, providerConfig, proxyOptions, deps) {
       messages: [{ role: "user", content: providerConfig.pingText }],
     }),
   }, proxyOptions);
-  return res.ok;
+  if (!res.ok) {
+    try { await res.body?.cancel?.(); } catch { /* noop */ }
+    return false;
+  }
+  await drainResponseBody(res);
+  return true;
 }
 
 function buildCodexPingInput(text) {
@@ -206,21 +225,24 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   const quotas = usage?.quotas || {};
   const quota = quotas?.[providerConfig.quotaKey];
   const resetAt = quota?.resetAt;
-  if (!resetAt) return;
-
-  state.resetCache[key] = resetAt;
-
-  if (providerConfig.skipWhenBlockingQuotaExhausted && hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
-  if (isQuotaExhausted(quota)) return;
-
   const now = Date.now();
-  const resetKey = normalizeResetKey(resetAt);
-  const lastPingedResetKey = connection.lastPingedResetKey || normalizeResetKey(connection.lastPingedResetAt);
+  const inactiveSession = shouldPingInactiveSession(connection, providerConfig, quotas, quota, now);
+  let resetKey = null;
+  if (resetAt) {
+    state.resetCache[key] = resetAt;
+    if (providerConfig.skipWhenBlockingQuotaExhausted && hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
+    if (isQuotaExhausted(quota)) return;
 
-  // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
-  if (!shouldPingForReset(providerConfig, cachedReset, resetAt, now)) return;
-  if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
-  if (lastPingedResetKey === resetKey) return;
+    resetKey = normalizeResetKey(resetAt);
+    const lastPingedResetKey = connection.lastPingedResetKey || normalizeResetKey(connection.lastPingedResetAt);
+
+    // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
+    if (!shouldPingForReset(providerConfig, cachedReset, resetAt, now)) return;
+    if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
+    if (lastPingedResetKey === resetKey) return;
+  } else if (!inactiveSession) {
+    return;
+  }
 
   const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
   if (!ok) {
@@ -232,12 +254,11 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
 
   delete state.failureCache[key];
   await deps.updateProviderConnection(connection.id, {
-    lastPingedResetAt: resetAt,
-    lastPingedResetKey: resetKey,
+    ...(resetAt ? { lastPingedResetAt: resetAt, lastPingedResetKey: resetKey } : {}),
     lastPingAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
-  console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (reset ${resetAt})`);
+  console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (${resetAt ? `reset ${resetAt}` : "inactive session"})`);
 }
 
 function createDefaultDeps() {
