@@ -2651,8 +2651,9 @@ Upstream boundary:
 - Local/private: real account data, pool IDs, listener/route policy, deployment
   paths, bare-model aliases, and environment-specific evidence.
 - Model metadata PR: <https://github.com/decolua/9router/pull/2847>, head
-  `4505163f33b4b44877a95e8423fcbb7209ac7dd3`, OPEN/CLEAN. Body contains real
-  newlines, not escaped `\\n`; focused public gate passed 31/31.
+  `f6686d75641baab202dfac481554b8838bb036c0`, OPEN/CLEAN. It includes the
+  conservative Fable subscription eligibility gate while keeping Max and Pro
+  eligible for Opus 5. Focused public gate passed 34/34.
 - OAuth/profile identity extends existing proxy-flow PR
   <https://github.com/decolua/9router/pull/2343>, head
   `6d9df86959a2faf04ffc29be693492261b733c96`, OPEN/CLEAN. Claude profile
@@ -2662,9 +2663,9 @@ Upstream boundary:
   `e3308cfacefad50d27546daea88273b635fa1132`, OPEN/CLEAN. Fresh usage and
   dispatch coverage passed 22/22; changed-file ESLint passed.
 - Protocol PR: <https://github.com/decolua/9router/pull/2849>, head
-  `b90cdc5b59097b08b506abc7b8217d0037e6d6d2`, OPEN/CLEAN. Protocol,
-  cloaking, and session coverage passed 37/37; Claude golden headers passed
-  2/2; changed-file ESLint had zero errors and one existing warning.
+  `32ba6ec2f0a87728abe7f2a164191b5b66401f73`, OPEN/CLEAN. Protocol,
+  Responses, cloaking, session, and terminal coverage passed 54/54; Claude
+  golden headers passed 2/2; changed-file ESLint passed.
 - Auto-ping PR: <https://github.com/decolua/9router/pull/2850>, head
   `e1de3bac4801833d83492bed2bda449f732c8158`, OPEN/CLEAN. Fresh auto-ping
   and provider-visibility coverage passed 33/33; changed-file ESLint passed.
@@ -2783,6 +2784,9 @@ Direct Codex catalog and entitlement correction on 2026-07-26:
   `git diff --check`, source verification, candidate bundle verification, and
   final live bundle/DB/health verification passed. The only verifier warning is
   deliberate Codex auto-ping opt-in coverage at 1/9.
+- Public Responses PR #2747 is OPEN/CLEAN at `f761272`; model PR #2847 is
+  OPEN/CLEAN at `f6686d7`; protocol PR #2849 is OPEN/CLEAN at `32ba6ec`.
+  Their descriptions contain current real-client evidence and test counts.
 - Isolated candidate Codex probes returned exact `CATALOG_FABLE_OK` and
   `CATALOG_OPUS_OK` with exit zero. Final post-9Router and post-gateway probes
   returned exact `FINAL_FABLE_OK` and `FINAL_OPUS_OK`, no reconnect, no new
@@ -2790,6 +2794,10 @@ Direct Codex catalog and entitlement correction on 2026-07-26:
 - Linux and Windows catalog JSON is semantically identical. Fable selected Max
   profiles only. Opus selected both Pro and Max profiles across canaries, so
   Max quota remains usable for Opus after its Fable-specific weekly bucket.
+- Fresh closure probes at 16:44 PDT returned exact `FINAL_FABLE_OK` and
+  `FINAL_OPUS_OK` with one `response.completed` each in 2.8-3.0 seconds.
+  Fable selected Max profile `Käthe`; Opus selected Max profile `Walther`.
+  Gateway port `18888` recorded both Anthropic streams as HTTP 200.
 - Safe promotion label `v0540-claude-codex-terminal-20260726` succeeded. DB
   backup:
   `/home/home/.9router/db/backups/pre-v0540-claude-codex-terminal-20260726-20260726T224748Z/data.sqlite`
