@@ -2701,6 +2701,50 @@ Pre-promotion state correction on 2026-07-26:
   remain hard gates. A deployment verifier must not overwrite or reject a
   deliberate live preference.
 
+Post-promotion Claude OAuth canary on 2026-07-26:
+
+- Browser consent explicitly identified the requesting application as
+  `Claude Code`; `Claude chat account` described the subscription account being
+  connected. The consent listed profile, subscription inference, Claude Code
+  sessions, connectors, file upload, and coding-session privacy access. Do not
+  infer OAuth client identity from the separate Claude website or Desktop magic
+  login links.
+- Re-authorizing `songoku200794@outlook.com` through the live 9Router flow
+  updated existing connection `b853eaee-5c4c-4999-a96a-305ffd355c48` in place.
+  Connection count remained four, stable account UUID and original `createdAt`
+  were preserved, no duplicate account UUID appeared, and the existing Go
+  gateway pool binding remained unchanged.
+- The new credential persisted the complete subscription grant returned by
+  Anthropic: `user:file_upload user:inference user:mcp_servers user:profile
+  user:sessions:claude_code`. `org:create_api_key` is requested by the shared
+  client for Console login but is not part of this Claude Max subscription
+  grant. Profile metadata remained active `default_claude_max_20x`.
+- Fresh-token profile and quota calls traversed `18888` and returned HTTP 200.
+  Usage exposed an active zero-percent five-hour window plus an inactive
+  zero-percent Fable weekly window; upstream still returned `seven_day: null`.
+  This confirms the absent all-model weekly row is account payload, not parser
+  loss or reduced OAuth scope.
+- A direct fresh-token `claude-fable-5` canary through `18888` returned HTTP
+  200 and exact `OK` with 43 input and 4 output tokens. A separate live
+  `/v1/responses` translation canary returned exact `OK`, one
+  `response.completed`, and one `[DONE]`; 9Router recorded 1,263 prompt tokens,
+  4 completion tokens, and 1,250 cache-creation tokens. It selected the
+  existing `hughessmallfrog437+2dadaf@gmail.com` connection, so fresh-token
+  acceptance and 9Router translation were proven independently without
+  mutating account routing.
+- Do not force-refresh the fresh grant merely for QA: Anthropic refresh tokens
+  may rotate. Verify automatic refresh near the configured four-hour lead and
+  confirm the five user scopes remain persisted afterward.
+- OAuth callback changes are not warranted by current evidence. Three older
+  profiles still carry pre-patch `user:inference user:profile` grants and may
+  be re-authorized in place, one at a time; do not delete them first.
+- Protocol-fingerprint parity remains separate from OAuth correctness. A local
+  Claude Code 2.1.220 request capture found drift in static beta flags, runtime
+  version, billing block, and identity prompt. Refresh protocol PR evidence
+  against a captured golden request before changing live headers; do not copy
+  Claude Code's full system prompt or tool catalog into Codex-translated
+  requests.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
