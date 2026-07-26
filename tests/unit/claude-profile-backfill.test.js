@@ -27,7 +27,14 @@ describe("Claude profile backfill", () => {
       apply: true,
     });
 
-    expect(result).toEqual({ scanned: 2, eligible: 2, updated: 2, skipped: 0, failed: 0 });
+    expect(result).toEqual({
+      scanned: 2,
+      eligible: 2,
+      updated: 2,
+      skipped: 0,
+      failed: 0,
+      failureReasons: {},
+    });
     expect(postExchange).toHaveBeenNthCalledWith(1, { access_token: "token-1" }, proxy);
     expect(updateConnection).toHaveBeenNthCalledWith(1, "one", expect.objectContaining({
       name: "user@example.test",
@@ -63,6 +70,7 @@ describe("Claude profile backfill", () => {
       apply: true,
     });
     expect(unavailable.failed).toBe(1);
+    expect(unavailable.failureReasons).toEqual({ proxy_unavailable: 1 });
     expect(postExchange).not.toHaveBeenCalled();
   });
 });

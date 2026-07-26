@@ -15,7 +15,18 @@ export async function backfillClaudeProfiles({
   updateConnection,
   apply = false,
 }) {
-  const result = { scanned: connections.length, eligible: 0, updated: 0, skipped: 0, failed: 0 };
+  const result = {
+    scanned: connections.length,
+    eligible: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    failureReasons: {},
+  };
+  const fail = (reason) => {
+    result.failed += 1;
+    result.failureReasons[reason] = (result.failureReasons[reason] || 0) + 1;
+  };
 
   for (const connection of connections) {
     const placeholderName = !connection.name || /^Account \d+$/i.test(connection.name);
@@ -29,12 +40,12 @@ export async function backfillClaudeProfiles({
     try {
       const proxyOptions = await resolveProxy(connection.providerSpecificData);
       if (proxyOptions?.proxyUnavailable === true || proxyOptions?.source === "unavailable") {
-        result.failed += 1;
+        fail("proxy_unavailable");
         continue;
       }
       const extra = await postExchange({ access_token: connection.accessToken }, proxyOptions);
       if (!extra?.profile) {
-        result.failed += 1;
+        fail("profile_unavailable");
         continue;
       }
 
@@ -56,7 +67,7 @@ export async function backfillClaudeProfiles({
       if (apply) await updateConnection(connection.id, update);
       result.updated += 1;
     } catch {
-      result.failed += 1;
+      fail("unexpected");
     }
   }
 
@@ -94,7 +105,7 @@ async function main() {
     apply,
   });
   process.stdout.write(
-    `Claude profile backfill: mode=${apply ? "apply" : "dry-run"} scanned=${result.scanned} eligible=${result.eligible} updated=${result.updated} skipped=${result.skipped} failed=${result.failed}\n`,
+    `Claude profile backfill: mode=${apply ? "apply" : "dry-run"} scanned=${result.scanned} eligible=${result.eligible} updated=${result.updated} skipped=${result.skipped} failed=${result.failed} failure_reasons=${Object.entries(result.failureReasons).map(([reason, count]) => `${reason}:${count}`).join(",") || "none"}\n`,
   );
   if (result.failed > 0) process.exitCode = 1;
 }
