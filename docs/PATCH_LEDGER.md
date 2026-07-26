@@ -2525,7 +2525,7 @@ proof; exclude private runner, profiles, pools, routes, paths, and evidence.
 
 Deployment state: pending review/canary. Source worktree is
 `/home/home/.openclaw/workspace-keyra/9router-claude-provider-v0540`, branch
-`local-v0.5.40-claude-provider`, based on live integration commit `ca9b391`.
+`local-v0.5.40-claude-provider`; canonical integration head is `34f8ed1`.
 Do not mark this patch live until candidate and post-promotion checks below pass.
 
 Purpose:
@@ -2653,6 +2653,53 @@ Upstream boundary:
 - Model metadata PR: <https://github.com/decolua/9router/pull/2847>, head
   `4505163f33b4b44877a95e8423fcbb7209ac7dd3`, OPEN/CLEAN. Body contains real
   newlines, not escaped `\\n`; focused public gate passed 31/31.
+- OAuth/profile identity extends existing proxy-flow PR
+  <https://github.com/decolua/9router/pull/2343>, head
+  `6d9df86959a2faf04ffc29be693492261b733c96`, OPEN/CLEAN. Claude profile
+  coverage passed 7/7; the wider OAuth matrix passed 220/220 after excluding
+  the unchanged stale Cursor auto-import suite.
+- Usage PR: <https://github.com/decolua/9router/pull/2848>, head
+  `e3308cfacefad50d27546daea88273b635fa1132`, OPEN/CLEAN. Fresh usage and
+  dispatch coverage passed 22/22; changed-file ESLint passed.
+- Protocol PR: <https://github.com/decolua/9router/pull/2849>, head
+  `b90cdc5b59097b08b506abc7b8217d0037e6d6d2`, OPEN/CLEAN. Protocol,
+  cloaking, and session coverage passed 37/37; Claude golden headers passed
+  2/2; changed-file ESLint had zero errors and one existing warning.
+- Auto-ping PR: <https://github.com/decolua/9router/pull/2850>, head
+  `e1de3bac4801833d83492bed2bda449f732c8158`, OPEN/CLEAN. Fresh auto-ping
+  and provider-visibility coverage passed 33/33; changed-file ESLint passed.
+
+Pre-promotion state correction on 2026-07-26:
+
+- Final source/bundle/live-DB verification first failed only the Codex
+  auto-ping membership gate at 0/10. Root cause was ten active Codex profile
+  IDs created or recreated after the finalized 2026-07-23 current-set
+  reconciliation; none matched its explicit per-connection map. Claude uses
+  the separate `claudeAutoPing` map, which remained correctly enrolled at
+  3/6 active profiles.
+- Backed up live SQLite before correction at
+  `/home/home/.9router/db/backups/pre-claude-provider-codex-autoping-20260726T161025Z/data.sqlite`.
+  Backup mode is 0600, integrity is `ok`, and SHA-256 is
+  `18f0d9769dd6ddcd9d01a7fa57d3e224bc02c1223e90ce51501f45a9fe8f4ad9`.
+- One `BEGIN IMMEDIATE` transaction replaced only
+  `codexAutoPing.connections` after asserting one settings row, ten active
+  OAuth profiles, ten credential-complete profiles, and valid settings JSON.
+  Postcheck is 10 entries/10 true/10 active matches; `claudeAutoPing` remains
+  five entries/three true. Live SQLite integrity remains `ok`.
+- Fresh source, 58 MiB v2 candidate bundle, and live-DB verifier returned zero
+  failures and zero warnings immediately after reconciliation.
+  `test-safe-promote-active-count.sh` passes with `TMPDIR=/run/user/1000`; the
+  host `/tmp` quota failure is environmental.
+- First promotion attempt aborted before active gating, backup, swap, or
+  restart. While QA was running, three Codex profiles were explicitly disabled
+  at 09:18:16, 09:18:22, and 09:18:34 PDT, then a settings PATCH changed the
+  mutable opt-in map to 0/7 and stopped the scheduler at 09:18:53. The separate
+  proxy-observer goal confirmed it made no profile/settings/SQLite mutation.
+- `scripts/verify-local-patches.mjs` now reports partial Codex auto-ping
+  enrollment as an explicit warning instead of a deployment failure. Auto-ping
+  is user-controlled opt-in state; source/bundle behavior and DB value validity
+  remain hard gates. A deployment verifier must not overwrite or reject a
+  deliberate live preference.
 
 ## Not Yet Verified As Local Patch
 

@@ -797,7 +797,7 @@ function checkDb() {
   if (codexAutoPing && codexAutoPing.activeCount === codexAutoPing.enabledCount) {
     pass(`db Codex auto-ping covers ${codexAutoPing.activeCount} active OAuth profile(s)`);
   } else {
-    fail(`db Codex auto-ping coverage mismatch: ${codexAutoPing?.enabledCount ?? "?"}/${codexAutoPing?.activeCount ?? "?"}`);
+    warn(`db Codex auto-ping opt-in coverage: ${codexAutoPing?.enabledCount ?? "?"}/${codexAutoPing?.activeCount ?? "?"}`);
   }
 }
 
