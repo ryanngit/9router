@@ -266,6 +266,27 @@ function checkSource() {
   mustContain("tests/unit/oauth-refresh-routing.test.js", "disableEnvProxy", "OAuth refresh no-proxy regression test");
   mustContain("tests/unit/oauth-modal-behavior.test.js", "serializes rapid pool changes", "OAuth modal concurrency regression test");
 
+  mustContain("open-sse/providers/registry/claude.js", "https://claude.com/cai/oauth/authorize", "Claude Code authorize endpoint");
+  mustContain("open-sse/providers/registry/claude.js", "https://platform.claude.com/v1/oauth/token", "Claude Code token endpoint");
+  mustContain("open-sse/providers/registry/claude.js", "user:sessions:claude_code", "Claude Code OAuth session scope");
+  mustContain("src/lib/oauth/providers.js", "https://api.anthropic.com/api/oauth/profile", "Claude OAuth profile endpoint");
+  mustContain("src/lib/oauth/providers.js", "accountId: account?.uuid", "Claude stable account identity mapping");
+  mustContain("src/lib/db/repos/connectionsRepo.js", 'data.authType === "oauth" && data.provider === "claude"', "Claude account-ID deduplication");
+  mustContain("open-sse/services/usage/claude.js", "normalizeClaudeUsage", "Claude quota normalizer");
+  mustContain("open-sse/services/usage/claude.js", "anthropic-ratelimit-.+-reset", "Claude rate-limit reset headers");
+  mustContain("open-sse/services/usage/claude.js", "credentialKey(accessToken)", "Claude credential-hash usage cache");
+  mustContain("src/shared/services/quotaAutoPing.js", "shouldPingInactiveSession", "Claude guarded inactive-window auto-ping");
+  mustContain("src/shared/services/quotaAutoPing.js", "hasAvailableWeeklyQuota", "Claude weekly auto-ping gate");
+  mustContain("open-sse/providers/capabilities.js", '"claude-opus-4-6":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 200000', "Claude Opus 4.6 base context");
+  mustContain("open-sse/providers/capabilities.js", '"claude-sonnet-4-6": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 200000', "Claude Sonnet 4.6 base context");
+  mustContain("open-sse/providers/shared.js", 'CLAUDE_CLI_VERSION = "2.1.220"', "Claude Code client version");
+  mustContain("open-sse/executors/default.js", 'headers["X-Claude-Code-Session-Id"]', "Claude Code session header");
+  mustContain("scripts/backfill-claude-profiles.mjs", "dry-run requires an explicit copied/offline --data-dir", "Claude backfill offline dry-run guard");
+  mustContain("scripts/backfill-claude-profiles.mjs", "Number(extra?.profileStatus) === 401", "Claude apply-only profile refresh");
+  mustContain("tests/unit/claude-oauth-profile.test.js", "keeps different Claude account UUIDs with one email separate", "Claude identity regression test");
+  mustContain("tests/unit/claude-usage.test.js", "honors a reset-only %s cooldown", "Claude reset-header regression test");
+  mustContain("tests/unit/claude-profile-backfill.test.js", "does not refresh a 401 during dry-run", "Claude dry-run refresh regression test");
+
   mustContain("open-sse/executors/codex.js", "body.service_tier === \"fast\"", "Codex fast tier detection");
   mustContain("open-sse/executors/codex.js", "body.service_tier = \"priority\"", "Codex fast tier maps to priority");
   mustContain("open-sse/executors/codex.js", "supportsCodexFastTier", "Codex fast tier model gate");
@@ -605,6 +626,17 @@ function checkBundle() {
   contains("context_length_exceeded", "GitHub Claude explicit context error");
   matches(/claude.{0,24}fable.{0,180}claude-adaptive/i, "Claude Fable adaptive thinking");
   contains("Unpaired tool result", "Claude orphan tool-result salvage");
+  contains("https://claude.com/cai/oauth/authorize", "Claude Code authorize endpoint");
+  contains("https://platform.claude.com/v1/oauth/token", "Claude Code token endpoint");
+  contains("https://api.anthropic.com/api/oauth/profile", "Claude OAuth profile endpoint");
+  contains("https://api.anthropic.com/api/oauth/usage", "Claude OAuth usage endpoint");
+  contains("claude-cli/2.1.220", "Claude Code client version");
+  contains("x-claude-code-session-id", "Claude Code session header");
+  contains("weekly ", "Claude weekly quota rows");
+  contains("inactive session", "Claude inactive-window auto-ping");
+  contains("claude-opus-5", "Claude Opus 5 model metadata");
+  contains("claude-opus-4-6", "Claude Opus 4.6 model metadata");
+  contains("claude-sonnet-4-6", "Claude Sonnet 4.6 model metadata");
   contains(": connected", "Responses immediate SSE comment");
   contains(": keepalive", "Responses tunnel keepalive");
   contains("codex/", "Codex app client detection");

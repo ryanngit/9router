@@ -2607,6 +2607,10 @@ Current verification evidence:
 - `/tmp` user quota is currently exhausted and returns errno `-122`; verification
   commands use `TMPDIR=/home/home/.cache/codex-tmp`. This is host state, not a
   source failure.
+- `scripts/verify-local-patches.mjs` now checks P31 OAuth endpoints, stable
+  identity, usage cooldowns, auto-ping gates, 4.6 base context, CLI protocol,
+  backfill safety, focused tests, and candidate bundle markers. Source-only
+  verifier returns zero failures and warnings.
 
 Pending deployment/canary:
 
