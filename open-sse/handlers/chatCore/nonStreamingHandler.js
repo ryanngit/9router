@@ -69,8 +69,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI) {
     return responsesJsonToOpenAIResponse(responseBody);
   }
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAIJsonToResponsesResponse(responseBody, undefined, customToolNames);
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    const openAIResponse = targetFormat === FORMATS.OPENAI
+      ? responseBody
+      : translateNonStreamingResponse(responseBody, targetFormat, FORMATS.OPENAI, customToolNames);
+    return openAIJsonToResponsesResponse(openAIResponse, undefined, customToolNames);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
