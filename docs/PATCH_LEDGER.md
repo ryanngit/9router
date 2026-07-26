@@ -2590,6 +2590,11 @@ Backfill procedure:
 
 Current verification evidence:
 
+- Live pre-patch DB has six active direct Claude OAuth profiles. All six lack
+  email/account/rate-tier metadata and use the existing `18888` proxy pool.
+  Three are explicitly enrolled in Claude auto-ping; all six have null
+  `lastPingAt`. Live logs repeatedly show OAuth usage 401/429 falling through
+  to legacy polling, confirming both identity and quota-refresh defects.
 - Focused Claude/OAuth/quota/model/protocol/backfill gate: `141/142`; all Claude
   assertions passed. Sole failure is the unchanged-base `gotScraping` mock in
   `claude-header-forwarding.test.js`.
