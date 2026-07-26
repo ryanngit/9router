@@ -2627,6 +2627,12 @@ Pending deployment/canary:
   a symlink and `copyRecursive()` followed it into the full development tree.
   Live bundle is 58 MiB. Rebuild from the canonical physical dependency tree;
   never promote or manually prune the oversized candidate.
+- Rejected artifact still served credential-free loopback on
+  `127.0.0.1:20129` with isolated HOME/data. Health passed; `/v1/models` exposed
+  nine direct Claude IDs; model-info returned 1M/128K for Fable 5, Opus 5, and
+  Opus 4.8, 200K/128K for Opus/Sonnet 4.6, and 200K/64K for Sonnet/Haiku 4.5.
+  Source-plus-bundle verifier returned zero failures/warnings. Backfill no-arg
+  guard failed before DB import, while copied empty data dry-run scanned zero.
 - Build standalone candidate with isolated `DATA_DIR` and staged
   `NINEROUTER_CLI_APP_DIR`; do not let build initialization touch live data.
 - Run copied-DB integrity/secret removal, loopback-only candidate, synthetic
