@@ -145,7 +145,9 @@ async function fetchClaudeUsage(accessToken, proxyOptions, key) {
     }
 
     if (oauthResponse.status === 404 || oauthResponse.status === 405) {
-      return await getClaudeUsageLegacy(accessToken, proxyOptions);
+      const value = await getClaudeUsageLegacy(accessToken, proxyOptions);
+      setCache(key, { value, expiresAt: Date.now() + SUCCESS_TTL_MS, retryAt: 0 });
+      return value;
     }
 
     return { message: `Claude connected. Usage endpoint returned HTTP ${oauthResponse.status}.` };
@@ -160,6 +162,11 @@ export function getClaudeUsage(accessToken, proxyOptions = null) {
   const cached = usageCache.get(key);
   if (cached && (now < cached.expiresAt || now < cached.retryAt)) return Promise.resolve(cached.value);
   if (inFlight.has(key)) return inFlight.get(key);
+  if (inFlight.size >= CACHE_MAX) {
+    // ponytail: 128 active usage polls match current profile ceiling; add a
+    // bounded wait queue before increasing that ceiling.
+    return Promise.resolve({ message: "Claude usage refresh is busy. Retry shortly." });
+  }
 
   let request;
   request = fetchClaudeUsage(accessToken, proxyOptions, key)
@@ -167,7 +174,6 @@ export function getClaudeUsage(accessToken, proxyOptions = null) {
       if (inFlight.get(key) === request) inFlight.delete(key);
     });
   inFlight.set(key, request);
-  while (inFlight.size > CACHE_MAX) inFlight.delete(inFlight.keys().next().value);
   return request;
 }
 

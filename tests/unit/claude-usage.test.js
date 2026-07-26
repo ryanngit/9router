@@ -39,6 +39,7 @@ const inactiveUsage = {
 describe("Claude OAuth usage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    proxyAwareFetch.mockReset();
   });
 
   afterEach(() => {
@@ -143,14 +144,10 @@ describe("Claude OAuth usage", () => {
       { length: 129 },
       (_, index) => getClaudeUsage(`bounded-token-${index}`),
     );
-    requests.push(getClaudeUsage("bounded-token-0"));
-
-    expect(proxyAwareFetch).toHaveBeenCalledTimes(130);
-    resolvers[0](jsonResponse({ error: "expired" }, 401));
-    await requests[0];
     const coalescedWithReplacement = getClaudeUsage("bounded-token-0");
-    expect(proxyAwareFetch).toHaveBeenCalledTimes(130);
-    for (const resolve of resolvers.slice(1)) resolve(jsonResponse(inactiveUsage));
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(128);
+    await expect(requests[128]).resolves.toMatchObject({ message: expect.stringMatching(/busy|retry/i) });
+    for (const resolve of resolvers) resolve(jsonResponse(inactiveUsage));
     await Promise.all([...requests, coalescedWithReplacement]);
   });
 
@@ -195,8 +192,10 @@ describe("Claude OAuth usage", () => {
       .mockResolvedValueOnce(jsonResponse({ plan: "Max" }));
 
     const result = await getClaudeUsage("legacy-token");
+    const cached = await getClaudeUsage("legacy-token");
 
     expect(result).toMatchObject({ plan: "Max" });
+    expect(cached).toEqual(result);
     expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
     expect(proxyAwareFetch.mock.calls[1][0]).toBe("https://api.anthropic.com/v1/settings");
   });
