@@ -2619,6 +2619,14 @@ Current verification evidence:
 
 Pending deployment/canary:
 
+- First isolated staged build correctly used the candidate `DATA_DIR` but
+  stopped at MITM bundling because declared CLI `esbuild` was not installed.
+  Installing existing CLI dependencies with `--no-package-lock` fixed that
+  prerequisite. Second build completed all 130 routes and MITM bundling but
+  produced a rejected 685 MiB artifact: this worktree's root `node_modules` is
+  a symlink and `copyRecursive()` followed it into the full development tree.
+  Live bundle is 58 MiB. Rebuild from the canonical physical dependency tree;
+  never promote or manually prune the oversized candidate.
 - Build standalone candidate with isolated `DATA_DIR` and staged
   `NINEROUTER_CLI_APP_DIR`; do not let build initialization touch live data.
 - Run copied-DB integrity/secret removal, loopback-only candidate, synthetic
