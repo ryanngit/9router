@@ -3,7 +3,7 @@
 Branch base: `ca9b39154b4d`
 Plan: `docs/superpowers/plans/2026-07-26-claude-provider-9router.md`
 
-Task 1: pending
+Task 1: complete (`d5abec6..b08f374`, review clean; controller 44/44)
 Task 2: pending
 Task 3: pending
 Task 4: pending official Claude Code model evidence
