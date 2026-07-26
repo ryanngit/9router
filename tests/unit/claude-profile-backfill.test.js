@@ -72,5 +72,13 @@ describe("Claude profile backfill", () => {
     expect(unavailable.failed).toBe(1);
     expect(unavailable.failureReasons).toEqual({ proxy_unavailable: 1 });
     expect(postExchange).not.toHaveBeenCalled();
+
+    const unauthorized = await backfillClaudeProfiles({
+      ...base,
+      resolveProxy: vi.fn().mockResolvedValue({}),
+      postExchange: vi.fn().mockResolvedValue({ profile: null, profileStatus: 401 }),
+      apply: true,
+    });
+    expect(unauthorized.failureReasons).toEqual({ profile_http_401: 1 });
   });
 });

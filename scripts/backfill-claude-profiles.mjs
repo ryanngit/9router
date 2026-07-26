@@ -45,7 +45,10 @@ export async function backfillClaudeProfiles({
       }
       const extra = await postExchange({ access_token: connection.accessToken }, proxyOptions);
       if (!extra?.profile) {
-        fail("profile_unavailable");
+        const status = Number(extra?.profileStatus);
+        fail(Number.isInteger(status) && status >= 100 && status <= 599
+          ? `profile_http_${status}`
+          : extra?.profileStatus === "request_failed" ? "profile_request_failed" : "profile_unavailable");
         continue;
       }
 

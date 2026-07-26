@@ -133,9 +133,12 @@ const PROVIDERS = {
           signal: AbortSignal.timeout(10_000),
           proxyOptions,
         });
-        return { profile: response.ok ? await response.json() : null };
+        return {
+          profile: response.ok ? await response.json() : null,
+          profileStatus: response.status,
+        };
       } catch {
-        return { profile: null };
+        return { profile: null, profileStatus: "request_failed" };
       }
     },
     mapTokens: (tokens, extra) => {
