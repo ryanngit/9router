@@ -2521,6 +2521,113 @@ Public upstream status: no new PR yet. Add this generic terminal-completeness
 fix to the owning existing Responses translation PR only after bounded live
 proof; exclude private runner, profiles, pools, routes, paths, and evidence.
 
+### P31. Direct Claude OAuth identity, quota windows, auto-ping, and model metadata
+
+Deployment state: pending review/canary. Source worktree is
+`/home/home/.openclaw/workspace-keyra/9router-claude-provider-v0540`, branch
+`local-v0.5.40-claude-provider`, based on live integration commit `ca9b391`.
+Do not mark this patch live until candidate and post-promotion checks below pass.
+
+Purpose:
+
+- Match Claude Code `2.1.220` OAuth endpoints, scopes, client headers, profile,
+  usage, and session identity.
+- Show stable email/display/account identity instead of `Account N` when
+  provider profile data is available.
+- Expose five-hour, weekly, and model-scoped weekly quota rows without
+  inventing unavailable limits.
+- Start an inactive five-hour window only through opt-in, guarded, non-spammy
+  auto-ping when weekly capacity is known and available.
+- Publish direct Claude model context/output limits from one capability source.
+- Keep Go gateway transport-only; this patch does not change listener filters,
+  route tags, proxy pools, private bare-model aliases, or provider fallback.
+
+Required invariants:
+
+- Authorize URL is `https://claude.com/cai/oauth/authorize`; token URL is
+  `https://platform.claude.com/v1/oauth/token`; scopes include profile,
+  inference, Claude Code sessions, MCP servers, and file upload.
+- Profile and usage calls use the connection-selected proxy, fail closed when
+  that pool is unavailable, and never log tokens or raw profile payloads.
+- OAuth dedup prefers stable Claude account UUID. Email is display metadata,
+  not sole account identity.
+- Usage calls coalesce per SHA-256 credential key, cache success for 65 seconds,
+  honor `Retry-After` and numeric `anthropic-ratelimit-*-reset`, retain stale
+  success on 429, and use legacy endpoints only for 404/405.
+- Auto-ping requires opt-in, a non-exhausted inactive `session (5h)`, at least
+  one non-exhausted weekly row, no exhausted blocking row, available selected
+  proxy, and no successful ping in five hours. Accepted bodies are drained;
+  failed pings retain 15-minute suppression.
+- Fable 5, Opus 5, Sonnet 5, Opus 4.8, and Opus 4.7 advertise 1M context and
+  128K output. Opus 4.6 and Sonnet 4.6 advertise 200K base context and 128K
+  output; optional upstream 1M mode is not silently enabled. Sonnet 4.5 and
+  Haiku 4.5 advertise 200K context and 64K output.
+- Bare `claude-fable-5` and `claude-opus-4.8` remain private GitHub aliases.
+  Direct Claude models remain provider-qualified through `cc/` or `claude/`.
+
+Reapply order from base `ca9b391`:
+
+1. OAuth/profile identity: `b08f374`, then account-ID correction `b59a43c`.
+2. Usage windows/coalescing: `e264e75`, `5637441`, `6f7426f`, then reset-header
+   correction `7a27740`.
+3. Guarded auto-ping: `786181b`, `6c8a083`, `e6f84c2`.
+4. Model metadata: `f0ff368`, `75e83e5`, then 4.6 base-context correction
+   `7bc5265`.
+5. Existing-profile tooling: `ccd1ed0`, `e981bb6`, `7aa6713`, dry-run guard
+   `0c1cbb5`, and apply-only refresh `8c29c1b`.
+6. Claude Code protocol parity: `bf4ead1`.
+
+Backfill procedure:
+
+- Dry-run requires an explicit copied/offline `--data-dir`; it must never open
+  live data by default.
+- `--apply` rejects process-scoped sql.js. Use the native process-safe adapter,
+  selected proxy per profile, and refresh an expired credential only after a
+  profile 401. Output contains aggregate reason codes only.
+- Back up SQLite with integrity check before live apply. Verify connection IDs
+  and counts before/after; never print access tokens, refresh tokens, or profile
+  payloads.
+
+Current verification evidence:
+
+- Focused Claude/OAuth/quota/model/protocol/backfill gate: `141/142`; all Claude
+  assertions passed. Sole failure is the unchanged-base `gotScraping` mock in
+  `claude-header-forwarding.test.js`.
+- Broader OAuth/Claude/capability/session/translator gate: `487` passed, `14`
+  failed. Failures are unchanged Cursor auto-import tests, stale non-Claude
+  golden snapshots, and the same unchanged `gotScraping` mock. Claude golden
+  header filter passed `2/2`.
+- Changed-file ESLint: zero errors, one pre-existing anonymous-default-export
+  warning. Production build generated `130/130` routes. Gitleaks scanned the
+  branch range with no leaks. `git diff --check` passed.
+- First source build inherited default `DATA_DIR` and loaded
+  `/home/home/.9router/db/data.sqlite` while collecting static page data. No
+  candidate or live bundle was promoted, but repeat builds must set an isolated
+  `DATA_DIR`; verify live DB integrity before deployment.
+- `/tmp` user quota is currently exhausted and returns errno `-122`; verification
+  commands use `TMPDIR=/home/home/.cache/codex-tmp`. This is host state, not a
+  source failure.
+
+Pending deployment/canary:
+
+- Build standalone candidate with isolated `DATA_DIR` and staged
+  `NINEROUTER_CLI_APP_DIR`; do not let build initialization touch live data.
+- Run copied-DB integrity/secret removal, loopback-only candidate, synthetic
+  profile/usage tests, model-info checks, and one read-only real profile/usage
+  canary per account through its configured pool.
+- Promote 9Router before gateway, using the reviewed atomic helper and one PM2
+  restart. Verify local/raw/short health and existing Codex/GitHub/Grok paths.
+- Retain exact candidate/live hashes, DB backup, old app directory, PM2/tunnel
+  PIDs, and rollback command here after promotion.
+
+Upstream boundary:
+
+- Public/general: OAuth/profile identity, usage normalization/coalescing,
+  guarded auto-ping, model metadata, and protocol parity. Split by behavior and
+  include focused tests.
+- Local/private: real account data, pool IDs, listener/route policy, deployment
+  paths, bare-model aliases, and environment-specific evidence.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.

@@ -96,12 +96,14 @@ fallback behavior.
 - Registry and `/v1/models/info` expose context and output metadata from one
   capability source.
 - Expose verified direct API models: Fable 5, Opus 5, Sonnet 5, Opus 4.8/4.7/4.6,
-  Sonnet 4.6/4.5, and Haiku 4.5. Fable/Opus 5/Sonnet 5/Opus 4.x/Sonnet 4.6 use
-  1M context and 128K maximum output; Sonnet 4.5 and Haiku 4.5 use 200K context
-  and 64K maximum output.
-- Current API 1M limits need no beta header. Describe subscription entitlement
-  conditions separately: Opus 1M is included for Max/Team/Enterprise, while
-  Sonnet 4.6 1M can require usage credits.
+  Sonnet 4.6/4.5, and Haiku 4.5. Fable 5, Opus 5, Sonnet 5, Opus 4.8, and
+  Opus 4.7 use 1M context and 128K maximum output. Opus 4.6 and Sonnet 4.6
+  default to 200K context with 128K maximum output. Sonnet 4.5 and Haiku 4.5
+  use 200K context and 64K maximum output.
+- Opus 4.6 and Sonnet 4.6 optional 1M mode requires an explicit upstream
+  beta/mode and eligible entitlement; 9Router does not enable or advertise it
+  as the default limit. Opus eligibility includes qualifying
+  Max/Team/Enterprise accounts, while Sonnet 4.6 can require usage credits.
 - Private bare-model routing aliases remain unchanged.
 
 ### Count Tokens
@@ -114,10 +116,11 @@ fallback behavior.
 
 ## Go Gateway Design
 
-- Add private `18888` route entries for Anthropic API traffic with current
-  combined `dc` plus `true_residential` policy and `sticky: auth`. Keep `18889`
-  residential plus US isolation unchanged. OAuth browser navigation remains
-  browser-direct.
+- Preserve current listener routing filters exactly. Add Anthropic MITM only on
+  the default listener used by `18888`; do not combine or change `dc`,
+  `true_residential`, or `us` selection in this Claude branch. Combined-pool
+  policy belongs to the separate gateway Phase 6 rollout after its benchmark
+  and 24-hour evidence gate. OAuth browser navigation remains browser-direct.
 - Add `api.anthropic.com` to MITM only on the default listener.
 - Preserve method, path, query, request body, bearer/x-api-key auth,
   `anthropic-version`, `anthropic-beta`, SSE bytes, status, request ID, and all

@@ -326,15 +326,17 @@ limits in capabilities, not duplicate UI constants:
 | `claude-sonnet-5` | 1,000,000 | 128,000 |
 | `claude-opus-4-8` | 1,000,000 | 128,000 |
 | `claude-opus-4-7` | 1,000,000 | 128,000 |
-| `claude-opus-4-6` | 1,000,000 | 128,000 |
-| `claude-sonnet-4-6` | 1,000,000 | 128,000 |
+| `claude-opus-4-6` | 200,000 | 128,000 |
+| `claude-sonnet-4-6` | 200,000 | 128,000 |
 | `claude-sonnet-4-5-20250929` | 200,000 | 64,000 |
 | `claude-haiku-4-5-20251001` | 200,000 | 64,000 |
 
-Current Anthropic API contract needs no 1M beta header. Subscription entitlement
-still varies: Opus 1M is included for Max/Team/Enterprise, while Sonnet 4.6 1M
-can require usage credits. Describe entitlement conditions without reducing
-verified API limits. Keep private bare GitHub aliases unchanged.
+Claude Code reports 200K as the base context for Opus 4.6 and Sonnet 4.6.
+Their optional 1M mode requires an explicit upstream beta/mode and eligible
+entitlement; do not advertise it as the default 9Router limit. Subscription
+entitlement still varies: Opus 1M is available to eligible Max/Team/Enterprise
+accounts, while Sonnet 4.6 1M can require usage credits. Keep private bare
+GitHub aliases unchanged.
 
 - [ ] **Step 4: Verify GREEN and alias regression**
 
