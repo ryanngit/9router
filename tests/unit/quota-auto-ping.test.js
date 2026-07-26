@@ -543,6 +543,24 @@ describe("quota auto-ping", () => {
     expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
   });
 
+  it("does not start inactive Claude session when another quota is exhausted", async () => {
+    deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "claude" ? [{ id: "claude-1", provider: "claude", authType: "oauth", accessToken: "token" }] : []
+    ));
+    getClaudeUsage.mockResolvedValue({
+      quotas: {
+        "session (5h)": { used: 0, total: 100, remaining: 100, resetAt: null },
+        "weekly Fable (7d)": { used: 0, total: 100, remaining: 100, resetAt: null },
+        "monthly (30d)": { used: 100, total: 100, remaining: 0, resetAt: null },
+      },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
   it("does not repeat inactive Claude ping inside five hours", async () => {
     deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (

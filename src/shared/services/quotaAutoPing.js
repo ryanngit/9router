@@ -103,6 +103,7 @@ function shouldPingInactiveSession(connection, providerConfig, quotas, quota, no
     && !quota.resetAt
     && !isQuotaExhausted(quota)
     && hasAvailableWeeklyQuota(quotas)
+    && !hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)
     && !wasPingedRecently(connection, providerConfig.inactiveMinPingIntervalMs, now, inMemoryPingAt);
 }
 
