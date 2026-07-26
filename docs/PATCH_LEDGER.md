@@ -2650,6 +2650,9 @@ Upstream boundary:
   include focused tests.
 - Local/private: real account data, pool IDs, listener/route policy, deployment
   paths, bare-model aliases, and environment-specific evidence.
+- Model metadata PR: <https://github.com/decolua/9router/pull/2847>, head
+  `4505163f33b4b44877a95e8423fcbb7209ac7dd3`, OPEN/CLEAN. Body contains real
+  newlines, not escaped `\\n`; focused public gate passed 31/31.
 
 ## Not Yet Verified As Local Patch
 
