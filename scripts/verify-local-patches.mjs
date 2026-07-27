@@ -175,6 +175,8 @@ function checkExternalConfig() {
     "codex-auto-review",
     "cc/claude-opus-5",
     "cc/claude-fable-5",
+    "gh/claude-opus-5",
+    "gh/claude-fable-5",
     "grok-4.5",
   ];
   if (bySlug.size === models.length && requiredSlugs.every((slug) => bySlug.has(slug))) {
@@ -202,6 +204,21 @@ function checkExternalConfig() {
       && model?.default_service_tier == null;
     if (valid) pass(`Codex catalog direct Claude metadata: ${slug}`);
     else fail(`Codex catalog direct Claude metadata mismatch: ${slug}`);
+  }
+
+  for (const slug of ["gh/claude-opus-5", "gh/claude-fable-5"]) {
+    const model = bySlug.get(slug);
+    const efforts = new Set(model?.supported_reasoning_levels?.map((level) => level.effort));
+    const valid = model?.context_window === 210527
+      && model?.max_context_window === 210527
+      && model?.auto_compact_token_limit === 185000
+      && model?.effective_context_window_percent === 95
+      && ["low", "medium", "high", "xhigh", "max"].every((effort) => efforts.has(effort))
+      && model?.additional_speed_tiers?.length === 0
+      && model?.service_tiers?.length === 0
+      && model?.default_service_tier == null;
+    if (valid) pass(`Codex catalog GitHub Claude metadata: ${slug}`);
+    else fail(`Codex catalog GitHub Claude metadata mismatch: ${slug}`);
   }
 
   const expectedGpt = {
@@ -359,6 +376,7 @@ function checkSource() {
   mustContain("open-sse/services/model.js", "\"claude-opus-4.8\": \"gh/claude-opus-4.8\"", "built-in Claude Opus 4.8 alias");
   mustContain("open-sse/services/model.js", "\"claude-fable-5\": \"gh/claude-fable-5\"", "built-in Claude Fable 5 alias");
   mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-opus-4.8\"", "GitHub registry Claude Opus 4.8");
+  mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-opus-5\"", "GitHub registry Claude Opus 5");
   mustContain("open-sse/providers/registry/github.js", "{ id: \"claude-fable-5\"", "GitHub registry Claude Fable 5");
   mustContain("open-sse/providers/registry/github.js", "https://api.githubcopilot.com/v1/messages/count_tokens", "GitHub Claude token-count endpoint");
   mustContain("open-sse/providers/capabilities.js", "*claude*fable*\",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: \"claude-adaptive\"", "Claude Fable adaptive thinking");

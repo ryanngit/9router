@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import claude from "../../open-sse/providers/registry/claude.js";
+import github from "../../open-sse/providers/registry/github.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getModelInfoCore } from "../../open-sse/services/model.js";
 
@@ -101,5 +102,14 @@ describe("direct Claude Code model metadata", () => {
       contextWindow: 1000000,
       capabilities: ["legacy-cap"],
     });
+  });
+});
+
+describe("GitHub Copilot Claude 5 model metadata", () => {
+  it.each([
+    ["claude-fable-5", "Claude Fable 5"],
+    ["claude-opus-5", "Claude Opus 5"],
+  ])("publishes %s in the static fallback catalog", (id, name) => {
+    expect(github.models.find((model) => model.id === id)).toMatchObject({ id, name });
   });
 });

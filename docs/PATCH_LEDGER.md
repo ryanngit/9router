@@ -410,7 +410,7 @@ Purpose:
 
 - GitHub Copilot static model lists lag behind available models.
 - Copilot profile status should distinguish free, banned/forbidden, rate-limited, weekly-limited, and active accounts.
-- `claude-opus-4.8` and `claude-fable-5` should be visible/routable when Copilot exposes them.
+- `claude-opus-4.8`, `claude-opus-5`, and `claude-fable-5` should be visible/routable when Copilot exposes them.
 
 Files:
 
@@ -434,13 +434,15 @@ Required invariants:
 
 - Bare `claude-opus-4.8` resolves to GitHub, not Anthropic.
 - Bare `claude-fable-5` resolves to GitHub.
-- GitHub registry includes both models for dashboard visibility.
+- GitHub registry includes all three verified models for dashboard fallback visibility.
+- GitHub `claude-opus-5` uses the provider-specific 200,000 prompt / 64,000 output guard instead of inheriting direct Claude's 1M metadata.
 - Live DB aliases are present after reinstall/update.
 
 Verification:
 
 - `sqlite3 /home/home/.9router/db/data.sqlite "select scope,key,value from kv where scope='modelAliases' and key in ('claude-opus-4.8','claude-fable-5');"`
 - Non-streaming requests to `claude-opus-4.8` and `claude-fable-5` should route to provider `github`.
+- `./node_modules/.bin/vitest run --config tests/vitest.config.js --testTimeout 20000 --pool=threads --maxWorkers=1 tests/unit/capabilities.test.js tests/unit/claude-model-metadata.test.js`
 
 Extended-context verification completed 2026-07-09:
 
@@ -452,9 +454,15 @@ Extended-context verification completed 2026-07-09:
 - `/home/home/.openclaw/gateway/server.go` applies a Chrome TLS fingerprint for Copilot and forwards existing headers/body unchanged. 9Router supplies its VS Code identity headers; neither mechanism selects the context tier.
 - After updates, do not add guessed `long_context` headers or body fields. Re-run one over-200K prompt probe only if GitHub starts rejecting the existing path.
 
+Current Copilot verification completed 2026-07-26:
+
+- Both active Copilot profiles returned HTTP 200 for `gh/claude-opus-5`; Fable 5 also returned HTTP 200.
+- Copilot `/models` reports Fable 5 and Opus 5 with 264,000 total context, 200,000 maximum prompt, 64,000 maximum output, adaptive thinking, and `low|medium|high|xhigh|max` efforts.
+
 Upstream status:
 
-- Candidate as separate feature. Keep static aliases and live catalog fetch separate if upstream prefers one but not the other.
+- PR <https://github.com/decolua/9router/pull/2756> updated at head `367666f` with Opus 5 limits and static Fable 5 / Opus 4.8 / Opus 5 fallback entries; GitHub reports `OPEN`/`CLEAN`.
+- Private bare aliases remain excluded from that PR.
 
 ### P5L. Local-only Codex catalog aliases for GitHub Claude models
 
@@ -489,6 +497,35 @@ Verification:
 Upstream status:
 
 - Local-only. Do not upstream. Re-apply after updates if `open-sse/services/model.js` loses `BUILTIN_MODEL_ALIASES` or live DB aliases disappear.
+
+### P5C. Provider-qualified Codex Claude 5 catalog
+
+Purpose:
+
+- Keep direct Claude subscriptions and GitHub Copilot profiles usable from the same Codex installation.
+- Avoid ambiguous provider selection by publishing four explicit model choices.
+
+Catalog files:
+
+- `/home/home/.openclaw/codex-9router-model-catalog.json`
+- `/home/home/.openclaw/codex-9router-model-catalog.windows.json`
+- `/home/home/.openclaw/exports/custom-model-catalog-windows-9router.json`
+
+Required invariants:
+
+- `cc/claude-fable-5` and `cc/claude-opus-5` retain direct Claude 1M context metadata.
+- `gh/claude-fable-5` and `gh/claude-opus-5` retain `context_window=210527`, `effective_context_window_percent=95`, and `auto_compact_token_limit=185000`, keeping Codex below Copilot's 200K prompt ceiling.
+- GitHub entries expose `low|medium|high|xhigh|max` and no unverified Fast/Priority tier.
+- Catalog updates never replace one provider's entries with the other provider's entries.
+
+Verification:
+
+- `node scripts/verify-local-patches.mjs --root . --no-bundle --no-db`
+- Select each of the four slugs in Codex and confirm the 9Router request log shows the matching `claude` or `github` provider.
+
+Upstream status:
+
+- Catalog files are local Codex configuration. Public 9Router model metadata is tracked in PR #2756.
 
 ### P5M. GitHub Copilot profile identity labels (absorbed upstream)
 

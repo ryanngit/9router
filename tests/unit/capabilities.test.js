@@ -47,12 +47,18 @@ describe("getCapabilitiesForModel", () => {
   });
 
   it("keeps Copilot Opus limits provider-specific", () => {
-    expect(getCapabilitiesForModel("github", "claude-opus-4.8")).toMatchObject({
-      contextWindow: 264000,
-      maxPrompt: 200000,
-      maxOutput: 64000,
-    });
+    for (const model of ["claude-opus-4.8", "claude-opus-5"]) {
+      expect(getCapabilitiesForModel("github", model)).toMatchObject({
+        contextWindow: 264000,
+        maxPrompt: 200000,
+        maxOutput: 64000,
+      });
+    }
     expect(getCapabilitiesForModel("kiro", "claude-opus-4.8")).toMatchObject({
+      contextWindow: 1000000,
+      maxOutput: 128000,
+    });
+    expect(getCapabilitiesForModel("claude", "claude-opus-5")).toMatchObject({
       contextWindow: 1000000,
       maxOutput: 128000,
     });
