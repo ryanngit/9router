@@ -522,6 +522,7 @@ Verification:
 
 - `node scripts/verify-local-patches.mjs --root . --no-bundle --no-db`
 - Select each of the four slugs in Codex and confirm the 9Router request log shows the matching `claude` or `github` provider.
+- On 2026-07-26, ephemeral Codex CLI canaries selected `gh/claude-fable-5` and `gh/claude-opus-5`, returned exact markers, and produced successful GitHub request rows for `johnsjoh741632` and `johnmar809059` respectively.
 
 Upstream status:
 
