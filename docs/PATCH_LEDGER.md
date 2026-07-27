@@ -2798,6 +2798,19 @@ Direct Codex catalog and entitlement correction on 2026-07-26:
   `FINAL_OPUS_OK` with one `response.completed` each in 2.8-3.0 seconds.
   Fable selected Max profile `Käthe`; Opus selected Max profile `Walther`.
   Gateway port `18888` recorded both Anthropic streams as HTTP 200.
+- OAuth scope closure at 17:11 PDT preserved the same four connection rows,
+  four distinct stable account IDs, four distinct emails, original creation
+  timestamps, credentials, priorities, and proxy bindings. All four profiles
+  now store the full `user:file_upload user:inference user:mcp_servers
+  user:profile user:sessions:claude_code` grant; entitlement remains three Max
+  20x and one Pro.
+- Fresh usage calls for all four profiles traversed gateway port `18888` and
+  returned HTTP 200. Max profiles exposed `session (5h)` plus `weekly Fable
+  (7d)`; the Pro profile exposed `session (5h)`. Fresh Responses canaries
+  returned exact `REAUTH_FABLE_OK` and `REAUTH_OPUS_OK`, each with one
+  `response.completed`; Fable selected Max `Käthe`, Opus selected Max
+  `Walther`, and both Anthropic streams returned HTTP 200. Local and short
+  health remained `{"ok":true}` without restarting 9Router or the Go gateway.
 - Safe promotion label `v0540-claude-codex-terminal-20260726` succeeded. DB
   backup:
   `/home/home/.9router/db/backups/pre-v0540-claude-codex-terminal-20260726-20260726T224748Z/data.sqlite`
