@@ -4,7 +4,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { OPENAI_FINISH, RESPONSES_ITEM, ROLE } from "../../translator/schema/index.js";
 import { extractReasoningText } from "../../translator/concerns/reasoning.js";
-import { unwrapCustomToolArguments } from "../../translator/response/openai-responses.js";
+import { parseToolSearchArguments, unwrapCustomToolArguments } from "../../translator/response/openai-responses.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { getStopReasonOutcome } from "../../utils/responsesStreamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
@@ -104,7 +104,7 @@ export function responsesJsonToOpenAIResponse(jsonResponse, fallbackModel) {
   return response;
 }
 
-export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel, customToolNames = null) {
+export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel, customToolNames = null, responsesToolMetadata = null) {
   const choice = jsonResponse?.choices?.[0] || {};
   const message = choice.message || {};
   const responseId = String(jsonResponse?.id || `resp_${Date.now()}`);
@@ -141,7 +141,21 @@ export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel, custo
     const args = typeof toolCall.function.arguments === "string"
       ? toolCall.function.arguments
       : JSON.stringify(toolCall.function.arguments || {});
-    output.push(customToolNames instanceof Set && customToolNames.has(name)
+    const namespaceTool = responsesToolMetadata?.namespaceTools instanceof Map
+      ? responsesToolMetadata.namespaceTools.get(name)
+      : null;
+    const isToolSearch = responsesToolMetadata?.toolSearchNames instanceof Set &&
+      responsesToolMetadata.toolSearchNames.has(name);
+    output.push(isToolSearch
+      ? {
+          id: `tsc_${callId}`,
+          type: RESPONSES_ITEM.TOOL_SEARCH_CALL,
+          call_id: callId,
+          execution: "client",
+          status: "completed",
+          arguments: parseToolSearchArguments(args),
+        }
+      : customToolNames instanceof Set && customToolNames.has(name)
       ? {
           id: `ctc_${callId}`,
           type: RESPONSES_ITEM.CUSTOM_TOOL_CALL,
@@ -153,7 +167,8 @@ export function openAIJsonToResponsesResponse(jsonResponse, fallbackModel, custo
           id: `fc_${toolCall.id || name}`,
           type: RESPONSES_ITEM.FUNCTION_CALL,
           call_id: callId,
-          name,
+          name: namespaceTool?.name || name,
+          ...(namespaceTool?.namespace ? { namespace: namespaceTool.namespace } : {}),
           arguments: args,
         });
   }
@@ -285,7 +300,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ requestId, correlationId, providerResponse, sourceFormat, targetFormat, customToolNames, provider, model, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ requestId, correlationId, providerResponse, sourceFormat, targetFormat, customToolNames, responsesToolMetadata, provider, model, body, stream, translatedBody, finalBody, requestTiming, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -452,7 +467,7 @@ export async function handleForcedSSEToJson({ requestId, correlationId, provider
     }
 
     const finalResponse = sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? openAIJsonToResponsesResponse(parsed, model, customToolNames)
+      ? openAIJsonToResponsesResponse(parsed, model, customToolNames, responsesToolMetadata)
       : parsed;
     return { success: true, response: new Response(JSON.stringify(finalResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {

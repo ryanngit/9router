@@ -216,7 +216,7 @@ export function needsTranslation(sourceFormat, targetFormat) {
 }
 
 // Initialize state for streaming response based on format
-export function initState(sourceFormat, customToolNames = null) {
+export function initState(sourceFormat, customToolNames = null, responsesToolMetadata = null) {
   // Base state for all formats
   const base = {
     messageId: null,
@@ -257,11 +257,20 @@ export function initState(sourceFormat, customToolNames = null) {
       funcNames: {},
       funcCallIds: {},
       funcIsCustom: {},
+      funcIsToolSearch: {},
+      funcNamespaces: {},
+      funcOutputNames: {},
       funcItemAdded: {},
       funcArgsDone: {},
       funcItemDone: {},
       funcOutputIndexes: {},
       customToolNames: customToolNames instanceof Set ? customToolNames : new Set(),
+      toolSearchNames: responsesToolMetadata?.toolSearchNames instanceof Set
+        ? responsesToolMetadata.toolSearchNames
+        : new Set(),
+      namespaceTools: responsesToolMetadata?.namespaceTools instanceof Map
+        ? responsesToolMetadata.namespaceTools
+        : new Map(),
       responseOutput: [],
       responseUsage: null,
       completedSent: false

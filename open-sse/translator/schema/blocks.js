@@ -25,11 +25,15 @@ export const CLAUDE_BLOCK = {
 // OpenAI Responses API item types.
 export const RESPONSES_ITEM = {
   MESSAGE: "message",
+  NAMESPACE: "namespace",
   CUSTOM: "custom",
   CUSTOM_TOOL_CALL: "custom_tool_call",
   CUSTOM_TOOL_CALL_OUTPUT: "custom_tool_call_output",
   FUNCTION_CALL: "function_call",
   FUNCTION_CALL_OUTPUT: "function_call_output",
+  TOOL_SEARCH: "tool_search",
+  TOOL_SEARCH_CALL: "tool_search_call",
+  TOOL_SEARCH_OUTPUT: "tool_search_output",
   REASONING: "reasoning",
   OUTPUT_TEXT: "output_text",
   INPUT_TEXT: "input_text",

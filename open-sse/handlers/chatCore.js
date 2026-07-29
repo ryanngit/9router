@@ -129,6 +129,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let translatedBody;
   let toolNameMap;
   let customToolNames = new Set();
+  let responsesToolMetadata = null;
   let translationError = null;
   const translationStartedAt = requestNow();
   try {
@@ -169,6 +170,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       customToolNames = translatedBody._customToolNames;
     }
     delete translatedBody._customToolNames;
+    if (translatedBody._responsesToolMetadata) {
+      responsesToolMetadata = translatedBody._responsesToolMetadata;
+    }
+    delete translatedBody._responsesToolMetadata;
   }
 
   if (translationError || !translatedBody) {
@@ -461,7 +466,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs, code);
   }
 
-  const sharedCtx = { requestId, correlationId: requestCorrelationId, provider, model, body, stream, translatedBody, finalBody, requestTiming: timing, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, customToolNames, reqTag, log };
+  const sharedCtx = { requestId, correlationId: requestCorrelationId, provider, model, body, stream, translatedBody, finalBody, requestTiming: timing, responseStartTime, connectionId, apiKey, usageReservationId, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, customToolNames, responsesToolMetadata, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

@@ -315,23 +315,49 @@ export function unwrapCustomToolArguments(value) {
   }
 }
 
+export function parseToolSearchArguments(value) {
+  if (value && typeof value === "object") return value;
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function startToolCall(state, emit, idx, force = false) {
   if (state.funcItemAdded[idx]) return false;
   const callId = state.funcCallIds[idx];
-  const name = state.funcNames[idx] || "";
-  if (!callId || (!force && state.customToolNames.size > 0 && !name)) return false;
+  const wireName = state.funcNames[idx] || "";
+  if (!callId || (!force && state.customToolNames.size > 0 && !wireName)) return false;
 
-  const isCustom = state.customToolNames.has(name);
+  const namespaceTool = state.namespaceTools.get(wireName);
+  const name = namespaceTool?.name || wireName;
+  const isToolSearch = state.toolSearchNames.has(wireName);
+  if (isToolSearch && !force) return false;
+  const isCustom = !isToolSearch && state.customToolNames.has(wireName);
   const outputIndex = state.nextOutputIndex++;
-  const itemId = `${isCustom ? "ctc" : "fc"}_${callId}`;
+  const itemId = `${isToolSearch ? "tsc" : isCustom ? "ctc" : "fc"}_${callId}`;
   state.funcIsCustom[idx] = isCustom;
+  state.funcIsToolSearch[idx] = isToolSearch;
+  state.funcNamespaces[idx] = namespaceTool?.namespace || null;
+  state.funcOutputNames[idx] = name;
   state.funcOutputIndexes[idx] = outputIndex;
   state.funcItemAdded[idx] = true;
 
   emit("response.output_item.added", {
     type: "response.output_item.added",
     output_index: outputIndex,
-    item: isCustom
+    item: isToolSearch
+      ? {
+          id: itemId,
+          type: RESPONSES_ITEM.TOOL_SEARCH_CALL,
+          arguments: parseToolSearchArguments(state.funcArgsBuf[idx]),
+          call_id: callId,
+          execution: "client",
+          status: "in_progress",
+        }
+      : isCustom
       ? {
           id: itemId,
           type: RESPONSES_ITEM.CUSTOM_TOOL_CALL,
@@ -345,13 +371,14 @@ function startToolCall(state, emit, idx, force = false) {
           arguments: "",
           call_id: callId,
           name,
+          ...(namespaceTool?.namespace ? { namespace: namespaceTool.namespace } : {}),
         }
   });
   return true;
 }
 
 function emitPendingFunctionArgumentDeltas(state, emit, idx) {
-  if (!state.funcItemAdded[idx] || state.funcIsCustom[idx]) return;
+  if (!state.funcItemAdded[idx] || state.funcIsCustom[idx] || state.funcIsToolSearch[idx]) return;
   const callId = state.funcCallIds[idx];
   for (const delta of state.funcArgDeltas[idx] || []) {
     emit("response.function_call_arguments.delta", {
@@ -392,7 +419,22 @@ function closeToolCall(state, emit, idx) {
     emitPendingFunctionArgumentDeltas(state, emit, idx);
     const outputIndex = state.funcOutputIndexes[idx];
 
-    if (state.funcIsCustom[idx]) {
+    if (state.funcIsToolSearch[idx]) {
+      const item = {
+        id: `tsc_${callId}`,
+        type: RESPONSES_ITEM.TOOL_SEARCH_CALL,
+        arguments: parseToolSearchArguments(args),
+        call_id: callId,
+        execution: "client",
+        status: "completed",
+      };
+      emit("response.output_item.done", {
+        type: "response.output_item.done",
+        output_index: state.funcOutputIndexes[idx],
+        item,
+      });
+      state.responseOutput[outputIndex] = item;
+    } else if (state.funcIsCustom[idx]) {
       const input = unwrapCustomToolArguments(args);
       emit("response.custom_tool_call_input.delta", {
         type: "response.custom_tool_call_input.delta",
@@ -432,7 +474,8 @@ function closeToolCall(state, emit, idx) {
         type: RESPONSES_ITEM.FUNCTION_CALL,
         arguments: args,
         call_id: callId,
-        name: state.funcNames[idx] || ""
+        name: state.funcOutputNames[idx] || state.funcNames[idx] || "",
+        ...(state.funcNamespaces[idx] ? { namespace: state.funcNamespaces[idx] } : {}),
       };
       emit("response.output_item.done", {
         type: "response.output_item.done",
