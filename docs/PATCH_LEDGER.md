@@ -2860,6 +2860,45 @@ Direct Codex catalog and entitlement correction on 2026-07-26:
   the raw quick-tunnel process, then the existing short ID was re-registered.
   Local, raw, and `https://rkeyra9.abc-tunnel.us/api/health` all pass.
 
+### P32. GitHub per-profile residential proxy isolation (private operation)
+
+Purpose:
+
+- Keep Copilot account fallback meaningful when one residential exit stalls after CONNECT.
+- Preserve port `18889`, strict proxying, account cache affinity, and gateway uptime.
+
+Root cause confirmed 2026-07-29:
+
+- Linux Fable requests succeeded at 08:05, then Windows requests failed from 08:20 through 08:35.
+- Every failed account established gateway CONNECT in about 0.8 seconds but then failed around 52 seconds later; all three accounts shared pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` and therefore one domain-sticky gateway exit.
+- Failed provider payloads were about 354 KB versus 286-290 KB for prior successes. A current authenticated 354 KB token-count request completed in 3.1 seconds, excluding payload size and Windows wire format as root causes.
+- Three distinct non-secret proxy-auth session names on the same port selected three distinct residential proxies.
+
+Live configuration:
+
+- Each active GitHub connection has its own 9Router proxy-pool row.
+- Pool URLs use `http://gh-<connection-id-prefix>:sticky@127.0.0.1:18889`; these credentials identify gateway sticky sessions and are not security secrets.
+- Shared pool `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` remains available for other providers.
+- Online rollback backup: `/home/home/.9router/db/backups/pre-github-profile-proxy-isolation-20260729T164400Z.sqlite`.
+
+Required invariants:
+
+- Active GitHub profiles have distinct `providerSpecificData.proxyPoolId` values.
+- Every referenced pool remains active, strict, and on `127.0.0.1:18889` with a distinct proxy username.
+- Reauthorization preserves the profile's pool ID. New GitHub profiles receive a new profile-specific pool before production use.
+- Do not collapse GitHub profiles back onto one unauthenticated `18889` URL.
+
+Verification:
+
+- `sqlite3 /home/home/.9router/db/data.sqlite "select p.name,json_extract(p.data,'$.providerSpecificData.proxyPoolId'),json_extract(pp.data,'$.proxyUrl') from providerConnections p join proxyPools pp on pp.id=json_extract(p.data,'$.providerSpecificData.proxyPoolId') where p.provider='github' and p.isActive=1 order by p.name;"`
+- All three authenticated 354 KB `/v1/messages/count_tokens` probes returned HTTP 200 after rotating one transiently bad profile binding.
+- Full 9Router `gh/claude-fable-5` canary returned exact `GITHUB_PROXY_ISOLATION_OK` in 5.9 seconds through profile `johnmar809059` and pool `ef58c1a4-ae2d-4349-afdc-5716fb6ed7dc`.
+- No 9Router or gateway process restart and no gateway source/route change occurred.
+
+Upstream status:
+
+- Private deployment topology. Do not upstream profile IDs, local ports, or gateway session credentials.
+
 ## Not Yet Verified As Local Patch
 
 - Codex CLI helper model picker showing Claude Opus 4.8 as a canned option. Provider registry/model alias routing exists, but `src/shared/constants/cliTools.js` does not currently add `claude-opus-4.8` to the Codex helper defaults.
@@ -2903,8 +2942,9 @@ Run after every update/deploy:
 - Run a provider that delays more than 30 seconds after headers through the
   short URL. Verify Codex receives heartbeat events until terminal completion
   and no `idle timeout waiting for SSE` or false account lock occurs.
-- Confirm every GitHub profile remains bound to residential pool
-  `b9b6de29-4fd4-42f6-9498-7d7d41014bf3` on `18889`; test both active profiles.
+- Confirm every active GitHub profile has a distinct profile-specific pool on
+  `18889`; test all active profiles with a large token-count probe and one full
+  Fable response. Never restore one shared unauthenticated pool for all profiles.
 - Through the short URL, force Fable to call one Responses `custom` tool and
   submit its `custom_tool_call_output`. Require custom input delta/done events,
   unique monotonic output indexes, exactly one `response.completed`, exactly
