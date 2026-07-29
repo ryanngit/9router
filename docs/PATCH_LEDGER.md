@@ -1,6 +1,6 @@
 # 9Router Local Patch Ledger
 
-Last updated: 2026-07-21
+Last updated: 2026-07-29
 
 This file tracks local 9Router changes that must survive updates. Treat it as the source of truth before merging upstream changes, rebuilding, or pushing PR branches.
 
@@ -2898,6 +2898,85 @@ Verification:
 Upstream status:
 
 - Private deployment topology. Do not upstream profile IDs, local ports, or gateway session credentials.
+
+### P33. Codex Responses deferred-tool bridge
+
+Deployment state: live since 2026-07-29. Runtime commit `6138725`; public PR
+update commit `69bf5fb`.
+
+Purpose:
+
+- Preserve Codex client-executed `tool_search` across Responses-to-Chat
+  translation for providers such as GitHub Claude.
+- Restore hydrated dynamic calls with exact `namespace` and `name` fields so
+  Codex registers and dispatches `codex_app` and MCP tools.
+- Keep native Responses passthrough, static/custom tools, account fallback,
+  cache affinity, and proxy routing unchanged.
+
+Root cause confirmed 2026-07-29:
+
+- Codex advertises deferred discovery as a nameless
+  `{type:"tool_search", execution:"client"}` Responses tool.
+- The Responses-to-Chat converter dropped every tool without `name`, so Claude
+  could neither request hydration nor receive returned namespace tools.
+- Any guessed dynamic call came back as ordinary unnamespaced
+  `function_call`; Codex rejected it locally as `unsupported call`.
+- Request size, endpoint choice, proxy transport, and valid double-underscore
+  tool names were not the failing boundary.
+
+Required invariants:
+
+- Translate client `tool_search` declarations, calls, and outputs into paired
+  Chat function/tool messages.
+- Expose functions returned by `tool_search_output`, including both flat
+  functions and children of `namespace` containers, only for that translated
+  provider turn.
+- Flatten namespace children to collision-safe provider names no longer than
+  64 characters, then restore exact namespace/name metadata on streaming and
+  JSON Responses output.
+- Strip `_responsesToolMetadata` before provider dispatch; never serialize
+  translation metadata onto provider wire.
+- Emit native `tool_search_call` with object arguments and
+  `execution:"client"`; do not mislabel it as normal function call or emit
+  function-argument delta events for it.
+- Preserve fallback and direct Responses passthrough. No Codex app, Go gateway,
+  listener, profile, or proxy-pool change belongs to this patch.
+
+Verification:
+
+- Local regression suite `tests/unit/responses-tool-search-bridge.test.js`
+  passes 9/9. Public PR suite passes 6/6; wider public Responses matrix passes
+  32/32.
+- Local broader translator matrix matches unchanged baseline exactly: 233
+  passed and same five pre-existing failures.
+- Isolated and live real GitHub Fable flows each returned native
+  `tool_search_call`, then `function_call` with `namespace:"codex_app"` and
+  `name:"read_thread"`, accepted function output, and completed all three
+  turns with HTTP 200 through sticky port `18888`.
+- Candidate was 58 MB; source/bundle verification passed. Copied credential QA
+  data was removed before promotion.
+- Bounded promotion status:
+  `/home/home/.openclaw/workspace-keyra/9router-ops/v0540-responses-tool-search-bounded-20260729.status`.
+- Rollback app:
+  `/home/home/.openclaw/workspace-keyra/9router-patch/cli/app.backup-v0540-responses-tool-search-bounded-20260729-20260729T220338Z`.
+- Promotion log records verified SQLite backup path and SHA-256. Local and short
+  health pass; live SQLite integrity is `ok`.
+
+Reapply gate:
+
+- Run focused bridge suite plus adjacent Responses/custom-tool suites.
+- Run `node scripts/verify-local-patches.mjs --root .` against source, staged,
+  and live bundles. P33 verifier markers are committed on
+  `fix/responses-tool-search-bridge`; reconcile them after current unrelated
+  verifier edits finish.
+- Through real Codex client, hydrate `read_thread`, dispatch it, submit result,
+  and require terminal completion without `aborted` or `unsupported call`.
+
+Upstream status:
+
+- Existing PR <https://github.com/decolua/9router/pull/2747> updated at
+  `69bf5fbd9254a1d2aa39cec328e3cab02e468180`; currently OPEN/CLEAN.
+- Public branch excludes local account, proxy, host, tunnel, and task data.
 
 ## Not Yet Verified As Local Patch
 
